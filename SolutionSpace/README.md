@@ -1,4 +1,4 @@
-# **Experimentation Plan: Investigating Convergence of Neural Network Models to Similar Solutions**
+# **Investigating Convergence of Neural Network Models to Similar Solutions**
 
 ## **Introduction**
 
