@@ -11,6 +11,45 @@ from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 
 class SimulationVisualizer:
+    # Visualization constants
+    DEFAULT_CANVAS_SIZE = (400, 400)
+    PADDING = 20
+    
+    # Animation constants
+    MAX_ANIMATION_FRAMES = 5
+    ANIMATION_MIN_DELAY = 50
+    
+    # Resource visualization
+    MAX_RESOURCE_AMOUNT = 30
+    RESOURCE_GLOW_RED = 150
+    RESOURCE_GLOW_GREEN = 255
+    RESOURCE_GLOW_BLUE = 50
+    
+    # Agent visualization
+    AGENT_RADIUS_SCALE = 2
+    BIRTH_RADIUS_SCALE = 4
+    DEATH_MARK_SCALE = 1.5
+    
+    # Font settings
+    MIN_FONT_SIZE = 10
+    FONT_SCALE_FACTOR = 40
+    
+    # Colors
+    SYSTEM_AGENT_COLOR = "blue"
+    INDIVIDUAL_AGENT_COLOR = "red"
+    DEATH_MARK_COLOR = (255, 0, 0)  # Red
+    BIRTH_MARK_COLOR = (255, 255, 255)  # White
+    BACKGROUND_COLOR = "black"
+    
+    # Style constants
+    CARD_COLORS = {
+        "total_agents": "#4a90e2",     # Blue
+        "system_agents": "#50c878",     # Emerald green
+        "individual_agents": "#e74c3c",  # Red
+        "total_resources": "#f39c12",   # Orange
+        "average_agent_resources": "#9b59b6"  # Purple
+    }
+
     def __init__(self, root, db_path="simulation_results.db"):
         # Core attributes
         self.root = root
@@ -23,11 +62,11 @@ class SimulationVisualizer:
         # Animation and state tracking
         self.birth_animations = {}  # {agent_id: (position, frame)}
         self.death_animations = {}  # {agent_id: (position, frame)}
-        self.max_animation_frames = 5
+        self.max_animation_frames = self.MAX_ANIMATION_FRAMES
         self.previous_agent_ids = set()
         self.previous_agent_states = []
         self.is_dragging = False
-        self.canvas_size = (400, 400)  # Default size
+        self.canvas_size = self.DEFAULT_CANVAS_SIZE
         
         # Create main containers
         self.stats_frame = ttk.LabelFrame(root, text="Simulation Statistics", padding=10)
@@ -167,6 +206,32 @@ class SimulationVisualizer:
         self.ax1 = self.fig.add_subplot(111)
         self.ax2 = self.ax1.twinx()
 
+        # Initialize empty line objects
+        self.lines = {
+            'system_agents': self.ax1.plot([], [], 'b-', label="System Agents")[0],
+            'individual_agents': self.ax1.plot([], [], 'r-', label="Individual Agents")[0],
+            'resources': self.ax2.plot([], [], 'g-', label="Resources")[0],
+            'system_agents_future': self.ax1.plot([], [], 'b-', alpha=0.3)[0],
+            'individual_agents_future': self.ax1.plot([], [], 'r-', alpha=0.3)[0],
+            'resources_future': self.ax2.plot([], [], 'g-', alpha=0.3)[0],
+            'current_step': self.ax1.axvline(x=0, color="gray", linestyle="--", alpha=0.5)
+        }
+
+        # Setup axis labels and colors
+        self.ax1.set_xlabel("Step")
+        self.ax1.set_ylabel("Agent Count", color="b")
+        self.ax2.set_ylabel("Resource Count", color="g", rotation=270, labelpad=20)
+        
+        # Configure axis positions and colors
+        self.ax2.yaxis.set_label_position("right")
+        self.ax2.yaxis.set_ticks_position("right")
+        self.ax1.tick_params(axis="y", labelcolor="b")
+        self.ax2.tick_params(axis="y", labelcolor="g")
+
+        # Setup legends
+        self.ax1.legend(loc="upper left")
+        self.ax2.legend(loc="upper right")
+
         # Create canvas without toolbar
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.chart_frame)
         self.canvas.draw()
@@ -175,9 +240,6 @@ class SimulationVisualizer:
         self.canvas.mpl_connect("button_press_event", self._on_chart_press)
         self.canvas.mpl_connect("motion_notify_event", self._on_chart_motion)
         self.canvas.mpl_connect("button_release_event", self._on_chart_release)
-
-        # Initialize dragging state
-        self.is_dragging = False
 
         # Pack canvas
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
@@ -235,7 +297,7 @@ class SimulationVisualizer:
 
         # Bind resize event
         self.env_canvas.bind("<Configure>", self._on_canvas_resize)
-        self.canvas_size = (400, 400)  # Default size
+        self.canvas_size = self.DEFAULT_CANVAS_SIZE
 
     def _on_canvas_resize(self, event):
         """Handle canvas resize events."""
@@ -331,10 +393,9 @@ class SimulationVisualizer:
                     return
 
                 self._step_to(self.current_step + 1)
-                # Reduce delay if there are active animations
                 delay = int(1000 / self.speed_scale.get())
                 if self.birth_animations or self.death_animations:
-                    delay = min(delay, 50)  # Ensure smooth animations
+                    delay = min(delay, self.ANIMATION_MIN_DELAY)
                 self.root.after(delay, self._play_simulation)
             except Exception as e:
                 messagebox.showerror("Playback Error", f"Failed to advance simulation: {str(e)}")
@@ -401,22 +462,21 @@ class SimulationVisualizer:
 
     def _calculate_transform_params(self, resource_states, width, height):
         """Calculate scaling and offset parameters for coordinate transformation."""
-        padding = 20
         env_width = max(x for _, _, x, _ in resource_states + [(0, 0, 100, 0)])
         env_height = max(y for _, _, _, y in resource_states + [(0, 0, 0, 100)])
 
-        scale_x = (width - 2 * padding) / env_width
-        scale_y = (height - 2 * padding) / env_height
+        scale_x = (width - 2 * self.PADDING) / env_width
+        scale_y = (height - 2 * self.PADDING) / env_height
         scale = min(scale_x, scale_y)
 
-        offset_x = max(padding, (width - (env_width * scale)) / 2)
-        offset_y = max(padding, (height - (env_height * scale)) / 2)
+        offset_x = max(self.PADDING, (width - (env_width * scale)) / 2)
+        offset_y = max(self.PADDING, (height - (env_height * scale)) / 2)
 
         return {
             'scale': scale,
             'offset_x': offset_x,
             'offset_y': offset_y,
-            'padding': padding,
+            'padding': self.PADDING,
             'width': width,
             'height': height
         }
@@ -457,17 +517,16 @@ class SimulationVisualizer:
                 x, y = self._transform_coords(resource[2], resource[3], params)
                 
                 # Calculate color intensity and size
-                intensity = amount / 30  # Assuming max amount is 30
+                intensity = amount / self.MAX_RESOURCE_AMOUNT
                 resource_color = (
-                    int(150 * intensity),  # Red component for glow
-                    int(255 * intensity),  # Green component
-                    int(50 * intensity)    # Blue component
+                    int(self.RESOURCE_GLOW_RED * intensity),
+                    int(self.RESOURCE_GLOW_GREEN * intensity),
+                    int(self.RESOURCE_GLOW_BLUE * intensity)
                 )
                 
-                size = max(1, int(2 * params['scale']))
+                size = max(1, int(self.AGENT_RADIUS_SCALE * params['scale']))
                 radius = int(size * 0.2)
 
-                # Draw rounded rectangle
                 self._draw_rounded_rectangle(draw, x, y, size, radius, resource_color)
 
     def _draw_rounded_rectangle(self, draw, x, y, size, radius, color):
@@ -496,8 +555,10 @@ class SimulationVisualizer:
         """Draw agents as colored circles."""
         for agent in agent_states:
             x, y = self._transform_coords(agent[2], agent[3], params)
-            color = "blue" if agent[1] == "SystemAgent" else "red"
-            radius = max(1, int(2 * params['scale']))
+            color = (self.SYSTEM_AGENT_COLOR 
+                    if agent[1] == "SystemAgent" 
+                    else self.INDIVIDUAL_AGENT_COLOR)
+            radius = max(1, int(self.AGENT_RADIUS_SCALE * params['scale']))
             draw.ellipse(
                 [(x - radius, y - radius), (x + radius, y + radius)],
                 fill=color
@@ -507,13 +568,14 @@ class SimulationVisualizer:
         """Draw expanding circle animations for new agents."""
         births_to_remove = []
         for agent_id, (pos, frame) in self.birth_animations.items():
-            if frame < self.max_animation_frames:
+            if frame < self.MAX_ANIMATION_FRAMES:
                 x, y = self._transform_coords(pos[0], pos[1], params)
-                radius = max(2, int(4 * params['scale'])) * (frame + 1) / self.max_animation_frames
-                opacity = int(255 * (1 - frame / self.max_animation_frames))
+                radius = (max(2, int(self.BIRTH_RADIUS_SCALE * params['scale'])) * 
+                         (frame + 1) / self.MAX_ANIMATION_FRAMES)
+                opacity = int(255 * (1 - frame / self.MAX_ANIMATION_FRAMES))
                 draw.ellipse(
                     [(x - radius, y - radius), (x + radius, y + radius)],
-                    outline=(255, 255, 255, opacity)
+                    outline=(*self.BIRTH_MARK_COLOR, opacity)
                 )
                 self.birth_animations[agent_id] = (pos, frame + 1)
             else:
@@ -526,13 +588,12 @@ class SimulationVisualizer:
         """Draw fading X mark animations for dying agents."""
         deaths_to_remove = []
         for agent_id, (pos, frame) in self.death_animations.items():
-            if frame < self.max_animation_frames:
+            if frame < self.MAX_ANIMATION_FRAMES:
                 x, y = self._transform_coords(pos[0], pos[1], params)
-                size = max(1, int(1.5 * params['scale']))
-                opacity = int(128 * (1 - frame / self.max_animation_frames))
-                color = (255, 0, 0, opacity)  # Red X
+                size = max(1, int(self.DEATH_MARK_SCALE * params['scale']))
+                opacity = int(128 * (1 - frame / self.MAX_ANIMATION_FRAMES))
+                color = (*self.DEATH_MARK_COLOR, opacity)
 
-                # Draw X
                 draw.line([(x - size, y - size), (x + size, y + size)], fill=color, width=1)
                 draw.line([(x - size, y + size), (x + size, y - size)], fill=color, width=1)
 
@@ -545,104 +606,93 @@ class SimulationVisualizer:
 
     def _draw_step_number(self, draw, params):
         """Draw the current step number on the visualization."""
-        font_size = max(10, int(min(params['width'], params['height']) / 40))
+        font_size = max(self.MIN_FONT_SIZE, 
+                       int(min(params['width'], params['height']) / self.FONT_SCALE_FACTOR))
         try:
             font = ImageFont.truetype("arial.ttf", font_size)
         except:
             font = ImageFont.load_default()
 
         draw.text(
-            (params['padding'], params['padding']),
+            (self.PADDING, self.PADDING),
             f"Step: {self.current_step}",
-            fill="white",
+            fill=self.BIRTH_MARK_COLOR,  # Using white color
             font=font
         )
 
     def _update_charts(self):
         """Update the population and resource charts with historical data."""
         try:
-            # Clear previous plots
-            self.ax1.clear()
-            self.ax2.clear()
-
-            # Fetch all historical data
+            # Fetch historical data
             history = self.db.get_historical_data()
 
             if not history["steps"]:
                 return  # No data to plot
 
-            # Plot agent counts with faded future data
-            steps = history["steps"]
-            system_agents = history["metrics"]["system_agents"]
-            individual_agents = history["metrics"]["individual_agents"]
-            total_resources = history["metrics"]["total_resources"]
+            steps = np.array(history["steps"])
+            system_agents = np.array(history["metrics"]["system_agents"])
+            individual_agents = np.array(history["metrics"]["individual_agents"])
+            total_resources = np.array(history["metrics"]["total_resources"])
 
-            # Split data into past and future
-            past_mask = [step <= self.current_step for step in steps]
-            future_mask = [not x for x in past_mask]
+            # Create masks for past and future data
+            past_mask = steps <= self.current_step
+            future_mask = ~past_mask
 
-            # Plot past data (solid lines)
-            if any(past_mask):
-                past_steps = [s for s, m in zip(steps, past_mask) if m]
-                past_system = [v for v, m in zip(system_agents, past_mask) if m]
-                past_individual = [v for v, m in zip(individual_agents, past_mask) if m]
-                past_resources = [v for v, m in zip(total_resources, past_mask) if m]
+            # Update past data
+            if np.any(past_mask):
+                self.lines['system_agents'].set_data(
+                    steps[past_mask], system_agents[past_mask])
+                self.lines['individual_agents'].set_data(
+                    steps[past_mask], individual_agents[past_mask])
+                self.lines['resources'].set_data(
+                    steps[past_mask], total_resources[past_mask])
 
-                self.ax1.plot(past_steps, past_system, "b-", label="System Agents")
-                self.ax1.plot(
-                    past_steps, past_individual, "r-", label="Individual Agents"
-                )
-                self.ax2.plot(past_steps, past_resources, "g-", label="Resources")
+            # Update future data
+            if np.any(future_mask):
+                self.lines['system_agents_future'].set_data(
+                    steps[future_mask], system_agents[future_mask])
+                self.lines['individual_agents_future'].set_data(
+                    steps[future_mask], individual_agents[future_mask])
+                self.lines['resources_future'].set_data(
+                    steps[future_mask], total_resources[future_mask])
 
-            # Plot future data (faded lines)
-            if any(future_mask):
-                future_steps = [s for s, m in zip(steps, future_mask) if m]
-                future_system = [v for v, m in zip(system_agents, future_mask) if m]
-                future_individual = [
-                    v for v, m in zip(individual_agents, future_mask) if m
-                ]
-                future_resources = [
-                    v for v, m in zip(total_resources, future_mask) if m
-                ]
+            # Update current step line
+            self.lines['current_step'].set_xdata([self.current_step, self.current_step])
 
-                self.ax1.plot(future_steps, future_system, "b-", alpha=0.3)
-                self.ax1.plot(future_steps, future_individual, "r-", alpha=0.3)
-                self.ax2.plot(future_steps, future_resources, "g-", alpha=0.3)
+            # Update axis limits only if needed
+            self._update_axis_limits(steps, system_agents, individual_agents, total_resources)
 
-            # Add vertical line for current step
-            self.ax1.axvline(
-                x=self.current_step, color="gray", linestyle="--", alpha=0.5
-            )
-
-            # Set axis limits to show full simulation
-            self.ax1.set_xlim(0, max(steps))
-
-            # Labels and legend
-            self.ax1.set_xlabel("Step")
-            self.ax1.set_ylabel("Agent Count", color="b")
-            # Position the resource count label on the right with proper spacing
-            self.ax2.yaxis.set_label_position("right")
-            self.ax2.set_ylabel("Resource Count", color="g", rotation=270, labelpad=20)
-
-            # Adjust tick positions
-            self.ax2.yaxis.set_ticks_position("right")
-
-            # Adjust tick colors to match the lines
-            self.ax1.tick_params(axis="y", labelcolor="b")
-            self.ax2.tick_params(axis="y", labelcolor="g")
-
-            # Add legends - separate for each axis
-            lines1, labels1 = self.ax1.get_legend_handles_labels()
-            self.ax1.legend(lines1, labels1, loc="upper left")
-
-            lines2, labels2 = self.ax2.get_legend_handles_labels()
-            self.ax2.legend(lines2, labels2, loc="upper right")
+            # Redraw canvas
+            self.canvas.draw_idle()  # Use draw_idle instead of draw for better performance
 
         except Exception as e:
             messagebox.showerror("Chart Error", f"Failed to update charts: {str(e)}")
 
-        # Update the canvas
-        self.canvas.draw()
+    def _update_axis_limits(self, steps, system_agents, individual_agents, total_resources):
+        """Update axis limits only if the data exceeds current limits."""
+        # Get current limits
+        x_min, x_max = self.ax1.get_xlim()
+        y1_min, y1_max = self.ax1.get_ylim()
+        y2_min, y2_max = self.ax2.get_ylim()
+
+        # Calculate new limits with padding
+        padding = 0.1  # 10% padding
+        new_x_max = max(steps) * (1 + padding)
+        new_y1_max = max(max(system_agents), max(individual_agents)) * (1 + padding)
+        new_y2_max = max(total_resources) * (1 + padding)
+
+        # Update limits only if they need to change
+        if new_x_max > x_max:
+            self.ax1.set_xlim(0, new_x_max)
+        
+        if new_y1_max > y1_max:
+            self.ax1.set_ylim(0, new_y1_max)
+        
+        if new_y2_max > y2_max:
+            self.ax2.set_ylim(0, new_y2_max)
+
+        # Adjust layout if needed
+        self.fig.tight_layout()
 
     def run(self):
         """Start the visualization."""
