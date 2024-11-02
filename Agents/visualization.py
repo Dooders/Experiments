@@ -179,20 +179,27 @@ class SimulationVisualizer:
 
         # Draw resources
         for resource in resource_states:
-            x, y = transform(resource[2], resource[3])  # position_x, position_y
             amount = resource[1]  # amount
-            radius = max(3, int(5 * (amount / 30) * scale))  # Scale size with amount and canvas
-            draw.ellipse([(x-radius, y-radius), (x+radius, y+radius)], 
-                        fill='green', outline='white')
+            if amount > 0:  # Only draw if resource has any amount left
+                x, y = transform(resource[2], resource[3])  # position_x, position_y
+                
+                # Calculate color based on amount (fade from green to black)
+                # Assuming max amount is 30
+                color_intensity = int((amount / 30) * 255)
+                resource_color = (0, color_intensity, 0)  # RGB: (0, 0-255, 0)
+                
+                radius = max(3, int(5 * (amount / 30) * scale))  # Scale size with amount and canvas
+                draw.ellipse([(x-radius, y-radius), (x+radius, y+radius)], 
+                            fill=resource_color, outline=resource_color)
 
         # Draw agents
         for agent in agent_states:
             x, y = transform(agent[2], agent[3])  # position_x, position_y
             agent_type = agent[1]  # agent_type
             color = 'blue' if agent_type == 'SystemAgent' else 'red'
-            radius = max(2, int(3 * scale))  # Scale agent size with canvas
+            radius = max(1, int(2 * scale))  # Reduced from max(2, int(3 * scale))
             draw.ellipse([(x-radius, y-radius), (x+radius, y+radius)], 
-                        fill=color, outline='white')
+                        fill=color)
 
         # Add step number - scale font size with canvas and move it inside the padding
         font_size = max(10, int(min(width, height) / 40))
