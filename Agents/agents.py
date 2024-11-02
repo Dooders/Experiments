@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from colorama import Fore, Style, init  # Add color support for console
+from config import SimulationConfig
 from database import SimulationDatabase
 from PIL import Image, ImageDraw, ImageFont
 from visualization import SimulationVisualizer
@@ -856,34 +857,26 @@ def visualize_results(df):
 # ==============================
 
 
-def main(
-    num_steps=500,
-    agent_population=None,
-    resource_distribution=None,
-    db_path="simulation_results.db",
-    max_resource=None,
-):
+def main(num_steps=500, config=None, db_path="simulation_results.db"):
     """Run the simulation with the given parameters."""
     # Setup logging
     setup_logging()
 
-    # Use default parameters if none provided
-    if agent_population is None:
-        agent_population = {"system_agents": 5, "individual_agents": 5}
-    if resource_distribution is None:
-        resource_distribution = {"type": "random", "amount": 20}
+    # Use default parameters if no config provided
+    if config is None:
+        config = SimulationConfig()
 
     # Setup experiment
     environment = Environment(
-        width=100,
-        height=100,
-        resource_distribution=resource_distribution,
+        width=config.width,
+        height=config.height,
+        resource_distribution={"type": "random", "amount": config.initial_resources},
         db_path=db_path,
-        max_resource=max_resource,
+        max_resource=config.max_resource_amount,
     )
 
     # Initialize agents
-    for _ in range(agent_population["system_agents"]):
+    for _ in range(config.system_agents):
         position = (
             random.uniform(0, environment.width),
             random.uniform(0, environment.height),
@@ -891,12 +884,12 @@ def main(
         agent = SystemAgent(
             agent_id=environment.get_next_agent_id(),
             position=position,
-            resource_level=5,
+            resource_level=config.initial_resource_level,
             environment=environment,
         )
         environment.add_agent(agent)
 
-    for _ in range(agent_population["individual_agents"]):
+    for _ in range(config.individual_agents):
         position = (
             random.uniform(0, environment.width),
             random.uniform(0, environment.height),
@@ -904,7 +897,7 @@ def main(
         agent = IndividualAgent(
             agent_id=environment.get_next_agent_id(),
             position=position,
-            resource_level=5,
+            resource_level=config.initial_resource_level,
             environment=environment,
         )
         environment.add_agent(agent)
