@@ -850,7 +850,7 @@ def main(num_steps=500, agent_population=None, resource_distribution=None, db_pa
 
     # Use default parameters if none provided
     if agent_population is None:
-        agent_population = {"system_agents": 25, "individual_agents": 25}
+        agent_population = {"system_agents": 5, "individual_agents": 5}
     if resource_distribution is None:
         resource_distribution = {"type": "random", "amount": 60}
 
