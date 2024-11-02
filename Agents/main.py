@@ -31,44 +31,64 @@ class SimulationGUI:
         self.main_frame = ttk.Frame(self.root)
         self.main_frame.pack(fill=tk.BOTH, expand=True)
 
+        # Configure grid weights for main frame
+        self.main_frame.grid_columnconfigure(0, weight=3)  # Left pane gets more space
+        self.main_frame.grid_columnconfigure(1, weight=1)  # Right pane
+        self.main_frame.grid_rowconfigure(0, weight=1)  # Allow vertical expansion
+
         # Create left and right panes
         self.left_pane = ttk.Frame(self.main_frame)
         self.right_pane = ttk.Frame(self.main_frame)
-        self.left_pane.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
-        self.right_pane.pack(side=tk.RIGHT, fill=tk.BOTH, padx=5, pady=5)
+        self.left_pane.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        self.right_pane.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
+
+        # Configure right pane grid weights
+        self.right_pane.grid_columnconfigure(0, weight=1)
+        self.right_pane.grid_rowconfigure(0, weight=1)  # Log frame expands
+        self.right_pane.grid_rowconfigure(1, weight=0)  # Progress frame stays small
 
         # Setup log frame in right pane
         self.log_frame = ttk.LabelFrame(self.right_pane, text="Simulation Log")
-        self.log_frame.pack(fill=tk.BOTH, expand=True)
+        self.log_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 5))
+
+        # Configure log frame grid
+        self.log_frame.grid_columnconfigure(0, weight=1)
+        self.log_frame.grid_rowconfigure(0, weight=1)
 
         # Create log text widget with scrollbar
-        self.log_scrollbar = ttk.Scrollbar(self.log_frame)
-        self.log_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
         self.log_text = tk.Text(
             self.log_frame,
             wrap=tk.WORD,
-            yscrollcommand=self.log_scrollbar.set,
             bg="black",
-            fg="green",
+            fg="#00FF00",
             font=("Courier", 10),
             height=20,
             width=50,
         )
-        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.log_scrollbar.config(command=self.log_text.yview)
+        self.log_text.grid(row=0, column=0, sticky="nsew")
+
+        self.log_scrollbar = ttk.Scrollbar(self.log_frame, command=self.log_text.yview)
+        self.log_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.log_text.configure(yscrollcommand=self.log_scrollbar.set)
 
         # Setup progress frame
         self.progress_frame = ttk.LabelFrame(self.right_pane, text="Progress")
-        self.progress_frame.pack(fill=tk.X, pady=5)
+        self.progress_frame.grid(row=1, column=0, sticky="ew")
+
+        # Configure progress frame grid
+        self.progress_frame.grid_columnconfigure(0, weight=1)
 
         self.progress_label = ttk.Label(self.progress_frame, text="Ready")
-        self.progress_label.pack(pady=5)
+        self.progress_label.grid(row=0, column=0, pady=5)
 
         self.progress_bar = ttk.Progressbar(
             self.progress_frame, mode="indeterminate", length=200
         )
-        self.progress_bar.pack(pady=5)
+        self.progress_bar.grid(row=1, column=0, pady=5, sticky="ew")
+
+        # Configure left pane grid
+        self.left_pane.grid_columnconfigure(0, weight=1)
+        self.left_pane.grid_rowconfigure(0, weight=1)
 
         # Welcome message in left pane
         self.welcome_label = ttk.Label(
@@ -76,7 +96,7 @@ class SimulationGUI:
             text="Welcome to Agent-Based Simulation\n\nUse the menu to start a new simulation or open an existing one.",
             justify=tk.CENTER,
         )
-        self.welcome_label.pack(expand=True)
+        self.welcome_label.grid(row=0, column=0, sticky="nsew")
 
     def log_message(self, message):
         """Add a message to the log."""
@@ -87,6 +107,9 @@ class SimulationGUI:
     def _new_simulation(self):
         """Start a new simulation."""
         try:
+            # Restore default layout
+            self._restore_default_layout()
+
             # Clear log
             self.log_text.delete(1.0, tk.END)
 
@@ -101,6 +124,11 @@ class SimulationGUI:
 
             # Load default configuration
             config = SimulationConfig.from_yaml("Agents/config.yaml")
+
+            # Remove all existing handlers from root logger to prevent double logging
+            root_logger = logging.getLogger()
+            for handler in root_logger.handlers[:]:
+                root_logger.removeHandler(handler)
 
             # Setup logging handler to capture logs
             class LogHandler(logging.Handler):
@@ -145,6 +173,12 @@ class SimulationGUI:
         """Handle simulation completion."""
         self.progress_bar.stop()
         self.progress_label.config(text="Simulation completed")
+
+        # Hide log and progress frames
+        self.log_frame.grid_remove()
+        self.progress_frame.grid_remove()
+
+        # Start visualizer
         self._start_visualizer()
 
     def _simulation_error(self, error_msg):
@@ -158,6 +192,16 @@ class SimulationGUI:
         # Clear left pane
         for widget in self.left_pane.winfo_children():
             widget.destroy()
+
+        # Hide right pane completely
+        self.right_pane.grid_remove()
+
+        # Configure main frame to use full width
+        self.main_frame.grid_columnconfigure(0, weight=1)  # Left pane gets full width
+        self.main_frame.grid_columnconfigure(1, weight=0)  # Right pane hidden
+
+        # Reconfigure left pane to use full width
+        self.left_pane.grid(sticky="nsew", padx=5, pady=5, columnspan=2)
 
         # Create visualizer in left pane
         self.visualizer = SimulationVisualizer(
@@ -474,6 +518,24 @@ class SimulationGUI:
         root_logger.addHandler(gui_handler)
 
         logging.info("Logging system initialized")
+
+    def _restore_default_layout(self):
+        """Restore the default layout with log and progress frames."""
+        # Show right pane
+        self.right_pane.grid()
+
+        # Reset left pane to original position
+        self.left_pane.grid(
+            row=0, column=0, sticky="nsew", padx=5, pady=5, columnspan=1
+        )
+
+        # Restore original grid weights
+        self.main_frame.grid_columnconfigure(0, weight=3)
+        self.main_frame.grid_columnconfigure(1, weight=1)
+
+        # Show log and progress frames
+        self.log_frame.grid()
+        self.progress_frame.grid()
 
 
 def main():
