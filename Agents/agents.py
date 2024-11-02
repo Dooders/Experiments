@@ -10,6 +10,9 @@ import logging
 from datetime import datetime
 import os
 from colorama import init, Fore, Style  # Add color support for console
+from PIL import Image
+import io
+from PIL import ImageDraw, ImageFont
 
 # ==============================
 # Environment Setup
@@ -310,12 +313,23 @@ class SystemAgent(Agent):
                     break
 
     def get_nearby_system_agents(self):
-        # Find nearby system agents (dummy logic for now)
-        return [
-            agent
-            for agent in self.environment.agents
-            if isinstance(agent, SystemAgent) and agent != self
-        ]
+        # Define the maximum distance for considering agents as "nearby"
+        max_distance = 30  # Adjust this value based on your simulation needs
+        
+        nearby_agents = []
+        for agent in self.environment.agents:
+            if isinstance(agent, SystemAgent) and agent != self and agent.alive:
+                # Calculate Euclidean distance between agents
+                distance = np.sqrt(
+                    (self.position[0] - agent.position[0]) ** 2 +
+                    (self.position[1] - agent.position[1]) ** 2
+                )
+                
+                # Add agent to nearby list if within range
+                if distance <= max_distance:
+                    nearby_agents.append(agent)
+        
+        return nearby_agents
 
     def transfer_resources(self, agent):
         # Transfer resources to another agent
@@ -463,11 +477,75 @@ def setup_logging():
     logging.root.addHandler(console_handler)
 
 
+def create_resource_grid(environment, step_number):
+    # Set scaling factor (e.g., 4x larger)
+    scale = 4
+    width = environment.width * scale
+    height = environment.height * scale
+    
+    # Create a larger grid
+    grid = np.zeros((height, width, 3), dtype=np.uint8)
+    
+    # Convert resource positions to scaled integer coordinates
+    for resource in environment.resources:
+        x = int(resource.position[0] * scale)
+        y = int(resource.position[1] * scale)
+        x = min(max(x, 0), width - 1)
+        y = min(max(y, 0), height - 1)
+        value = resource.amount
+        
+        # Make resources appear larger by filling a small square
+        for dx in range(-1, 2):
+            for dy in range(-1, 2):
+                new_x = min(max(x + dx, 0), width - 1)
+                new_y = min(max(y + dy, 0), height - 1)
+                grid[new_y, new_x] = [value, value, value]
+    
+    # Normalize to 0-255 range
+    if grid.max() > 0:
+        grid = (grid / grid.max() * 255).astype(np.uint8)
+    
+    # Add agents as larger red dots
+    for agent in environment.agents:
+        if agent.alive:
+            x = int(agent.position[0] * scale)
+            y = int(agent.position[1] * scale)
+            x = min(max(x, 0), width - 1)
+            y = min(max(y, 0), height - 1)
+            
+            # Make agents appear as larger dots
+            for dx in range(-2, 3):
+                for dy in range(-2, 3):
+                    new_x = min(max(x + dx, 0), width - 1)
+                    new_y = min(max(y + dy, 0), height - 1)
+                    grid[new_y, new_x] = [255, 0, 0]
+    
+    # Convert to PIL Image
+    img = Image.fromarray(grid)
+    
+    # Add cycle number text
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype("arial.ttf", 16)
+    except:
+        font = ImageFont.load_default()
+    
+    draw.text((10, 10), f"Cycle: {step_number}", fill=(255, 255, 255), font=font)
+    
+    return img
+
+
 def run_simulation(environment, num_steps, data_collector):
     logging.info(f"Starting simulation with {len(environment.agents)} agents")
     logging.info(f"Initial resources: {sum(r.amount for r in environment.resources)}")
-
+    
+    frames = []
+    
     for step in range(num_steps):
+        # Create and store the current frame with step number
+        img = create_resource_grid(environment, step)
+        frames.append(img)
+        
         if step % 100 == 0:  # Log every 100 steps
             alive_agents = sum(1 for agent in environment.agents if agent.alive)
             total_resources = sum(r.amount for r in environment.resources)
@@ -480,9 +558,7 @@ def run_simulation(environment, num_steps, data_collector):
             logging.info(f"Total resources: {total_resources}")
             logging.info(f"Average agent resources: {avg_agent_resources:.2f}")
 
-        for agent in environment.agents[
-            :
-        ]:  # Use a slice to avoid issues when removing agents
+        for agent in environment.agents[:]:
             if agent.alive:
                 agent.act()
                 agent.move()
@@ -490,13 +566,21 @@ def run_simulation(environment, num_steps, data_collector):
             else:
                 environment.agents.remove(agent)
                 agent.die()
-                # logging.info(f"Agent {agent.agent_id} died")
 
         # Environment updates
         environment.update()
 
         # Data collection
         data_collector.collect(environment, step)
+    
+    # Save the animation
+    frames[0].save(
+        'Agents/resource_distribution.gif',
+        save_all=True,
+        append_images=frames[1:],
+        duration=50,  # Duration for each frame in milliseconds
+        loop=0
+    )
 
 
 # ==============================
@@ -603,7 +687,7 @@ def main():
     setup_logging()
 
     # Define simulation parameters
-    num_steps = 10000
+    num_steps = 500
     environment_size = (100, 100)
     resource_distribution = {
         "type": "random", 
