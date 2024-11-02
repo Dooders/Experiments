@@ -85,6 +85,8 @@ class SimulationVisualizer:
 
     def _setup_chart(self):
         self.fig = Figure(figsize=(8, 4))
+        # Add spacing on the right for the label
+        self.fig.subplots_adjust(right=0.85)
         self.ax1 = self.fig.add_subplot(111)
         self.ax2 = self.ax1.twinx()
         
@@ -376,12 +378,23 @@ class SimulationVisualizer:
             # Labels and legend
             self.ax1.set_xlabel('Step')
             self.ax1.set_ylabel('Agent Count', color='b')
-            self.ax2.set_ylabel('Resource Count', color='g')
+            # Position the resource count label on the right with proper spacing
+            self.ax2.yaxis.set_label_position('right')
+            self.ax2.set_ylabel('Resource Count', color='g', rotation=270, labelpad=20)
             
-            # Add legends
+            # Adjust tick positions
+            self.ax2.yaxis.set_ticks_position('right')
+            
+            # Adjust tick colors to match the lines
+            self.ax1.tick_params(axis='y', labelcolor='b')
+            self.ax2.tick_params(axis='y', labelcolor='g')
+            
+            # Add legends - separate for each axis
             lines1, labels1 = self.ax1.get_legend_handles_labels()
+            self.ax1.legend(lines1, labels1, loc='upper left')
+            
             lines2, labels2 = self.ax2.get_legend_handles_labels()
-            self.ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+            self.ax2.legend(lines2, labels2, loc='upper right')
 
         # Update the canvas
         self.canvas.draw()

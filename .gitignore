@@ -113,3 +113,4 @@ venv/
 # Test data
 test_data/
 .pytest_cache/
+simulation_results.db-journal
