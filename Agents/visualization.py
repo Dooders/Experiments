@@ -12,39 +12,41 @@ from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 class SimulationVisualizer:
     def __init__(self, root, db_path="simulation_results.db"):
+        # Core attributes
         self.root = root
         self.root.title("Agent-Based Simulation Visualizer")
         self.db = SimulationDatabase(db_path)
         self.current_step = 0
         self.playing = False
-
+        self.was_playing = False
+        
+        # Animation and state tracking
+        self.birth_animations = {}  # {agent_id: (position, frame)}
+        self.death_animations = {}  # {agent_id: (position, frame)}
+        self.max_animation_frames = 5
+        self.previous_agent_ids = set()
+        self.previous_agent_states = []
+        self.is_dragging = False
+        self.canvas_size = (400, 400)  # Default size
+        
         # Create main containers
-        self.stats_frame = ttk.LabelFrame(
-            root, text="Simulation Statistics", padding=10
-        )
+        self.stats_frame = ttk.LabelFrame(root, text="Simulation Statistics", padding=10)
         self.stats_frame.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
 
-        self.chart_frame = ttk.LabelFrame(
-            root, text="Population & Resources", padding=10
-        )
+        self.chart_frame = ttk.LabelFrame(root, text="Population & Resources", padding=10)
         self.chart_frame.grid(row=0, column=1, rowspan=2, padx=5, pady=5, sticky="nsew")
 
         self.env_frame = ttk.LabelFrame(root, text="Environment View", padding=10)
         self.env_frame.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
 
         self.controls_frame = ttk.Frame(root, padding=10)
-        self.controls_frame.grid(
-            row=2, column=0, columnspan=2, padx=5, pady=5, sticky="ew"
-        )
+        self.controls_frame.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="ew")
 
         # Configure grid weights
         root.grid_columnconfigure(1, weight=1)
         root.grid_rowconfigure(0, weight=1)
 
-        self.birth_animations = {}  # {agent_id: (position, frame)}
-        self.death_animations = {}  # {agent_id: (position, frame)}
-        self.max_animation_frames = 5
-
+        # Initialize UI components
         self._setup_stats_panel()
         self._setup_chart()
         self._setup_environment_view()
@@ -53,7 +55,7 @@ class SimulationVisualizer:
         # Get total simulation length
         self.total_steps = self._get_total_steps()
 
-        # Initialize with first frame
+        # Initialize visualization
         self.root.update_idletasks()
         self._step_to(0)
         self.root.update()
@@ -330,14 +332,31 @@ class SimulationVisualizer:
 
     def _draw_environment(self, agent_states, resource_states):
         """Draw the current state of the environment with auto-scaling."""
-        # Get canvas dimensions
+        # Get canvas dimensions and create image
         width, height = self.canvas_size
-
-        # Create a new image at canvas size
         img = Image.new("RGB", (width, height), "black")
         draw = ImageDraw.Draw(img)
 
-        # Calculate scaling factors
+        # Calculate transformation parameters
+        transform_params = self._calculate_transform_params(resource_states, width, height)
+        
+        # Track current agents for birth/death detection
+        self._update_animation_states(agent_states)
+        
+        # Draw environment elements
+        self._draw_resources(draw, resource_states, transform_params)
+        self._draw_agents(draw, agent_states, transform_params)
+        self._draw_birth_animations(draw, transform_params)
+        self._draw_death_animations(draw, transform_params)
+        self._draw_step_number(draw, transform_params)
+
+        # Update canvas
+        photo = ImageTk.PhotoImage(img)
+        self.env_canvas.create_image(0, 0, image=photo, anchor="nw")
+        self.env_canvas.image = photo  # Keep reference to prevent garbage collection
+
+    def _calculate_transform_params(self, resource_states, width, height):
+        """Calculate scaling and offset parameters for coordinate transformation."""
         padding = 20
         env_width = max(x for _, _, x, _ in resource_states + [(0, 0, 100, 0)])
         env_height = max(y for _, _, _, y in resource_states + [(0, 0, 0, 100)])
@@ -346,161 +365,154 @@ class SimulationVisualizer:
         scale_y = (height - 2 * padding) / env_height
         scale = min(scale_x, scale_y)
 
-        # Calculate offset to center the environment
-        offset_x = (width - (env_width * scale)) / 2
-        offset_y = (height - (env_height * scale)) / 2
+        offset_x = max(padding, (width - (env_width * scale)) / 2)
+        offset_y = max(padding, (height - (env_height * scale)) / 2)
 
-        # Ensure minimum padding
-        offset_x = max(padding, offset_x)
-        offset_y = max(padding, offset_y)
+        return {
+            'scale': scale,
+            'offset_x': offset_x,
+            'offset_y': offset_y,
+            'padding': padding,
+            'width': width,
+            'height': height
+        }
 
-        def transform(x, y):
-            """Transform environment coordinates to screen coordinates."""
-            return (offset_x + x * scale, offset_y + y * scale)
+    def _transform_coords(self, x, y, params):
+        """Transform environment coordinates to screen coordinates."""
+        return (
+            params['offset_x'] + x * params['scale'],
+            params['offset_y'] + y * params['scale']
+        )
 
-        # Draw resources as rounded squares
-        for resource in resource_states:
-            amount = resource[1]  # amount
-            if amount > 0:  # Only draw if resource has any amount left
-                x, y = transform(resource[2], resource[3])  # position_x, position_y
+    def _update_animation_states(self, agent_states):
+        """Update birth and death animation states."""
+        current_agent_ids = {agent[0] for agent in agent_states}
 
-                # Calculate color based on amount (black to radioactive green)
-                # Using a more vibrant green for the "radioactive" effect
-                max_amount = 30  # Assuming max amount is 30
-                intensity = amount / max_amount
+        # Check for new births
+        new_births = current_agent_ids - self.previous_agent_ids
+        for agent_id in new_births:
+            agent_data = next(a for a in agent_states if a[0] == agent_id)
+            pos = (agent_data[2], agent_data[3])
+            self.birth_animations[agent_id] = (pos, 0)
 
-                # Create a gradient from black to radioactive green
-                # RGB values for a more "radioactive" green effect
-                green = int(255 * intensity)  # Base green
-                red = int(150 * intensity)  # Add some red for glow effect
-                blue = int(50 * intensity)  # Small amount of blue
-
-                resource_color = (red, green, blue)
-
-                # Calculate square size to match agent size
-                size = max(1, int(2 * scale))  # Same as agent radius
-                radius = int(size * 0.2)  # 20% of size for corner radius
-
-                # Define square corners
-                x1, y1 = x - size, y - size
-                x2, y2 = x + size, y + size
-
-                # Draw rounded rectangle
-                # First draw the main rectangle
-                draw.rectangle([x1, y1, x2, y2], fill=resource_color)
-
-                # Then draw four circles at corners for rounding
-                draw.ellipse(
-                    [x1, y1, x1 + radius * 2, y1 + radius * 2], fill=resource_color
-                )
-                draw.ellipse(
-                    [x2 - radius * 2, y1, x2, y1 + radius * 2], fill=resource_color
-                )
-                draw.ellipse(
-                    [x1, y2 - radius * 2, x1 + radius * 2, y2], fill=resource_color
-                )
-                draw.ellipse(
-                    [x2 - radius * 2, y2 - radius * 2, x2, y2], fill=resource_color
-                )
-
-        # Track current agents for birth/death detection
-        current_agent_ids = {agent[0] for agent in agent_states}  # agent[0] is agent_id
-
-        # Check for new births (agents that weren't in the previous frame)
-        if hasattr(self, "previous_agent_ids"):
-            new_births = current_agent_ids - self.previous_agent_ids
-            for agent_id in new_births:
-                agent_data = next(a for a in agent_states if a[0] == agent_id)
-                pos = (agent_data[2], agent_data[3])  # x, y position
-                self.birth_animations[agent_id] = (pos, 0)  # Start animation
-
-            # Check for deaths (agents that were in previous frame but not current)
-            deaths = self.previous_agent_ids - current_agent_ids
-            for agent_id in deaths:
-                # Find the last known position from previous frame
-                if hasattr(self, "previous_agent_states"):
-                    agent_data = next(
-                        (a for a in self.previous_agent_states if a[0] == agent_id),
-                        None,
-                    )
-                    if agent_data:
-                        pos = (agent_data[2], agent_data[3])  # x, y position
-                        self.death_animations[agent_id] = (pos, 0)  # Start animation
+        # Check for deaths
+        deaths = self.previous_agent_ids - current_agent_ids
+        for agent_id in deaths:
+            if agent_data := next((a for a in self.previous_agent_states if a[0] == agent_id), None):
+                pos = (agent_data[2], agent_data[3])
+                self.death_animations[agent_id] = (pos, 0)
 
         self.previous_agent_ids = current_agent_ids
         self.previous_agent_states = agent_states
 
-        # Draw agents
-        for agent in agent_states:
-            x, y = transform(agent[2], agent[3])
-            agent_type = agent[1]
-            color = "blue" if agent_type == "SystemAgent" else "red"
-            radius = max(1, int(2 * scale))
+    def _draw_resources(self, draw, resource_states, params):
+        """Draw resources as rounded squares with intensity-based coloring."""
+        for resource in resource_states:
+            amount = resource[1]
+            if amount > 0:
+                x, y = self._transform_coords(resource[2], resource[3], params)
+                
+                # Calculate color intensity and size
+                intensity = amount / 30  # Assuming max amount is 30
+                resource_color = (
+                    int(150 * intensity),  # Red component for glow
+                    int(255 * intensity),  # Green component
+                    int(50 * intensity)    # Blue component
+                )
+                
+                size = max(1, int(2 * params['scale']))
+                radius = int(size * 0.2)
+
+                # Draw rounded rectangle
+                self._draw_rounded_rectangle(draw, x, y, size, radius, resource_color)
+
+    def _draw_rounded_rectangle(self, draw, x, y, size, radius, color):
+        """Helper method to draw a rounded rectangle."""
+        x1, y1 = x - size, y - size
+        x2, y2 = x + size, y + size
+
+        # Main rectangle
+        draw.rectangle([x1, y1, x2, y2], fill=color)
+        
+        # Corner circles
+        corners = [
+            (x1, y1),           # Top-left
+            (x2 - radius*2, y1), # Top-right
+            (x1, y2 - radius*2), # Bottom-left
+            (x2 - radius*2, y2 - radius*2)  # Bottom-right
+        ]
+        
+        for corner_x, corner_y in corners:
             draw.ellipse(
-                [(x - radius, y - radius), (x + radius, y + radius)], fill=color
+                [corner_x, corner_y, corner_x + radius*2, corner_y + radius*2],
+                fill=color
             )
 
-        # Draw birth animations (expanding white circle)
+    def _draw_agents(self, draw, agent_states, params):
+        """Draw agents as colored circles."""
+        for agent in agent_states:
+            x, y = self._transform_coords(agent[2], agent[3], params)
+            color = "blue" if agent[1] == "SystemAgent" else "red"
+            radius = max(1, int(2 * params['scale']))
+            draw.ellipse(
+                [(x - radius, y - radius), (x + radius, y + radius)],
+                fill=color
+            )
+
+    def _draw_birth_animations(self, draw, params):
+        """Draw expanding circle animations for new agents."""
         births_to_remove = []
         for agent_id, (pos, frame) in self.birth_animations.items():
             if frame < self.max_animation_frames:
-                x, y = transform(pos[0], pos[1])
-                radius = (
-                    max(2, int(4 * scale)) * (frame + 1) / self.max_animation_frames
-                )
-                # Draw white circle with decreasing opacity
+                x, y = self._transform_coords(pos[0], pos[1], params)
+                radius = max(2, int(4 * params['scale'])) * (frame + 1) / self.max_animation_frames
                 opacity = int(255 * (1 - frame / self.max_animation_frames))
                 draw.ellipse(
                     [(x - radius, y - radius), (x + radius, y + radius)],
-                    outline=(255, 255, 255, opacity),
+                    outline=(255, 255, 255, opacity)
                 )
                 self.birth_animations[agent_id] = (pos, frame + 1)
             else:
                 births_to_remove.append(agent_id)
+        
+        for agent_id in births_to_remove:
+            del self.birth_animations[agent_id]
 
-        # Draw death animations (fading X mark)
+    def _draw_death_animations(self, draw, params):
+        """Draw fading X mark animations for dying agents."""
         deaths_to_remove = []
         for agent_id, (pos, frame) in self.death_animations.items():
             if frame < self.max_animation_frames:
-                x, y = transform(pos[0], pos[1])
-                size = max(1, int(1.5 * scale))
-                # Draw X mark with decreasing opacity
+                x, y = self._transform_coords(pos[0], pos[1], params)
+                size = max(1, int(1.5 * params['scale']))
                 opacity = int(128 * (1 - frame / self.max_animation_frames))
                 color = (255, 0, 0, opacity)  # Red X
 
                 # Draw X
-                draw.line(
-                    [(x - size, y - size), (x + size, y + size)], fill=color, width=1
-                )
-                draw.line(
-                    [(x - size, y + size), (x + size, y - size)], fill=color, width=1
-                )
+                draw.line([(x - size, y - size), (x + size, y + size)], fill=color, width=1)
+                draw.line([(x - size, y + size), (x + size, y - size)], fill=color, width=1)
 
                 self.death_animations[agent_id] = (pos, frame + 1)
             else:
                 deaths_to_remove.append(agent_id)
-
-        # Clean up completed animations
-        for agent_id in births_to_remove:
-            del self.birth_animations[agent_id]
+        
         for agent_id in deaths_to_remove:
             del self.death_animations[agent_id]
 
-        # Add step number
-        font_size = max(10, int(min(width, height) / 40))
+    def _draw_step_number(self, draw, params):
+        """Draw the current step number on the visualization."""
+        font_size = max(10, int(min(params['width'], params['height']) / 40))
         try:
             font = ImageFont.truetype("arial.ttf", font_size)
         except:
             font = ImageFont.load_default()
 
         draw.text(
-            (padding, padding), f"Step: {self.current_step}", fill="white", font=font
+            (params['padding'], params['padding']),
+            f"Step: {self.current_step}",
+            fill="white",
+            font=font
         )
-
-        # Update canvas
-        photo = ImageTk.PhotoImage(img)
-        self.env_canvas.create_image(0, 0, image=photo, anchor="nw")
-        self.env_canvas.image = photo  # Keep reference to prevent garbage collection
 
     def _update_charts(self):
         """Update the population and resource charts with historical data."""
