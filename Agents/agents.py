@@ -1,24 +1,18 @@
+import logging
+import os
 import random
-import pandas as pd
+import tkinter as tk
+from collections import deque
+from datetime import datetime
+
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from collections import deque
-import logging
-from datetime import datetime
-import os
-from colorama import init, Fore, Style  # Add color support for console
-from PIL import Image
-import io
-from PIL import ImageDraw, ImageFont
-import tkinter as tk
-from tkinter import ttk
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from PIL import Image, ImageTk
-
+from colorama import Fore, Style, init  # Add color support for console
+from PIL import Image, ImageDraw, ImageFont
 from visualization import SimulationVisualizer
 
 # ==============================
@@ -39,9 +33,9 @@ class Environment:
         for i in range(distribution["amount"]):
             position = (random.uniform(0, self.width), random.uniform(0, self.height))
             resource = Resource(
-                resource_id=i, 
-                position=position, 
-                amount=random.randint(10, 30)  # Increased initial resource amounts
+                resource_id=i,
+                position=position,
+                amount=random.randint(10, 30),  # Increased initial resource amounts
             )
             self.resources.append(resource)
 
@@ -54,7 +48,9 @@ class Environment:
 
     def regenerate_resources(self):
         for resource in self.resources:
-            if resource.amount < 30 and random.random() < 0.1:  # Increased regen chance and max amount
+            if (
+                resource.amount < 30 and random.random() < 0.1
+            ):  # Increased regen chance and max amount
                 resource.amount += 2  # Increased regen amount
 
 
@@ -245,7 +241,7 @@ class Agent:
     def act(self):
         # Reduced base resource consumption
         self.resource_level -= 0.1  # Reduced from 0.2
-        
+
         if self.resource_level <= 0:
             self.starvation_threshold += 1
             if self.starvation_threshold >= self.max_starvation:
@@ -283,7 +279,7 @@ class SystemAgent(Agent):
         # First check if agent should die
         if not self.alive:
             return
-            
+
         super().act()  # Call parent class act() for death check
         if not self.alive:  # If died during death check, skip the rest
             return
@@ -313,9 +309,11 @@ class SystemAgent(Agent):
                     (self.position[0] - resource.position[0]) ** 2
                     + (self.position[1] - resource.position[1]) ** 2
                 )
-                
+
                 if dist < 20:  # Increased gathering range
-                    gather_amount = min(3, resource.amount)  # Increased gathering amount
+                    gather_amount = min(
+                        3, resource.amount
+                    )  # Increased gathering amount
                     resource.consume(gather_amount)
                     self.resource_level += gather_amount
                     break
@@ -323,20 +321,20 @@ class SystemAgent(Agent):
     def get_nearby_system_agents(self):
         # Define the maximum distance for considering agents as "nearby"
         max_distance = 30  # Adjust this value based on your simulation needs
-        
+
         nearby_agents = []
         for agent in self.environment.agents:
             if isinstance(agent, SystemAgent) and agent != self and agent.alive:
                 # Calculate Euclidean distance between agents
                 distance = np.sqrt(
-                    (self.position[0] - agent.position[0]) ** 2 +
-                    (self.position[1] - agent.position[1]) ** 2
+                    (self.position[0] - agent.position[0]) ** 2
+                    + (self.position[1] - agent.position[1]) ** 2
                 )
-                
+
                 # Add agent to nearby list if within range
                 if distance <= max_distance:
                     nearby_agents.append(agent)
-        
+
         return nearby_agents
 
     def transfer_resources(self, agent):
@@ -351,7 +349,7 @@ class IndividualAgent(Agent):
         # First check if agent should die
         if not self.alive:
             return
-            
+
         super().act()  # Call parent class act() for death check
         if not self.alive:  # If died during death check, skip the rest
             return
@@ -371,15 +369,19 @@ class IndividualAgent(Agent):
                     (self.position[0] - resource.position[0]) ** 2
                     + (self.position[1] - resource.position[1]) ** 2
                 )
-                
+
                 if dist < 20:  # Increased gathering range
-                    gather_amount = min(3, resource.amount)  # Increased gathering amount
+                    gather_amount = min(
+                        3, resource.amount
+                    )  # Increased gathering amount
                     resource.consume(gather_amount)
                     self.resource_level += gather_amount
                     break
 
     def consume_resources(self):
-        self.resource_level = max(0, self.resource_level - 1)  # Ensure it doesn't go negative
+        self.resource_level = max(
+            0, self.resource_level - 1
+        )  # Ensure it doesn't go negative
 
 
 # ==============================
@@ -395,32 +397,43 @@ class DataCollector:
 
     def collect(self, environment, step):
         alive_agents = [agent for agent in environment.agents if agent.alive]
-        system_agents = [agent for agent in environment.agents if isinstance(agent, SystemAgent)]
-        individual_agents = [agent for agent in environment.agents if isinstance(agent, IndividualAgent)]
-        
+        system_agents = [
+            agent for agent in environment.agents if isinstance(agent, SystemAgent)
+        ]
+        individual_agents = [
+            agent for agent in environment.agents if isinstance(agent, IndividualAgent)
+        ]
+
         data_point = {
             "step": step,
             # Existing metrics
             "system_agent_count": len(system_agents),
             "individual_agent_count": len(individual_agents),
-            "total_resources": sum(resource.amount for resource in environment.resources),
+            "total_resources": sum(
+                resource.amount for resource in environment.resources
+            ),
             "total_consumption": sum(agent.resource_level for agent in alive_agents),
             "average_resource_per_agent": (
                 sum(agent.resource_level for agent in alive_agents) / len(alive_agents)
-                if alive_agents else 0
+                if alive_agents
+                else 0
             ),
             # New metrics
             "births": self.births_this_cycle,
             "deaths": self.deaths_this_cycle,
             "average_lifespan": self._calculate_average_lifespan(environment),
             "resource_efficiency": self._calculate_resource_efficiency(alive_agents),
-            "system_agent_territory": self._calculate_territory_control(system_agents, environment),
-            "individual_agent_territory": self._calculate_territory_control(individual_agents, environment),
+            "system_agent_territory": self._calculate_territory_control(
+                system_agents, environment
+            ),
+            "individual_agent_territory": self._calculate_territory_control(
+                individual_agents, environment
+            ),
             "resource_density": self._calculate_resource_density(environment),
-            "population_stability": self._calculate_population_stability()
+            "population_stability": self._calculate_population_stability(),
         }
         self.data.append(data_point)
-        
+
         # Reset cycle-specific counters
         self.births_this_cycle = 0
         self.deaths_this_cycle = 0
@@ -428,23 +441,32 @@ class DataCollector:
     def _calculate_average_lifespan(self, environment):
         # Calculate average time agents have been alive
         alive_agents = [agent for agent in environment.agents if agent.alive]
-        return sum(environment.time - getattr(agent, 'birth_time', 0) 
-                  for agent in alive_agents) / len(alive_agents) if alive_agents else 0
+        return (
+            sum(
+                environment.time - getattr(agent, "birth_time", 0)
+                for agent in alive_agents
+            )
+            / len(alive_agents)
+            if alive_agents
+            else 0
+        )
 
     def _calculate_resource_efficiency(self, agents):
         # Calculate how efficiently agents are using resources
         if not agents:
             return 0
-        return sum(agent.total_reward / max(agent.resource_level, 1) 
-                  for agent in agents) / len(agents)
+        return sum(
+            agent.total_reward / max(agent.resource_level, 1) for agent in agents
+        ) / len(agents)
 
     def _calculate_territory_control(self, agents, environment):
         # Calculate approximate territory control using Voronoi-like approach
         if not agents:
             return 0
         total_area = environment.width * environment.height
-        territory_size = sum(self._estimate_agent_territory(agent, environment) 
-                           for agent in agents)
+        territory_size = sum(
+            self._estimate_agent_territory(agent, environment) for agent in agents
+        )
         return territory_size / total_area
 
     def _calculate_resource_density(self, environment):
@@ -462,22 +484,27 @@ class DataCollector:
 
     def _estimate_agent_territory(self, agent, environment):
         # Simple territory estimation based on distance to nearest other agent
-        nearest_distance = float('inf')
+        nearest_distance = float("inf")
         for other in environment.agents:
             if other != agent and other.alive:
-                dist = np.sqrt((agent.position[0] - other.position[0])**2 +
-                             (agent.position[1] - other.position[1])**2)
+                dist = np.sqrt(
+                    (agent.position[0] - other.position[0]) ** 2
+                    + (agent.position[1] - other.position[1]) ** 2
+                )
                 nearest_distance = min(nearest_distance, dist)
-        return min(np.pi * (nearest_distance/2)**2, 
-                  environment.width * environment.height)
+        return min(
+            np.pi * (nearest_distance / 2) ** 2, environment.width * environment.height
+        )
 
     def _calculate_population_stability(self):
         # Calculate population stability using recent history
         if len(self.data) < 10:
             return 1.0
-        
-        recent_population = [d["system_agent_count"] + d["individual_agent_count"] 
-                           for d in self.data[-10:]]
+
+        recent_population = [
+            d["system_agent_count"] + d["individual_agent_count"]
+            for d in self.data[-10:]
+        ]
         return 1.0 - np.std(recent_population) / max(np.mean(recent_population), 1)
 
     def to_dataframe(self):
@@ -547,10 +574,10 @@ def create_resource_grid(environment, step_number):
     scale = 4
     width = environment.width * scale
     height = environment.height * scale
-    
+
     # Create a larger grid
     grid = np.zeros((height, width, 3), dtype=np.uint8)
-    
+
     # Convert resource positions to scaled integer coordinates
     for resource in environment.resources:
         x = int(resource.position[0] * scale)
@@ -558,18 +585,18 @@ def create_resource_grid(environment, step_number):
         x = min(max(x, 0), width - 1)
         y = min(max(y, 0), height - 1)
         value = resource.amount
-        
+
         # Make resources appear larger by filling a small square
         for dx in range(-1, 2):
             for dy in range(-1, 2):
                 new_x = min(max(x + dx, 0), width - 1)
                 new_y = min(max(y + dy, 0), height - 1)
                 grid[new_y, new_x] = [value, value, value]
-    
+
     # Normalize to 0-255 range
     if grid.max() > 0:
         grid = (grid / grid.max() * 255).astype(np.uint8)
-    
+
     # Add agents as larger red dots
     for agent in environment.agents:
         if agent.alive:
@@ -577,40 +604,40 @@ def create_resource_grid(environment, step_number):
             y = int(agent.position[1] * scale)
             x = min(max(x, 0), width - 1)
             y = min(max(y, 0), height - 1)
-            
+
             # Make agents appear as larger dots
             for dx in range(-2, 3):
                 for dy in range(-2, 3):
                     new_x = min(max(x + dx, 0), width - 1)
                     new_y = min(max(y + dy, 0), height - 1)
                     grid[new_y, new_x] = [255, 0, 0]
-    
+
     # Convert to PIL Image
     img = Image.fromarray(grid)
-    
+
     # Add cycle number text
     draw = ImageDraw.Draw(img)
     try:
         font = ImageFont.truetype("arial.ttf", 16)
     except:
         font = ImageFont.load_default()
-    
+
     draw.text((10, 10), f"Cycle: {step_number}", fill=(255, 255, 255), font=font)
-    
+
     return img
 
 
 def run_simulation(environment, num_steps, data_collector):
     logging.info(f"Starting simulation with {len(environment.agents)} agents")
     logging.info(f"Initial resources: {sum(r.amount for r in environment.resources)}")
-    
+
     frames = []
-    
+
     for step in range(num_steps):
         # Create and store the current frame with step number
         img = create_resource_grid(environment, step)
         frames.append(img)
-        
+
         if step % 100 == 0:  # Log every 100 steps
             alive_agents = sum(1 for agent in environment.agents if agent.alive)
             total_resources = sum(r.amount for r in environment.resources)
@@ -637,14 +664,14 @@ def run_simulation(environment, num_steps, data_collector):
 
         # Data collection
         data_collector.collect(environment, step)
-    
+
     # Save the animation with longer duration per frame
     frames[0].save(
-        'Agents/resource_distribution.gif',
+        "Agents/resource_distribution.gif",
         save_all=True,
         append_images=frames[1:],
         duration=200,  # Changed from 50 to 200 milliseconds per frame
-        loop=0
+        loop=0,
     )
 
 
@@ -750,22 +777,19 @@ def visualize_results(df):
 def main():
     # Setup logging
     setup_logging()
-    
+
     # Create the GUI window
     root = tk.Tk()
     visualizer = SimulationVisualizer(root)
-    
+
     # Define simulation parameters
     num_steps = 500
     environment_size = (100, 100)
     resource_distribution = {
-        "type": "random", 
-        "amount": 60  # Increased number of resources
+        "type": "random",
+        "amount": 60,  # Increased number of resources
     }
-    agent_population = {
-        "system_agents": 25, 
-        "individual_agents": 25
-    }
+    agent_population = {"system_agents": 25, "individual_agents": 25}
     initial_resource_level = 12  # Increased starting resources
     scenario_params = {
         "environment_size": environment_size,
@@ -787,64 +811,82 @@ def main():
                 agent.act()
                 agent.move()
                 agent.reproduce()
-        
+
         # Collect data
         data_collector.collect(environment, environment.time)
-        
+
         # Calculate average lifespan
         alive_agents = [agent for agent in environment.agents if agent.alive]
         if alive_agents:
-            avg_lifespan = sum(environment.time - agent.birth_time for agent in alive_agents) / len(alive_agents)
+            avg_lifespan = sum(
+                environment.time - agent.birth_time for agent in alive_agents
+            ) / len(alive_agents)
         else:
             avg_lifespan = 0
-        
+
         # Calculate resource efficiency
         if alive_agents:
-            resource_efficiency = sum(agent.total_reward / max(agent.resource_level, 1) 
-                                    for agent in alive_agents) / len(alive_agents)
+            resource_efficiency = sum(
+                agent.total_reward / max(agent.resource_level, 1)
+                for agent in alive_agents
+            ) / len(alive_agents)
         else:
             resource_efficiency = 0
-            
+
         # Calculate resource density
         total_area = environment.width * environment.height
         resource_density = sum(r.amount for r in environment.resources) / total_area
-        
+
         # Calculate territory control
-        system_agents = [a for a in environment.agents if isinstance(a, SystemAgent) and a.alive]
-        individual_agents = [a for a in environment.agents if isinstance(a, IndividualAgent) and a.alive]
-        
-        system_territory = data_collector._calculate_territory_control(system_agents, environment)
-        individual_territory = data_collector._calculate_territory_control(individual_agents, environment)
-        
+        system_agents = [
+            a for a in environment.agents if isinstance(a, SystemAgent) and a.alive
+        ]
+        individual_agents = [
+            a for a in environment.agents if isinstance(a, IndividualAgent) and a.alive
+        ]
+
+        system_territory = data_collector._calculate_territory_control(
+            system_agents, environment
+        )
+        individual_territory = data_collector._calculate_territory_control(
+            individual_agents, environment
+        )
+
         # Collect data for visualization
         simulation_data = {
-            'cycle': environment.time,
-            'system_agents': sum(1 for a in environment.agents if isinstance(a, SystemAgent) and a.alive),
-            'individual_agents': sum(1 for a in environment.agents if isinstance(a, IndividualAgent) and a.alive),
-            'total_resources': sum(r.amount for r in environment.resources),
-            'births': data_collector.births_this_cycle,
-            'deaths': data_collector.deaths_this_cycle,
-            'avg_resources': data_collector.calculate_average_resources(environment),
-            'environment_image': create_resource_grid(environment, environment.time),
-            'history': data_collector.to_dataframe(),
-            'population_stability': data_collector._calculate_population_stability(),
-            'average_lifespan': avg_lifespan,
-            'resource_efficiency': resource_efficiency,
-            'resource_density': resource_density,
-            'system_agent_territory': system_territory,
-            'individual_agent_territory': individual_territory
+            "cycle": environment.time,
+            "system_agents": sum(
+                1 for a in environment.agents if isinstance(a, SystemAgent) and a.alive
+            ),
+            "individual_agents": sum(
+                1
+                for a in environment.agents
+                if isinstance(a, IndividualAgent) and a.alive
+            ),
+            "total_resources": sum(r.amount for r in environment.resources),
+            "births": data_collector.births_this_cycle,
+            "deaths": data_collector.deaths_this_cycle,
+            "avg_resources": data_collector.calculate_average_resources(environment),
+            "environment_image": create_resource_grid(environment, environment.time),
+            "history": data_collector.to_dataframe(),
+            "population_stability": data_collector._calculate_population_stability(),
+            "average_lifespan": avg_lifespan,
+            "resource_efficiency": resource_efficiency,
+            "resource_density": resource_density,
+            "system_agent_territory": system_territory,
+            "individual_agent_territory": individual_territory,
         }
-        
+
         # Update the visualization
         visualizer.update(simulation_data)
-        
+
         # Schedule next update if simulation is running
         if environment.time < num_steps:
-            root.after(int(1000/visualizer.speed_scale.get()), simulation_step)
-    
+            root.after(int(1000 / visualizer.speed_scale.get()), simulation_step)
+
     # Start the simulation
     simulation_step()
-    
+
     # Start the GUI event loop
     root.mainloop()
 
