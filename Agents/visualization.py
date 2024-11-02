@@ -62,13 +62,17 @@ class SimulationVisualizer:
 
     def _get_total_steps(self) -> int:
         """Get the total number of steps in the simulation."""
-        self.db.cursor.execute("SELECT MAX(step_number) FROM SimulationSteps")
-        result = self.db.cursor.fetchone()
-        return result[0] if result and result[0] is not None else 0
+        try:
+            self.db.cursor.execute("SELECT MAX(step_number) FROM SimulationSteps")
+            result = self.db.cursor.fetchone()
+            return result[0] if result and result[0] is not None else 0
+        except Exception as e:
+            messagebox.showerror("Database Error", f"Failed to get total steps: {str(e)}")
+            return 0
 
     def _setup_stats_panel(self):
         """Setup statistics panel with card-like metrics in two columns."""
-        # Create container for two columns
+        # Create container for two columns using ttk
         columns_frame = ttk.Frame(self.stats_frame)
         columns_frame.pack(fill="both", expand=True, padx=2)
 
@@ -77,6 +81,12 @@ class SimulationVisualizer:
         right_column = ttk.Frame(columns_frame)
         left_column.pack(side="left", fill="both", expand=True, padx=2)
         right_column.pack(side="left", fill="both", expand=True, padx=2)
+
+        # Configure styles for cards
+        style = ttk.Style()
+        style.configure('Card.TFrame', background='white', relief='solid')
+        style.configure('CardLabel.TLabel', background='white', font=('Arial', 10))
+        style.configure('CardValue.TLabel', background='white', font=('Arial', 14, 'bold'))
 
         # Stats variables with labels and colors
         self.stats_vars = {
@@ -114,51 +124,41 @@ class SimulationVisualizer:
 
         # Create card-like frames for each stat
         for stat_id, stat_info in self.stats_vars.items():
-            # Create card frame in the specified column
-            card = ttk.Frame(stat_info["column"], style=f"{stat_id}.TFrame")
+            # Create card frame with custom style
+            card = ttk.Frame(stat_info["column"], style='Card.TFrame')
             card.pack(fill="x", padx=3, pady=3)
 
-            # Create and configure card style
-            style = ttk.Style()
-            style.configure(f"{stat_id}.TFrame", background=stat_info["color"])
+            # Configure specific style for this stat
+            style.configure(
+                f'{stat_id}.CardLabel.TLabel',
+                foreground=stat_info["color"],
+                background='white',
+                font=('Arial', 10)
+            )
+            style.configure(
+                f'{stat_id}.CardValue.TLabel',
+                foreground='black',
+                background='white',
+                font=('Arial', 14, 'bold')
+            )
 
-            # Inner frame for content with padding
-            inner_frame = tk.Frame(card, bg="white", relief="solid", bd=1)
-            inner_frame.pack(fill="x", padx=1, pady=1)
-
-            # Label frame
-            label_frame = tk.Frame(inner_frame, bg="white")
-            label_frame.pack(fill="x", padx=8, pady=(5, 0))
+            # Inner padding frame
+            padding_frame = ttk.Frame(card, style='Card.TFrame')
+            padding_frame.pack(fill="x", padx=1, pady=1)
 
             # Label
             ttk.Label(
-                label_frame, text=stat_info["label"], style=f"{stat_id}.TLabel"
-            ).pack(anchor="w")
+                padding_frame,
+                text=stat_info["label"],
+                style=f'{stat_id}.CardLabel.TLabel'
+            ).pack(anchor="w", padx=8, pady=(5, 0))
 
-            # Value with larger font
-            value_frame = tk.Frame(inner_frame, bg="white")
-            value_frame.pack(fill="x", padx=8, pady=(0, 5))
-
-            value_label = ttk.Label(
-                value_frame,
+            # Value
+            ttk.Label(
+                padding_frame,
                 textvariable=stat_info["var"],
-                style=f"{stat_id}.Value.TLabel",
-            )
-            value_label.pack(anchor="e")
-
-            # Configure styles for labels
-            style.configure(
-                f"{stat_id}.TLabel",
-                background="white",
-                foreground=stat_info["color"],
-                font=("Arial", 10),
-            )
-            style.configure(
-                f"{stat_id}.Value.TLabel",
-                background="white",
-                foreground="black",
-                font=("Arial", 14, "bold"),
-            )
+                style=f'{stat_id}.CardValue.TLabel'
+            ).pack(anchor="e", padx=8, pady=(0, 5))
 
     def _setup_chart(self):
         """Setup the chart with click interaction."""
@@ -217,9 +217,21 @@ class SimulationVisualizer:
             self._step_to(step)
 
     def _setup_environment_view(self):
-        """Setup the environment view with auto-scaling canvas."""
-        self.env_canvas = tk.Canvas(self.env_frame)
-        self.env_canvas.pack(fill=tk.BOTH, expand=True)
+        """Setup the environment view with ttk styling."""
+        style = ttk.Style()
+        style.configure('Environment.TFrame', background='black')
+        
+        # Create frame for canvas
+        canvas_frame = ttk.Frame(self.env_frame, style='Environment.TFrame')
+        canvas_frame.pack(fill="both", expand=True)
+        
+        # Create canvas with black background
+        self.env_canvas = tk.Canvas(
+            canvas_frame,
+            bg='black',
+            highlightthickness=0
+        )
+        self.env_canvas.pack(fill="both", expand=True)
 
         # Bind resize event
         self.env_canvas.bind("<Configure>", self._on_canvas_resize)
@@ -227,55 +239,82 @@ class SimulationVisualizer:
 
     def _on_canvas_resize(self, event):
         """Handle canvas resize events."""
-        self.canvas_size = (event.width, event.height)
-        # Trigger redraw if we have current data
-        data = self.db.get_simulation_data(self.current_step)
-        if data["agent_states"] or data["resource_states"]:
-            self._update_visualization(data)
+        try:
+            self.canvas_size = (event.width, event.height)
+            # Trigger redraw if we have current data
+            data = self.db.get_simulation_data(self.current_step)
+            if data["agent_states"] or data["resource_states"]:
+                self._update_visualization(data)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to handle resize: {str(e)}")
 
     def _setup_controls(self):
+        """Setup playback controls with consistent ttk styling."""
+        # Configure styles for controls
+        style = ttk.Style()
+        style.configure('Control.TButton', padding=5)
+        
+        # Configure Scale style - need to use the correct style name
+        style.layout('Horizontal.TScale',
+                    [('Horizontal.Scale.trough',
+                      {'sticky': 'nswe',
+                       'children': [('Horizontal.Scale.slider',
+                                   {'side': 'left', 'sticky': ''})]})])
+        style.configure('Horizontal.TScale', background='white')
+        
+        # Control buttons frame
+        buttons_frame = ttk.Frame(self.controls_frame)
+        buttons_frame.pack(side="left", fill="x", expand=True)
+
         # Playback controls
         self.play_button = ttk.Button(
-            self.controls_frame, text="Play/Pause", command=self._toggle_playback
+            buttons_frame,
+            text="Play/Pause",
+            command=self._toggle_playback,
+            style='Control.TButton'
         )
-        self.play_button.pack(side=tk.LEFT, padx=5)
+        self.play_button.pack(side="left", padx=5)
 
-        # Step controls
-        ttk.Button(
-            self.controls_frame,
-            text="<<",
-            command=lambda: self._step_to(self.current_step - 10),
-        ).pack(side=tk.LEFT, padx=2)
-        ttk.Button(
-            self.controls_frame,
-            text="<",
-            command=lambda: self._step_to(self.current_step - 1),
-        ).pack(side=tk.LEFT, padx=2)
-        ttk.Button(
-            self.controls_frame,
-            text=">",
-            command=lambda: self._step_to(self.current_step + 1),
-        ).pack(side=tk.LEFT, padx=2)
-        ttk.Button(
-            self.controls_frame,
-            text=">>",
-            command=lambda: self._step_to(self.current_step + 10),
-        ).pack(side=tk.LEFT, padx=2)
+        # Step controls with consistent styling
+        for text, command in [
+            ("<<", lambda: self._step_to(self.current_step - 10)),
+            ("<", lambda: self._step_to(self.current_step - 1)),
+            (">", lambda: self._step_to(self.current_step + 1)),
+            (">>", lambda: self._step_to(self.current_step + 10))
+        ]:
+            ttk.Button(
+                buttons_frame,
+                text=text,
+                command=command,
+                style='Control.TButton'
+            ).pack(side="left", padx=2)
 
-        # Speed control
-        ttk.Label(self.controls_frame, text="Playback Speed:").pack(
-            side=tk.LEFT, padx=5
-        )
+        # Speed control frame
+        speed_frame = ttk.Frame(self.controls_frame)
+        speed_frame.pack(side="left", fill="x", expand=True, padx=10)
+
+        ttk.Label(
+            speed_frame,
+            text="Playback Speed:",
+        ).pack(side="left", padx=5)
+
+        # Create scale without custom style
         self.speed_scale = ttk.Scale(
-            self.controls_frame, from_=1, to=50, orient=tk.HORIZONTAL
+            speed_frame,
+            from_=1,
+            to=50,
+            orient="horizontal"
         )
         self.speed_scale.set(10)
-        self.speed_scale.pack(side=tk.LEFT, padx=5)
+        self.speed_scale.pack(side="left", padx=5, fill="x", expand=True)
 
-        # Add export button
+        # Export button
         ttk.Button(
-            self.controls_frame, text="Export Data", command=self._export_data
-        ).pack(side=tk.RIGHT, padx=5)
+            self.controls_frame,
+            text="Export Data",
+            command=self._export_data,
+            style='Control.TButton'
+        ).pack(side="right", padx=5)
 
     def _toggle_playback(self):
         self.playing = not self.playing
@@ -283,35 +322,40 @@ class SimulationVisualizer:
             self._play_simulation()
 
     def _play_simulation(self):
+        """Handle simulation playback."""
         if self.playing:
-            data = self.db.get_simulation_data(self.current_step + 1)
-            if (
-                not data["agent_states"] and not data["resource_states"]
-            ):  # No more data at all
-                self.playing = False
-                return
+            try:
+                data = self.db.get_simulation_data(self.current_step + 1)
+                if not data["agent_states"] and not data["resource_states"]:
+                    self.playing = False
+                    return
 
-            self._step_to(self.current_step + 1)
-            # Reduce delay if there are active animations
-            delay = int(1000 / self.speed_scale.get())
-            if self.birth_animations or self.death_animations:
-                delay = min(delay, 50)  # Ensure smooth animations
-            self.root.after(delay, self._play_simulation)
+                self._step_to(self.current_step + 1)
+                # Reduce delay if there are active animations
+                delay = int(1000 / self.speed_scale.get())
+                if self.birth_animations or self.death_animations:
+                    delay = min(delay, 50)  # Ensure smooth animations
+                self.root.after(delay, self._play_simulation)
+            except Exception as e:
+                messagebox.showerror("Playback Error", f"Failed to advance simulation: {str(e)}")
+                self.playing = False
 
     def _step_to(self, step_number):
         """Move to a specific step in the simulation."""
-        data = self.db.get_simulation_data(step_number)
-        if (
-            data["agent_states"] or data["resource_states"]
-        ):  # If we have data for this step
-            self.current_step = step_number
-            self._update_visualization(data)
+        try:
+            data = self.db.get_simulation_data(step_number)
+            if data["agent_states"] or data["resource_states"]:
+                self.current_step = step_number
+                self._update_visualization(data)
 
-            # Show message when agents die out, but continue playback
-            if not data["agent_states"] and self.playing:
-                messagebox.showinfo(
-                    "Population Extinct", f"All agents have died at step {step_number}"
-                )
+                # Show message when agents die out, but continue playback
+                if not data["agent_states"] and self.playing:
+                    messagebox.showinfo(
+                        "Population Extinct", f"All agents have died at step {step_number}"
+                    )
+        except Exception as e:
+            messagebox.showerror("Database Error", f"Failed to load step {step_number}: {str(e)}")
+            self.playing = False  # Stop playback on error
 
     def _update_visualization(self, data):
         """Update all visualization components with new data."""
@@ -516,14 +560,17 @@ class SimulationVisualizer:
 
     def _update_charts(self):
         """Update the population and resource charts with historical data."""
-        # Clear previous plots
-        self.ax1.clear()
-        self.ax2.clear()
+        try:
+            # Clear previous plots
+            self.ax1.clear()
+            self.ax2.clear()
 
-        # Fetch all historical data
-        history = self.db.get_historical_data()
+            # Fetch all historical data
+            history = self.db.get_historical_data()
 
-        if history["steps"]:
+            if not history["steps"]:
+                return  # No data to plot
+
             # Plot agent counts with faded future data
             steps = history["steps"]
             system_agents = history["metrics"]["system_agents"]
@@ -591,6 +638,9 @@ class SimulationVisualizer:
             lines2, labels2 = self.ax2.get_legend_handles_labels()
             self.ax2.legend(lines2, labels2, loc="upper right")
 
+        except Exception as e:
+            messagebox.showerror("Chart Error", f"Failed to update charts: {str(e)}")
+
         # Update the canvas
         self.canvas.draw()
 
@@ -603,18 +653,28 @@ class SimulationVisualizer:
 
     def close(self):
         """Clean up resources."""
-        self.db.close()
+        try:
+            self.db.close()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to close database connection: {str(e)}")
 
     def _export_data(self):
         """Export simulation data to CSV."""
-        from tkinter import filedialog
+        try:
+            from tkinter import filedialog
 
-        filename = filedialog.asksaveasfilename(
-            defaultextension=".csv",
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
-        )
-        if filename:
-            self.db.export_data(filename)
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            )
+            if filename:
+                try:
+                    self.db.export_data(filename)
+                    messagebox.showinfo("Success", "Data exported successfully!")
+                except Exception as e:
+                    messagebox.showerror("Export Error", f"Failed to export data: {str(e)}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open file dialog: {str(e)}")
 
     def _initialize_visualization(self):
         """Initialize the visualization with the first frame of data."""
