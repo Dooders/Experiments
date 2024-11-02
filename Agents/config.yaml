@@ -1,0 +1,28 @@
+# Environment settings
+width: 100
+height: 100
+
+# Agent settings
+system_agents: 25
+individual_agents: 25
+initial_resource_level: 12
+max_population: 300
+
+# Resource settings
+initial_resources: 60
+resource_regen_rate: 0.1
+resource_regen_amount: 2
+max_resource_amount: 30
+
+# Agent behavior settings
+base_consumption_rate: 0.1
+max_movement: 8
+gathering_range: 20
+max_gather_amount: 3
+
+# Learning parameters
+learning_rate: 0.001
+gamma: 0.95
+epsilon_start: 1.0
+epsilon_min: 0.01
+epsilon_decay: 0.995 

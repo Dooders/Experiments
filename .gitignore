@@ -87,4 +87,25 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-simulation_results.db
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated reports and data
+simulation_report.html
+simulation_data.csv
+efficiency_plot.png
+*.png
+*.gif
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment
+.env
+.venv
+env/
+venv/

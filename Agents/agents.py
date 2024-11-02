@@ -636,34 +636,32 @@ def setup_logging():
 
 
 def create_resource_grid(environment, step_number):
-    # Set scaling factor (e.g., 4x larger)
-    scale = 4
+    # Set scaling factor based on window size (assuming typical display)
+    scale = 8  # Increased from 4 to 8 for better visibility
     width = environment.width * scale
     height = environment.height * scale
 
-    # Create a larger grid
+    # Create a black background
     grid = np.zeros((height, width, 3), dtype=np.uint8)
 
-    # Convert resource positions to scaled integer coordinates
+    # Draw resources with larger radius
     for resource in environment.resources:
         x = int(resource.position[0] * scale)
         y = int(resource.position[1] * scale)
         x = min(max(x, 0), width - 1)
         y = min(max(y, 0), height - 1)
-        value = resource.amount
+        value = min(255, resource.amount * 8)  # Scale resource amount to visible range
 
-        # Make resources appear larger by filling a small square
-        for dx in range(-1, 2):
-            for dy in range(-1, 2):
-                new_x = min(max(x + dx, 0), width - 1)
-                new_y = min(max(y + dy, 0), height - 1)
-                grid[new_y, new_x] = [value, value, value]
+        # Make resources appear larger by filling a larger circle
+        radius = 3  # Increased from 1 to 3
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                if dx*dx + dy*dy <= radius*radius:  # Circular shape
+                    new_x = min(max(x + dx, 0), width - 1)
+                    new_y = min(max(y + dy, 0), height - 1)
+                    grid[new_y, new_x] = [0, value, 0]  # Green color for resources
 
-    # Normalize to 0-255 range
-    if grid.max() > 0:
-        grid = (grid / grid.max() * 255).astype(np.uint8)
-
-    # Add agents as larger red dots
+    # Draw agents with larger radius
     for agent in environment.agents:
         if agent.alive:
             x = int(agent.position[0] * scale)
@@ -671,12 +669,17 @@ def create_resource_grid(environment, step_number):
             x = min(max(x, 0), width - 1)
             y = min(max(y, 0), height - 1)
 
+            # Different colors for different agent types
+            color = [255, 0, 0] if isinstance(agent, SystemAgent) else [0, 0, 255]
+            
             # Make agents appear as larger dots
-            for dx in range(-2, 3):
-                for dy in range(-2, 3):
-                    new_x = min(max(x + dx, 0), width - 1)
-                    new_y = min(max(y + dy, 0), height - 1)
-                    grid[new_y, new_x] = [255, 0, 0]
+            radius = 4  # Increased from 2 to 4
+            for dx in range(-radius, radius + 1):
+                for dy in range(-radius, radius + 1):
+                    if dx*dx + dy*dy <= radius*radius:  # Circular shape
+                        new_x = min(max(x + dx, 0), width - 1)
+                        new_y = min(max(y + dy, 0), height - 1)
+                        grid[new_y, new_x] = color
 
     # Convert to PIL Image
     img = Image.fromarray(grid)
@@ -684,7 +687,7 @@ def create_resource_grid(environment, step_number):
     # Add cycle number text
     draw = ImageDraw.Draw(img)
     try:
-        font = ImageFont.truetype("arial.ttf", 16)
+        font = ImageFont.truetype("arial.ttf", 24)  # Increased font size
     except:
         font = ImageFont.load_default()
 
@@ -840,41 +843,46 @@ def visualize_results(df):
 # ==============================
 
 
-def main():
+def main(num_steps=500, agent_population=None, resource_distribution=None, db_path='simulation_results.db'):
+    """Run the simulation with the given parameters."""
     # Setup logging
     setup_logging()
 
-    # Define simulation parameters
-    num_steps = 500
-    environment_size = (100, 100)
-    resource_distribution = {
-        "type": "random",
-        "amount": 60,
-    }
-    agent_population = {"system_agents": 25, "individual_agents": 25}
-    initial_resource_level = 12
+    # Use default parameters if none provided
+    if agent_population is None:
+        agent_population = {"system_agents": 25, "individual_agents": 25}
+    if resource_distribution is None:
+        resource_distribution = {"type": "random", "amount": 60}
 
     # Setup experiment
     environment = Environment(
-        width=environment_size[0],
-        height=environment_size[1],
+        width=100,
+        height=100,
         resource_distribution=resource_distribution,
-        db_path='simulation_results.db'
+        db_path=db_path
     )
 
-    # Initialize agents
+    # Initialize agents - Fixed parameter order to match Agent.__init__
     for _ in range(agent_population["system_agents"]):
         position = (random.uniform(0, environment.width),
                    random.uniform(0, environment.height))
-        agent = SystemAgent(environment.get_next_agent_id(), position,
-                          initial_resource_level, environment)
+        agent = SystemAgent(
+            agent_id=environment.get_next_agent_id(),
+            position=position,
+            resource_level=12,  # Changed from initial_resource_level
+            environment=environment
+        )
         environment.add_agent(agent)
 
     for _ in range(agent_population["individual_agents"]):
         position = (random.uniform(0, environment.width),
                    random.uniform(0, environment.height))
-        agent = IndividualAgent(environment.get_next_agent_id(), position,
-                              initial_resource_level, environment)
+        agent = IndividualAgent(
+            agent_id=environment.get_next_agent_id(),
+            position=position,
+            resource_level=12,  # Changed from initial_resource_level
+            environment=environment
+        )
         environment.add_agent(agent)
 
     # Run simulation
@@ -898,11 +906,12 @@ def main():
     # Close database connection
     environment.db.close()
 
-    # Start visualization
+    return environment
+
+if __name__ == "__main__":
+    # When run directly, start visualization after simulation
+    env = main()
     root = tk.Tk()
     visualizer = SimulationVisualizer(root, db_path='simulation_results.db')
     visualizer.run()
-
-if __name__ == "__main__":
-    main()
     
