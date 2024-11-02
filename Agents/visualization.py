@@ -74,8 +74,21 @@ class SimulationVisualizer:
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
     def _setup_environment_view(self):
-        self.env_canvas = tk.Canvas(self.env_frame, width=400, height=400)
+        """Setup the environment view with auto-scaling canvas."""
+        self.env_canvas = tk.Canvas(self.env_frame)
         self.env_canvas.pack(fill=tk.BOTH, expand=True)
+        
+        # Bind resize event
+        self.env_canvas.bind('<Configure>', self._on_canvas_resize)
+        self.canvas_size = (400, 400)  # Default size
+
+    def _on_canvas_resize(self, event):
+        """Handle canvas resize events."""
+        self.canvas_size = (event.width, event.height)
+        # Trigger redraw if we have current data
+        data = self.db.get_simulation_data(self.current_step)
+        if data['agent_states'] or data['resource_states']:
+            self._update_visualization(data)
 
     def _setup_controls(self):
         # Playback controls
@@ -135,34 +148,73 @@ class SimulationVisualizer:
         self._update_charts()
 
     def _draw_environment(self, agent_states, resource_states):
-        """Draw the current state of the environment."""
-        # Create a new image
-        width = height = 400
+        """Draw the current state of the environment with auto-scaling."""
+        # Get canvas dimensions
+        width, height = self.canvas_size
+
+        # Create a new image at canvas size
         img = Image.new('RGB', (width, height), 'black')
         draw = ImageDraw.Draw(img)
 
+        # Calculate scaling factors - increased padding from 10px to 20px on each side
+        padding = 20
+        env_width = max(x for _, _, x, _ in resource_states + [(0, 0, 100, 0)])  # Default to 100 if no resources
+        env_height = max(y for _, _, _, y in resource_states + [(0, 0, 0, 100)])
+        
+        scale_x = (width - 2*padding) / env_width  # Add padding on both sides
+        scale_y = (height - 2*padding) / env_height
+        scale = min(scale_x, scale_y)  # Use smaller scale to maintain aspect ratio
+
+        # Calculate offset to center the environment
+        offset_x = (width - (env_width * scale)) / 2
+        offset_y = (height - (env_height * scale)) / 2
+
+        # Ensure minimum padding
+        offset_x = max(padding, offset_x)
+        offset_y = max(padding, offset_y)
+
+        def transform(x, y):
+            """Transform environment coordinates to screen coordinates."""
+            return (offset_x + x * scale, offset_y + y * scale)
+
         # Draw resources
         for resource in resource_states:
-            x, y = resource[2], resource[3]  # position_x, position_y
             amount = resource[1]  # amount
-            radius = int(5 * (amount / 30))  # Scale size with amount
-            draw.ellipse([(x-radius, y-radius), (x+radius, y+radius)], 
-                        fill='green', outline='white')
+            if amount > 0:  # Only draw if resource has any amount left
+                x, y = transform(resource[2], resource[3])  # position_x, position_y
+                
+                # Calculate color based on amount (fade from green to black)
+                # Assuming max amount is 30
+                color_intensity = int((amount / 30) * 255)
+                resource_color = (0, color_intensity, 0)  # RGB: (0, 0-255, 0)
+                
+                radius = max(3, int(5 * (amount / 30) * scale))  # Scale size with amount and canvas
+                draw.ellipse([(x-radius, y-radius), (x+radius, y+radius)], 
+                            fill=resource_color, outline=resource_color)
 
         # Draw agents
         for agent in agent_states:
-            x, y = agent[2], agent[3]  # position_x, position_y
+            x, y = transform(agent[2], agent[3])  # position_x, position_y
             agent_type = agent[1]  # agent_type
             color = 'blue' if agent_type == 'SystemAgent' else 'red'
-            draw.ellipse([(x-3, y-3), (x+3, y+3)], fill=color, outline='white')
+            radius = max(1, int(2 * scale))  # Reduced from max(2, int(3 * scale))
+            draw.ellipse([(x-radius, y-radius), (x+radius, y+radius)], 
+                        fill=color)
 
-        # Add step number
-        draw.text((10, 10), f"Step: {self.current_step}", fill='white')
+        # Add step number - scale font size with canvas and move it inside the padding
+        font_size = max(10, int(min(width, height) / 40))
+        try:
+            font = ImageFont.truetype("arial.ttf", font_size)
+        except:
+            font = ImageFont.load_default()
+            
+        draw.text((padding, padding), f"Step: {self.current_step}", 
+                 fill='white', font=font)
 
         # Update canvas
         photo = ImageTk.PhotoImage(img)
         self.env_canvas.create_image(0, 0, image=photo, anchor="nw")
-        self.env_canvas.image = photo
+        self.env_canvas.image = photo  # Keep reference to prevent garbage collection
 
     def _update_charts(self):
         """Update the population and resource charts with historical data."""

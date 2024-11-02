@@ -109,3 +109,7 @@ __pycache__/
 .venv
 env/
 venv/
+
+# Test data
+test_data/
+.pytest_cache/
