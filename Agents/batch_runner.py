@@ -7,6 +7,7 @@ from datetime import datetime
 
 from config import SimulationConfig
 from agents import main as run_simulation
+from experiment_tracker import ExperimentTracker
 
 class BatchRunner:
     def __init__(self, base_config: SimulationConfig):
@@ -14,6 +15,7 @@ class BatchRunner:
         self.parameter_variations = {}
         self.results_dir = Path('results')
         self.results_dir.mkdir(exist_ok=True)
+        self.experiment_tracker = ExperimentTracker()
         
     def add_parameter_variation(self, param_name: str, values: List[Any]):
         """Add a parameter to vary in the batch experiments."""
@@ -33,15 +35,25 @@ class BatchRunner:
             
         return configs
         
-    def run(self, num_steps: int = 500, max_workers: int = None):
+    def run(self, experiment_name: str, num_steps: int = 500, max_workers: int = None):
         """Run all parameter combinations in parallel."""
         configs = self._generate_configs()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
+        experiment_ids = []
         with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             for i, config in enumerate(configs):
                 db_path = self.results_dir / f'simulation_{timestamp}_{i}.db'
+                
+                # Register experiment
+                exp_id = self.experiment_tracker.register_experiment(
+                    name=f"{experiment_name}_{i}",
+                    config=config.to_dict(),
+                    db_path=str(db_path)
+                )
+                experiment_ids.append(exp_id)
+                
                 futures.append(
                     executor.submit(run_simulation, num_steps, config, str(db_path))
                 )
@@ -49,40 +61,11 @@ class BatchRunner:
             # Wait for all simulations to complete
             concurrent.futures.wait(futures)
             
-        # Analyze results
-        self._analyze_batch_results(timestamp)
-        
-    def _analyze_batch_results(self, timestamp: str):
-        """Analyze and compare results from all simulations in the batch."""
-        from analysis import SimulationAnalyzer
-        
-        # Create a combined report
-        report_path = self.results_dir / f'batch_report_{timestamp}.html'
-        with open(report_path, 'w') as f:
-            f.write('<html><head><title>Batch Simulation Results</title></head><body>')
-            f.write('<h1>Batch Simulation Results</h1>')
-            
-            # Analyze each simulation
-            for db_file in self.results_dir.glob(f'simulation_{timestamp}_*.db'):
-                analyzer = SimulationAnalyzer(str(db_file))
-                
-                f.write(f'<h2>Simulation: {db_file.name}</h2>')
-                survival_rates = analyzer.calculate_survival_rates()
-                efficiency_data = analyzer.analyze_resource_efficiency()
-                
-                # Add results to report
-                f.write('<h3>Survival Rates</h3>')
-                f.write('<table border="1">')
-                f.write('<tr><th>Agent Type</th><th>Survival Rate</th></tr>')
-                for agent_type, rate in survival_rates.items():
-                    f.write(f'<tr><td>{agent_type}</td><td>{rate:.2%}</td></tr>')
-                f.write('</table>')
-                
-                # Add efficiency statistics
-                f.write('<h3>Resource Efficiency Statistics</h3>')
-                f.write(f'<pre>{efficiency_data.describe().to_string()}</pre>')
-                
-            f.write('</body></html>')
+        # Generate comparison report
+        self.experiment_tracker.generate_comparison_report(
+            experiment_ids,
+            output_file=self.results_dir / f'comparison_report_{timestamp}.html'
+        )
 
 if __name__ == '__main__':
     # Example usage
@@ -92,4 +75,4 @@ if __name__ == '__main__':
     runner.add_parameter_variation('system_agents', [20, 30, 40])
     runner.add_parameter_variation('individual_agents', [20, 30, 40])
     
-    runner.run(num_steps=500) 
+    runner.run(experiment_name='test_experiment', num_steps=500) 

@@ -28,17 +28,8 @@ class SimulationVisualizer:
         self.controls_frame.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="ew")
 
         # Configure grid weights
-        root.grid_columnconfigure(0, weight=1)
-        root.grid_columnconfigure(1, weight=2)
+        root.grid_columnconfigure(1, weight=1)
         root.grid_rowconfigure(0, weight=1)
-        root.grid_rowconfigure(1, weight=2)
-
-        # Bind window resize event
-        self.root.bind('<Configure>', self._on_window_resize)
-        
-        # Store current window size
-        self.last_width = root.winfo_width()
-        self.last_height = root.winfo_height()
 
         self._setup_stats_panel()
         self._setup_chart()
@@ -83,14 +74,8 @@ class SimulationVisualizer:
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
     def _setup_environment_view(self):
-        """Setup the environment visualization canvas."""
-        self.env_canvas = tk.Canvas(
-            self.env_frame,
-            width=400,
-            height=400,
-            bg='black'  # Add background color
-        )
-        self.env_canvas.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.env_canvas = tk.Canvas(self.env_frame, width=400, height=400)
+        self.env_canvas.pack(fill=tk.BOTH, expand=True)
 
     def _setup_controls(self):
         # Playback controls
@@ -143,7 +128,7 @@ class SimulationVisualizer:
             if metric_name in self.stats_vars:
                 self.stats_vars[metric_name].set(f"{metric_name}: {value:.2f}")
 
-        # Update environment view with current canvas size
+        # Update environment view
         self._draw_environment(data['agent_states'], data['resource_states'])
         
         # Update charts
@@ -151,87 +136,33 @@ class SimulationVisualizer:
 
     def _draw_environment(self, agent_states, resource_states):
         """Draw the current state of the environment."""
-        # Store current data for resize events
-        self.current_data = {
-            'agent_states': agent_states,
-            'resource_states': resource_states
-        }
-        
-        # Get current canvas size
-        width = self.env_canvas.winfo_width()
-        height = self.env_canvas.winfo_height()
-        
-        # Add padding (10% of width/height)
-        padding = min(width, height) * 0.1
-        usable_width = width - 2 * padding
-        usable_height = height - 2 * padding
-        
-        # Create a new image with the current canvas size
+        # Create a new image
+        width = height = 400
         img = Image.new('RGB', (width, height), 'black')
         draw = ImageDraw.Draw(img)
 
-        # Calculate scaling factors for the padded area
-        scale_x = usable_width / 100  # Assuming environment width is 100
-        scale_y = usable_height / 100  # Assuming environment height is 100
-
         # Draw resources
         for resource in resource_states:
-            # Scale position to padded area
-            x = int(padding + resource[2] * scale_x)  # position_x
-            y = int(padding + resource[3] * scale_y)  # position_y
+            x, y = resource[2], resource[3]  # position_x, position_y
             amount = resource[1]  # amount
-            radius = int(max(3, 5 * (amount / 30)))  # Scale size with amount, minimum 3
-            
-            # Draw resource as green circle
-            draw.ellipse(
-                [(x-radius, y-radius), (x+radius, y+radius)],
-                fill='green',
-                outline='white'
-            )
+            radius = int(5 * (amount / 30))  # Scale size with amount
+            draw.ellipse([(x-radius, y-radius), (x+radius, y+radius)], 
+                        fill='green', outline='white')
 
         # Draw agents
         for agent in agent_states:
-            if agent[5]:  # Check if alive
-                # Scale position to padded area
-                x = int(padding + agent[2] * scale_x)  # position_x
-                y = int(padding + agent[3] * scale_y)  # position_y
-                agent_type = agent[1]  # agent_type
-                color = 'blue' if agent_type == 'SystemAgent' else 'red'
-                
-                # Draw agent as colored circle
-                radius = 4  # Fixed size for agents
-                draw.ellipse(
-                    [(x-radius, y-radius), (x+radius, y+radius)],
-                    fill=color,
-                    outline='white'
-                )
+            x, y = agent[2], agent[3]  # position_x, position_y
+            agent_type = agent[1]  # agent_type
+            color = 'blue' if agent_type == 'SystemAgent' else 'red'
+            draw.ellipse([(x-3, y-3), (x+3, y+3)], fill=color, outline='white')
 
-        # Add step number with larger font
-        try:
-            font = ImageFont.truetype("arial.ttf", size=int(height/20))
-        except:
-            font = ImageFont.load_default()
-        
-        # Draw border around the environment area
-        border_color = (50, 50, 50)  # Dark gray
-        draw.rectangle(
-            [(padding-1, padding-1), 
-             (padding + usable_width + 1, padding + usable_height + 1)],
-            outline=border_color,
-            width=2
-        )
-        
-        draw.text(
-            (10, 10),
-            f"Step: {self.current_step}",
-            fill='white',
-            font=font
-        )
+        # Add step number
+        draw.text((10, 10), f"Step: {self.current_step}", fill='white')
 
-        # Convert to PhotoImage and display
+        # Update canvas
         photo = ImageTk.PhotoImage(img)
         self.env_canvas.create_image(0, 0, image=photo, anchor="nw")
-        self.env_canvas.image = photo  # Keep a reference
+        self.env_canvas.image = photo
 
     def _update_charts(self):
         """Update the population and resource charts with historical data."""
@@ -287,24 +218,3 @@ class SimulationVisualizer:
         )
         if filename:
             self.db.export_data(filename)
-
-    def _on_window_resize(self, event):
-        """Handle window resize events."""
-        # Only handle main window resizes, not child widget resizes
-        if event.widget == self.root:
-            # Check if size actually changed
-            if event.width != self.last_width or event.height != self.last_height:
-                self.last_width = event.width
-                self.last_height = event.height
-                
-                # Update environment canvas size
-                env_width = max(400, int(event.width * 0.4))  # 40% of window width
-                env_height = max(400, int(event.height * 0.4))  # 40% of window height
-                self.env_canvas.configure(width=env_width, height=env_height)
-                
-                # If we have current data, redraw the environment
-                if hasattr(self, 'current_data'):
-                    self._draw_environment(
-                        self.current_data['agent_states'],
-                        self.current_data['resource_states']
-                    )
