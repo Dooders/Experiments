@@ -22,7 +22,7 @@ from database import SimulationDatabase
 
 
 class Environment:
-    def __init__(self, width, height, resource_distribution, db_path='simulation_results.db'):
+    def __init__(self, width, height, resource_distribution, db_path='simulation_results.db', max_resource=None):
         # Delete existing database file if it exists
         if os.path.exists(db_path):
             os.remove(db_path)
@@ -35,6 +35,7 @@ class Environment:
         self.db = SimulationDatabase(db_path)
         self.next_agent_id = 0
         self.next_resource_id = 0
+        self.max_resource = max_resource  # New parameter for max resource
         self.initialize_resources(resource_distribution)
 
     def get_next_resource_id(self):
@@ -48,7 +49,7 @@ class Environment:
             resource = Resource(
                 resource_id=self.get_next_resource_id(),
                 position=position,
-                amount=random.randint(10, 30)
+                amount=random.randint(3, 8)
             )
             self.resources.append(resource)
             # Log resource to database
@@ -78,10 +79,15 @@ class Environment:
 
     def regenerate_resources(self):
         for resource in self.resources:
-            if (
-                resource.amount < 30 and random.random() < 0.1
-            ):  # Increased regen chance and max amount
-                resource.amount += 2  # Increased regen amount
+            # Only check max_resource if it's set
+            if random.random() < 0.1:  # 10% chance to regenerate
+                if self.max_resource is None:
+                    # No maximum, just add the regeneration amount
+                    resource.amount += 2
+                else:
+                    # Only regenerate if below maximum
+                    if resource.amount < self.max_resource:
+                        resource.amount = min(resource.amount + 2, self.max_resource)
 
     def _calculate_metrics(self):
         """Calculate various metrics for the current simulation state."""
@@ -843,7 +849,7 @@ def visualize_results(df):
 # ==============================
 
 
-def main(num_steps=500, agent_population=None, resource_distribution=None, db_path='simulation_results.db'):
+def main(num_steps=500, agent_population=None, resource_distribution=None, db_path='simulation_results.db', max_resource=None):
     """Run the simulation with the given parameters."""
     # Setup logging
     setup_logging()
@@ -852,14 +858,15 @@ def main(num_steps=500, agent_population=None, resource_distribution=None, db_pa
     if agent_population is None:
         agent_population = {"system_agents": 5, "individual_agents": 5}
     if resource_distribution is None:
-        resource_distribution = {"type": "random", "amount": 60}
+        resource_distribution = {"type": "random", "amount": 20}
 
     # Setup experiment
     environment = Environment(
         width=100,
         height=100,
         resource_distribution=resource_distribution,
-        db_path=db_path
+        db_path=db_path,
+        max_resource=max_resource  # Pass through the max_resource parameter
     )
 
     # Initialize agents - Fixed parameter order to match Agent.__init__
@@ -869,7 +876,7 @@ def main(num_steps=500, agent_population=None, resource_distribution=None, db_pa
         agent = SystemAgent(
             agent_id=environment.get_next_agent_id(),
             position=position,
-            resource_level=12,  # Changed from initial_resource_level
+            resource_level=5,  # Changed from initial_resource_level
             environment=environment
         )
         environment.add_agent(agent)
@@ -880,7 +887,7 @@ def main(num_steps=500, agent_population=None, resource_distribution=None, db_pa
         agent = IndividualAgent(
             agent_id=environment.get_next_agent_id(),
             position=position,
-            resource_level=12,  # Changed from initial_resource_level
+            resource_level=5,  # Changed from initial_resource_level
             environment=environment
         )
         environment.add_agent(agent)

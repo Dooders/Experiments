@@ -57,15 +57,8 @@ class SimulationVisualizer:
 
     def _setup_stats_panel(self):
         """Setup statistics panel with card-like metrics in two columns."""
-        # Create a canvas with scrollbar for stats
-        canvas = tk.Canvas(self.stats_frame, highlightthickness=0)  # Remove canvas border
-        scrollbar = ttk.Scrollbar(self.stats_frame, orient="vertical", command=canvas.yview)
-        
-        # Create main container frame
-        container_frame = ttk.Frame(canvas)
-        
         # Create container for two columns
-        columns_frame = ttk.Frame(container_frame)
+        columns_frame = ttk.Frame(self.stats_frame)
         columns_frame.pack(fill="both", expand=True, padx=2)
         
         # Create left and right column frames
@@ -157,27 +150,6 @@ class SimulationVisualizer:
                 foreground='black',
                 font=('Arial', 14, 'bold')
             )
-
-        # Configure canvas and scrollbar
-        canvas.create_window((0, 0), window=container_frame, anchor="nw", tags="frame")
-        
-        # Update scroll region when frame size changes
-        def _configure_frame(event):
-            # Update the scroll region to encompass the inner frame
-            canvas.configure(scrollregion=canvas.bbox("all"))
-            # Set the frame width to match the canvas
-            canvas.itemconfig("frame", width=canvas.winfo_width())
-        
-        container_frame.bind("<Configure>", _configure_frame)
-        
-        # Configure canvas to expand with window
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        # Bind mouse wheel to scroll
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
     def _setup_chart(self):
         self.fig = Figure(figsize=(8, 4))
