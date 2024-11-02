@@ -56,32 +56,128 @@ class SimulationVisualizer:
         return result[0] if result and result[0] is not None else 0
 
     def _setup_stats_panel(self):
+        """Setup statistics panel with card-like metrics in two columns."""
         # Create a canvas with scrollbar for stats
-        canvas = tk.Canvas(self.stats_frame)
+        canvas = tk.Canvas(self.stats_frame, highlightthickness=0)  # Remove canvas border
         scrollbar = ttk.Scrollbar(self.stats_frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas)
+        
+        # Create main container frame
+        container_frame = ttk.Frame(canvas)
+        
+        # Create container for two columns
+        columns_frame = ttk.Frame(container_frame)
+        columns_frame.pack(fill="both", expand=True, padx=2)
+        
+        # Create left and right column frames
+        left_column = ttk.Frame(columns_frame)
+        right_column = ttk.Frame(columns_frame)
+        left_column.pack(side="left", fill="both", expand=True, padx=2)
+        right_column.pack(side="left", fill="both", expand=True, padx=2)
 
-        scrollable_frame.bind("<Configure>", 
-                            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        # Stats variables
+        # Stats variables with labels and colors
         self.stats_vars = {
-            'total_agents': tk.StringVar(value="Total Agents: 0"),
-            'system_agents': tk.StringVar(value="System Agents: 0"),
-            'individual_agents': tk.StringVar(value="Individual Agents: 0"),
-            'total_resources': tk.StringVar(value="Total Resources: 0"),
-            'average_agent_resources': tk.StringVar(value="Avg Resources/Agent: 0.0"),
+            'total_agents': {
+                'var': tk.StringVar(value="0"),
+                'label': "Total Agents",
+                'color': '#4a90e2',  # Blue
+                'column': left_column
+            },
+            'system_agents': {
+                'var': tk.StringVar(value="0"),
+                'label': "System Agents",
+                'color': '#50c878',  # Emerald green
+                'column': right_column
+            },
+            'individual_agents': {
+                'var': tk.StringVar(value="0"),
+                'label': "Individual Agents",
+                'color': '#e74c3c',  # Red
+                'column': left_column
+            },
+            'total_resources': {
+                'var': tk.StringVar(value="0"),
+                'label': "Total Resources",
+                'color': '#f39c12',  # Orange
+                'column': right_column
+            },
+            'average_agent_resources': {
+                'var': tk.StringVar(value="0.0"),
+                'label': "Avg Resources/Agent",
+                'color': '#9b59b6',  # Purple
+                'column': left_column
+            }
         }
 
-        # Create labels for each stat
-        for var in self.stats_vars.values():
-            ttk.Label(scrollable_frame, textvariable=var).pack(anchor="w")
+        # Create card-like frames for each stat
+        for stat_id, stat_info in self.stats_vars.items():
+            # Create card frame in the specified column
+            card = ttk.Frame(stat_info['column'], style=f'{stat_id}.TFrame')
+            card.pack(fill="x", padx=3, pady=3)
 
+            # Create and configure card style
+            style = ttk.Style()
+            style.configure(f'{stat_id}.TFrame', background=stat_info['color'])
+
+            # Inner frame for content with padding
+            inner_frame = tk.Frame(card, bg='white', relief='solid', bd=1)
+            inner_frame.pack(fill="x", padx=1, pady=1)
+
+            # Label frame
+            label_frame = tk.Frame(inner_frame, bg='white')
+            label_frame.pack(fill="x", padx=8, pady=(5,0))
+            
+            # Label
+            ttk.Label(
+                label_frame, 
+                text=stat_info['label'],
+                style=f'{stat_id}.TLabel'
+            ).pack(anchor="w")
+            
+            # Value with larger font
+            value_frame = tk.Frame(inner_frame, bg='white')
+            value_frame.pack(fill="x", padx=8, pady=(0,5))
+            
+            value_label = ttk.Label(
+                value_frame,
+                textvariable=stat_info['var'],
+                style=f'{stat_id}.Value.TLabel'
+            )
+            value_label.pack(anchor="e")
+
+            # Configure styles for labels
+            style.configure(
+                f'{stat_id}.TLabel',
+                background='white',
+                foreground=stat_info['color'],
+                font=('Arial', 10)
+            )
+            style.configure(
+                f'{stat_id}.Value.TLabel',
+                background='white',
+                foreground='black',
+                font=('Arial', 14, 'bold')
+            )
+
+        # Configure canvas and scrollbar
+        canvas.create_window((0, 0), window=container_frame, anchor="nw", tags="frame")
+        
+        # Update scroll region when frame size changes
+        def _configure_frame(event):
+            # Update the scroll region to encompass the inner frame
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            # Set the frame width to match the canvas
+            canvas.itemconfig("frame", width=canvas.winfo_width())
+        
+        container_frame.bind("<Configure>", _configure_frame)
+        
+        # Configure canvas to expand with window
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+        
+        # Bind mouse wheel to scroll
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
     def _setup_chart(self):
         self.fig = Figure(figsize=(8, 4))
@@ -164,7 +260,8 @@ class SimulationVisualizer:
         metrics = data['metrics']
         for metric_name, value in metrics.items():
             if metric_name in self.stats_vars:
-                self.stats_vars[metric_name].set(f"{metric_name}: {value:.2f}")
+                formatted_value = f"{value:.1f}" if isinstance(value, float) else str(value)
+                self.stats_vars[metric_name]['var'].set(formatted_value)
 
         # Update environment view
         self._draw_environment(data['agent_states'], data['resource_states'])
