@@ -14,6 +14,7 @@ import torch.optim as optim
 from colorama import Fore, Style, init  # Add color support for console
 from PIL import Image, ImageDraw, ImageFont
 from visualization import SimulationVisualizer
+from database import SimulationDatabase
 
 # ==============================
 # Environment Setup
@@ -21,23 +22,41 @@ from visualization import SimulationVisualizer
 
 
 class Environment:
-    def __init__(self, width, height, resource_distribution):
+    def __init__(self, width, height, resource_distribution, db_path='simulation_results.db'):
+        # Delete existing database file if it exists
+        if os.path.exists(db_path):
+            os.remove(db_path)
+            
         self.width = width
         self.height = height
         self.agents = []
         self.resources = []
         self.time = 0
+        self.db = SimulationDatabase(db_path)
+        self.next_agent_id = 0
+        self.next_resource_id = 0
         self.initialize_resources(resource_distribution)
 
+    def get_next_resource_id(self):
+        resource_id = self.next_resource_id
+        self.next_resource_id += 1
+        return resource_id
+
     def initialize_resources(self, distribution):
-        for i in range(distribution["amount"]):
+        for _ in range(distribution["amount"]):
             position = (random.uniform(0, self.width), random.uniform(0, self.height))
             resource = Resource(
-                resource_id=i,
+                resource_id=self.get_next_resource_id(),
                 position=position,
-                amount=random.randint(10, 30),  # Increased initial resource amounts
+                amount=random.randint(10, 30)
             )
             self.resources.append(resource)
+            # Log resource to database
+            self.db.log_resource(
+                resource_id=resource.resource_id,
+                initial_amount=resource.amount,
+                position=resource.position
+            )
 
     def add_agent(self, agent):
         self.agents.append(agent)
@@ -45,6 +64,17 @@ class Environment:
     def update(self):
         self.time += 1
         self.regenerate_resources()
+        
+        # Calculate metrics
+        metrics = self._calculate_metrics()
+        
+        # Log current state to database
+        self.db.log_simulation_step(
+            step_number=self.time,
+            agents=self.agents,
+            resources=self.resources,
+            metrics=metrics
+        )
 
     def regenerate_resources(self):
         for resource in self.resources:
@@ -52,6 +82,28 @@ class Environment:
                 resource.amount < 30 and random.random() < 0.1
             ):  # Increased regen chance and max amount
                 resource.amount += 2  # Increased regen amount
+
+    def _calculate_metrics(self):
+        """Calculate various metrics for the current simulation state."""
+        alive_agents = [agent for agent in self.agents if agent.alive]
+        system_agents = [a for a in alive_agents if isinstance(a, SystemAgent)]
+        individual_agents = [a for a in alive_agents if isinstance(a, IndividualAgent)]
+        
+        return {
+            'total_agents': len(alive_agents),
+            'system_agents': len(system_agents),
+            'individual_agents': len(individual_agents),
+            'total_resources': sum(r.amount for r in self.resources),
+            'average_agent_resources': (
+                sum(a.resource_level for a in alive_agents) / len(alive_agents)
+                if alive_agents else 0
+            )
+        }
+
+    def get_next_agent_id(self):
+        agent_id = self.next_agent_id
+        self.next_agent_id += 1
+        return agent_id
 
 
 # ==============================
@@ -119,6 +171,15 @@ class Agent:
         self.starvation_threshold = 0  # New attribute to track low resources
         self.max_starvation = 15  # Increased survival time without resources
         self.birth_time = environment.time
+
+        # Log agent creation to database
+        environment.db.log_agent(
+            agent_id=self.agent_id,
+            birth_time=environment.time,
+            agent_type=self.__class__.__name__,
+            position=self.position,
+            initial_resources=self.resource_level
+        )
 
     def get_state(self):
         # Get closest resource position
@@ -264,14 +325,19 @@ class Agent:
 
     def create_offspring(self):
         return type(self)(
-            agent_id=len(self.environment.agents),
+            agent_id=self.environment.get_next_agent_id(),
             position=self.position,
-            resource_level=5,  # Increased starting resources for offspring
+            resource_level=5,
             environment=self.environment,
         )
 
     def die(self):
         self.alive = False
+        # Log death to database
+        self.environment.db.update_agent_death(
+            agent_id=self.agent_id,
+            death_time=self.environment.time
+        )
 
 
 class SystemAgent(Agent):
@@ -778,118 +844,65 @@ def main():
     # Setup logging
     setup_logging()
 
-    # Create the GUI window
-    root = tk.Tk()
-    visualizer = SimulationVisualizer(root)
-
     # Define simulation parameters
     num_steps = 500
     environment_size = (100, 100)
     resource_distribution = {
         "type": "random",
-        "amount": 60,  # Increased number of resources
+        "amount": 60,
     }
     agent_population = {"system_agents": 25, "individual_agents": 25}
-    initial_resource_level = 12  # Increased starting resources
-    scenario_params = {
-        "environment_size": environment_size,
-        "resource_distribution": resource_distribution,
-        "agent_population": agent_population,
-    }
+    initial_resource_level = 12
 
     # Setup experiment
-    environment = setup_experiment_scenario(scenario_params, initial_resource_level)
+    environment = Environment(
+        width=environment_size[0],
+        height=environment_size[1],
+        resource_distribution=resource_distribution,
+        db_path='simulation_results.db'
+    )
 
-    # Data collector
-    data_collector = DataCollector()
+    # Initialize agents
+    for _ in range(agent_population["system_agents"]):
+        position = (random.uniform(0, environment.width),
+                   random.uniform(0, environment.height))
+        agent = SystemAgent(environment.get_next_agent_id(), position,
+                          initial_resource_level, environment)
+        environment.add_agent(agent)
 
-    def simulation_step():
-        # Run one step of the simulation
-        environment.update()
-        for agent in environment.agents:
+    for _ in range(agent_population["individual_agents"]):
+        position = (random.uniform(0, environment.width),
+                   random.uniform(0, environment.height))
+        agent = IndividualAgent(environment.get_next_agent_id(), position,
+                              initial_resource_level, environment)
+        environment.add_agent(agent)
+
+    # Run simulation
+    for step in range(num_steps):
+        if step % 100 == 0:
+            logging.info(f"Step {step}/{num_steps}")
+        
+        # Update all agents
+        for agent in environment.agents[:]:
             if agent.alive:
                 agent.act()
                 agent.move()
                 agent.reproduce()
+            else:
+                environment.agents.remove(agent)
+                agent.die()
 
-        # Collect data
-        data_collector.collect(environment, environment.time)
+        # Update environment
+        environment.update()
 
-        # Calculate average lifespan
-        alive_agents = [agent for agent in environment.agents if agent.alive]
-        if alive_agents:
-            avg_lifespan = sum(
-                environment.time - agent.birth_time for agent in alive_agents
-            ) / len(alive_agents)
-        else:
-            avg_lifespan = 0
+    # Close database connection
+    environment.db.close()
 
-        # Calculate resource efficiency
-        if alive_agents:
-            resource_efficiency = sum(
-                agent.total_reward / max(agent.resource_level, 1)
-                for agent in alive_agents
-            ) / len(alive_agents)
-        else:
-            resource_efficiency = 0
-
-        # Calculate resource density
-        total_area = environment.width * environment.height
-        resource_density = sum(r.amount for r in environment.resources) / total_area
-
-        # Calculate territory control
-        system_agents = [
-            a for a in environment.agents if isinstance(a, SystemAgent) and a.alive
-        ]
-        individual_agents = [
-            a for a in environment.agents if isinstance(a, IndividualAgent) and a.alive
-        ]
-
-        system_territory = data_collector._calculate_territory_control(
-            system_agents, environment
-        )
-        individual_territory = data_collector._calculate_territory_control(
-            individual_agents, environment
-        )
-
-        # Collect data for visualization
-        simulation_data = {
-            "cycle": environment.time,
-            "system_agents": sum(
-                1 for a in environment.agents if isinstance(a, SystemAgent) and a.alive
-            ),
-            "individual_agents": sum(
-                1
-                for a in environment.agents
-                if isinstance(a, IndividualAgent) and a.alive
-            ),
-            "total_resources": sum(r.amount for r in environment.resources),
-            "births": data_collector.births_this_cycle,
-            "deaths": data_collector.deaths_this_cycle,
-            "avg_resources": data_collector.calculate_average_resources(environment),
-            "environment_image": create_resource_grid(environment, environment.time),
-            "history": data_collector.to_dataframe(),
-            "population_stability": data_collector._calculate_population_stability(),
-            "average_lifespan": avg_lifespan,
-            "resource_efficiency": resource_efficiency,
-            "resource_density": resource_density,
-            "system_agent_territory": system_territory,
-            "individual_agent_territory": individual_territory,
-        }
-
-        # Update the visualization
-        visualizer.update(simulation_data)
-
-        # Schedule next update if simulation is running
-        if environment.time < num_steps:
-            root.after(int(1000 / visualizer.speed_scale.get()), simulation_step)
-
-    # Start the simulation
-    simulation_step()
-
-    # Start the GUI event loop
-    root.mainloop()
-
+    # Start visualization
+    root = tk.Tk()
+    visualizer = SimulationVisualizer(root, db_path='simulation_results.db')
+    visualizer.run()
 
 if __name__ == "__main__":
     main()
+    
