@@ -159,15 +159,60 @@ class SimulationVisualizer:
             )
 
     def _setup_chart(self):
+        """Setup the chart with click interaction."""
         self.fig = Figure(figsize=(8, 4))
-        # Add spacing on the right for the label
         self.fig.subplots_adjust(right=0.85)
         self.ax1 = self.fig.add_subplot(111)
         self.ax2 = self.ax1.twinx()
 
+        # Create canvas without toolbar
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.chart_frame)
         self.canvas.draw()
+
+        # Add mouse event handlers
+        self.canvas.mpl_connect("button_press_event", self._on_chart_press)
+        self.canvas.mpl_connect("motion_notify_event", self._on_chart_motion)
+        self.canvas.mpl_connect("button_release_event", self._on_chart_release)
+
+        # Initialize dragging state
+        self.is_dragging = False
+
+        # Pack canvas
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def _on_chart_press(self, event):
+        """Handle mouse press on the chart."""
+        if event.inaxes in (self.ax1, self.ax2):
+            self.is_dragging = True
+            # Store the current playback state
+            self.was_playing = self.playing
+            # Temporarily pause while dragging
+            self.playing = False
+            # Update to the clicked position
+            self._update_step_from_x(event.xdata)
+
+    def _on_chart_motion(self, event):
+        """Handle mouse motion while dragging."""
+        if self.is_dragging and event.inaxes in (self.ax1, self.ax2):
+            self._update_step_from_x(event.xdata)
+
+    def _on_chart_release(self, event):
+        """Handle mouse release to end dragging."""
+        self.is_dragging = False
+        # Restore playback state if it was playing before
+        if hasattr(self, "was_playing") and self.was_playing:
+            self.playing = True
+            self._play_simulation()
+
+    def _update_step_from_x(self, x_coord):
+        """Update the simulation step based on x coordinate."""
+        if x_coord is not None:
+            # Get the step number from x coordinate
+            step = int(round(x_coord))
+            # Ensure step is within bounds
+            step = max(0, min(step, self.total_steps))
+            # Jump to the selected step
+            self._step_to(step)
 
     def _setup_environment_view(self):
         """Setup the environment view with auto-scaling canvas."""
