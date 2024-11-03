@@ -4,7 +4,7 @@ from scipy import stats
 import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple
 
-from Agents.database import SimulationDatabase
+from database import SimulationDatabase
 
 class SimulationAnalyzer:
     def __init__(self, db_path: str = 'simulation_results.db'):

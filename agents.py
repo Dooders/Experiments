@@ -11,7 +11,8 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from colorama import Fore, Style, init  # Add color support for console
+from colorama import Fore, Style, init
+from config import SimulationConfig
 from database import SimulationDatabase
 from PIL import Image, ImageDraw, ImageFont
 from visualization import SimulationVisualizer
@@ -29,6 +30,7 @@ class Environment:
         resource_distribution,
         db_path="simulation_results.db",
         max_resource=None,
+        config=None
     ):
         # Delete existing database file if it exists
         if os.path.exists(db_path):
@@ -42,7 +44,8 @@ class Environment:
         self.db = SimulationDatabase(db_path)
         self.next_agent_id = 0
         self.next_resource_id = 0
-        self.max_resource = max_resource  # New parameter for max resource
+        self.max_resource = max_resource
+        self.config = config  # Store configuration
         self.initialize_resources(resource_distribution)
 
     def get_next_resource_id(self):
@@ -146,14 +149,14 @@ class Resource:
 
 
 class DQN(nn.Module):
-    def __init__(self, input_dim, output_dim):
+    def __init__(self, input_dim, output_dim, hidden_size=24):
         super(DQN, self).__init__()
         self.network = nn.Sequential(
-            nn.Linear(input_dim, 24),
+            nn.Linear(input_dim, hidden_size),
             nn.ReLU(),
-            nn.Linear(24, 24),
+            nn.Linear(hidden_size, hidden_size),
             nn.ReLU(),
-            nn.Linear(24, output_dim),
+            nn.Linear(hidden_size, output_dim),
         )
 
     def forward(self, x):
@@ -163,27 +166,29 @@ class DQN(nn.Module):
 class Agent:
     def __init__(self, agent_id, position, resource_level, environment):
         self.agent_id = agent_id
-        self.position = position  # (x, y) coordinates
+        self.position = position
         self.resource_level = resource_level
         self.alive = True
         self.environment = environment
+        self.config = environment.config
+        
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = DQN(input_dim=4, output_dim=4).to(self.device)
-        self.optimizer = optim.Adam(self.model.parameters(), lr=0.001)
+        self.model = DQN(input_dim=4, output_dim=4, hidden_size=self.config.dqn_hidden_size).to(self.device)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=self.config.learning_rate)
         self.criterion = nn.MSELoss()
-        self.memory = deque(maxlen=2)
-        self.gamma = 0.95  # discount rate
-        self.epsilon = 1.0  # exploration rate
-        self.epsilon_min = 0.01
-        self.epsilon_decay = 0.995
+        self.memory = deque(maxlen=self.config.memory_size)
+        self.gamma = self.config.gamma
+        self.epsilon = self.config.epsilon_start
+        self.epsilon_min = self.config.epsilon_min
+        self.epsilon_decay = self.config.epsilon_decay
         self.last_state = None
         self.last_action = None
-        self.max_movement = 8  # Increased movement range
+        self.max_movement = self.config.max_movement
         self.total_reward = 0
         self.episode_rewards = []
         self.losses = []
-        self.starvation_threshold = 0  # New attribute to track low resources
-        self.max_starvation = 15  # Increased survival time without resources
+        self.starvation_threshold = self.config.starvation_threshold
+        self.max_starvation = self.config.max_starvation_time
         self.birth_time = environment.time
 
         # Log agent creation to database
@@ -314,8 +319,8 @@ class Agent:
             self.epsilon *= self.epsilon_decay
 
     def act(self):
-        # Reduced base resource consumption
-        self.resource_level -= 0.1  # Reduced from 0.2
+        # Reduced base resource consumption from config
+        self.resource_level -= self.config.base_consumption_rate
 
         if self.resource_level <= 0:
             self.starvation_threshold += 1
@@ -326,22 +331,20 @@ class Agent:
             self.starvation_threshold = 0
 
     def reproduce(self):
-        if len(self.environment.agents) >= 300:
+        if len(self.environment.agents) >= self.config.max_population:
             return
 
-        # Made reproduction easier
-        if self.resource_level >= 10:  # Reduced from 12
-            offspring_cost = 6  # Reduced from 8
-            if self.resource_level >= offspring_cost + 2:
+        if self.resource_level >= self.config.min_reproduction_resources:
+            if self.resource_level >= self.config.offspring_cost + 2:
                 new_agent = self.create_offspring()
                 self.environment.add_agent(new_agent)
-                self.resource_level -= offspring_cost
+                self.resource_level -= self.config.offspring_cost
 
     def create_offspring(self):
         return type(self)(
             agent_id=self.environment.get_next_agent_id(),
             position=self.position,
-            resource_level=5,
+            resource_level=self.config.offspring_initial_resources,
             environment=self.environment,
         )
 
@@ -749,7 +752,7 @@ def run_simulation(environment, num_steps, data_collector):
 
     # Save the animation with longer duration per frame
     frames[0].save(
-        "Agents/resource_distribution.gif",
+        "resource_distribution.gif",
         save_all=True,
         append_images=frames[1:],
         duration=200,  # Changed from 50 to 200 milliseconds per frame
@@ -816,7 +819,7 @@ def visualize_results(df):
     plt.ylabel("Agent Count")
     plt.title("Agent Population Over Time")
     plt.legend()
-    plt.savefig("Agents/population_over_time.png")
+    plt.savefig("population_over_time.png")
     plt.close()
 
     # Combined Resources and Consumption chart
@@ -832,7 +835,7 @@ def visualize_results(df):
     plt.ylabel("Resource Units")
     plt.title("Resource Levels and Consumption Over Time")
     plt.legend()
-    plt.savefig("Agents/resource_metrics.png")
+    plt.savefig("resource_metrics.png")
     plt.close()
 
     # Average resources per agent chart
@@ -847,7 +850,7 @@ def visualize_results(df):
     plt.ylabel("Average Resource per Agent")
     plt.title("Average Resource per Agent Over Time")
     plt.legend()
-    plt.savefig("Agents/average_resource_per_agent.png")
+    plt.savefig("average_resource_per_agent.png")
     plt.close()
 
 
@@ -856,34 +859,27 @@ def visualize_results(df):
 # ==============================
 
 
-def main(
-    num_steps=500,
-    agent_population=None,
-    resource_distribution=None,
-    db_path="simulation_results.db",
-    max_resource=None,
-):
+def main(num_steps=500, config=None, db_path="simulation_results.db"):
     """Run the simulation with the given parameters."""
     # Setup logging
     setup_logging()
 
-    # Use default parameters if none provided
-    if agent_population is None:
-        agent_population = {"system_agents": 5, "individual_agents": 5}
-    if resource_distribution is None:
-        resource_distribution = {"type": "random", "amount": 20}
+    # Use default parameters if no config provided
+    if config is None:
+        config = SimulationConfig()
 
     # Setup experiment
     environment = Environment(
-        width=100,
-        height=100,
-        resource_distribution=resource_distribution,
+        width=config.width,
+        height=config.height,
+        resource_distribution={"type": "random", "amount": config.initial_resources},
         db_path=db_path,
-        max_resource=max_resource,
+        max_resource=config.max_resource_amount,
+        config=config
     )
 
     # Initialize agents
-    for _ in range(agent_population["system_agents"]):
+    for _ in range(config.system_agents):
         position = (
             random.uniform(0, environment.width),
             random.uniform(0, environment.height),
@@ -891,12 +887,12 @@ def main(
         agent = SystemAgent(
             agent_id=environment.get_next_agent_id(),
             position=position,
-            resource_level=5,
+            resource_level=config.initial_resource_level,
             environment=environment,
         )
         environment.add_agent(agent)
 
-    for _ in range(agent_population["individual_agents"]):
+    for _ in range(config.individual_agents):
         position = (
             random.uniform(0, environment.width),
             random.uniform(0, environment.height),
@@ -904,7 +900,7 @@ def main(
         agent = IndividualAgent(
             agent_id=environment.get_next_agent_id(),
             position=position,
-            resource_level=5,
+            resource_level=config.initial_resource_level,
             environment=environment,
         )
         environment.add_agent(agent)
