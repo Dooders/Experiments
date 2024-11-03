@@ -10,6 +10,8 @@ Key features:
 - Comparative analysis of multiple experiments
 - Automated report generation with visualizations
 - Statistical summaries of experiment results
+- Data export capabilities
+- Automatic cleanup of old experiments
 
 Typical usage:
     tracker = ExperimentTracker("experiments")
@@ -24,11 +26,13 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
+from jinja2 import Environment, FileSystemLoader
 
 # Add logging configuration at the module level
 logging.basicConfig(
@@ -51,15 +55,23 @@ class ExperimentTracker:
         Path to the JSON file storing experiment metadata
     metadata (dict):
         Dictionary containing all experiment metadata
+    template_env (Environment):
+        Jinja2 environment for template rendering
 
     Methods
     -------
     register_experiment(self, name: str, config: Dict[str, Any], db_path: Path | str) -> str:
         Register a new experiment run with its configuration and database location.
-    compare_experiments(self, experiment_ids: List[str], metrics: List[str] = None) -> pd.DataFrame:
-        Compare results from multiple experiments by retrieving specified metrics.
+    compare_experiments(self, experiment_ids: List[str], metrics: Optional[List[str]] = None, fill_method: str = 'nan') -> pd.DataFrame:
+        Compare metrics across multiple experiments with graceful handling of missing data.
     generate_comparison_report(self, experiment_ids: List[str], output_file: Path | str | None = None):
         Generate a comprehensive HTML report comparing multiple experiments.
+    generate_comparison_summary(self, experiment_ids: List[str], metrics: Optional[List[str]] = None) -> Dict[str, Any]:
+        Generate a summary of the comparison including missing data statistics.
+    export_experiment_data(self, experiment_id: str, output_path: Path | str):
+        Export experiment data to CSV format.
+    cleanup_old_experiments(self, days_old: int = 30):
+        Remove experiments older than specified days.
     """
 
     def __init__(self, experiments_dir: Path | str = "experiments") -> None:
@@ -78,6 +90,11 @@ class ExperimentTracker:
             raise
         self.metadata_file = self.experiments_dir / "metadata.json"
         self._load_metadata()
+
+        # Initialize Jinja environment
+        self.template_env = Environment(
+            loader=FileSystemLoader("templates"), autoescape=True
+        )
 
     def _load_metadata(self) -> None:
         """Load or create experiment metadata."""
@@ -184,69 +201,175 @@ class ExperimentTracker:
             raise
 
     def compare_experiments(
-        self, experiment_ids: List[str], metrics: List[str] = None
+        self,
+        experiment_ids: List[str],
+        metrics: Optional[List[str]] = None,
+        fill_method: str = "nan",
     ) -> pd.DataFrame:
         """
-        Compare results from multiple experiments by retrieving specified metrics.
+        Compare metrics across multiple experiments with graceful handling of missing data.
 
         Parameters
         ----------
         experiment_ids : List[str]
             List of experiment IDs to compare
-        metrics : List[str], optional
-            List of metric names to compare. Defaults to
-            ["total_agents", "total_resources", "average_agent_resources"]
+        metrics : Optional[List[str]]
+            Specific metrics to compare. If None, compares all available metrics
+        fill_method : str
+            Method to handle missing values: 'nan', 'zero', or 'interpolate'
 
         Returns
         -------
         pd.DataFrame
-            DataFrame containing metrics data for all experiments,
-            with columns for step_number, metric_name, metric_value,
-            experiment_id, and experiment_name
-
-        Raises
-        ------
-        sqlite3.Error
-            If database operations fail
-        pd.io.sql.DatabaseError
-            If data cannot be read into DataFrame
+            DataFrame containing the comparison data
         """
+        # Validate inputs
+        if not experiment_ids:
+            raise ValueError("No experiment IDs provided")
+
+        # Get all available metrics if none specified
         if metrics is None:
-            metrics = ["total_agents", "total_resources", "average_agent_resources"]
+            metrics = self._get_all_available_metrics(experiment_ids)
+            logging.info(f"Using all available metrics: {metrics}")
 
-        results = []
+        # Initialize results storage
+        results: Dict[str, Dict[str, Any]] = {}
+        missing_metrics: Dict[str, List[str]] = {}
+
+        # Collect data for each experiment
         for exp_id in experiment_ids:
-            exp_data = self.metadata["experiments"].get(exp_id)
-            if exp_data is None:
-                logging.warning(f"Experiment ID '{exp_id}' not found in metadata.")
-                continue
-
             try:
-                with sqlite3.connect(exp_data["db_path"]) as conn:
-                    placeholders = ",".join("?" * len(metrics))
-                    query = f"""
-                        SELECT s.step_number, m.metric_name, m.metric_value
-                        FROM SimulationMetrics m
-                        JOIN SimulationSteps s ON s.step_id = m.step_id
-                        WHERE m.metric_name IN ({placeholders})
-                        ORDER BY s.step_number
-                    """
-                    df = pd.read_sql_query(query, conn, params=metrics)
-                    df["experiment_id"] = exp_id
-                    df["experiment_name"] = exp_data["name"]
-                    results.append(df)
-            except sqlite3.Error as e:
-                logging.error(f"Database error for experiment '{exp_id}': {e}")
-                continue
-            except pd.io.sql.DatabaseError as e:
-                logging.error(f"Failed to read data for experiment '{exp_id}': {e}")
+                exp_data = self._get_experiment_metrics(exp_id, metrics)
+                if exp_data.empty:
+                    logging.warning(f"No metrics found for experiment '{exp_id}'")
+                    continue
+
+                results[exp_id] = exp_data
+
+                # Track missing metrics
+                available_metrics = set(exp_data.columns)
+                missing = [m for m in metrics if m not in available_metrics]
+                if missing:
+                    missing_metrics[exp_id] = missing
+                    logging.warning(
+                        f"Experiment '{exp_id}' is missing metrics: {missing}"
+                    )
+
+            except Exception as e:
+                logging.error(f"Error processing experiment '{exp_id}': {str(e)}")
                 continue
 
         if not results:
-            logging.warning("No data was retrieved from any experiments.")
-            return pd.DataFrame()
+            raise ValueError("No valid data found for any experiment")
 
-        return pd.concat(results, ignore_index=True)
+        # Create combined DataFrame
+        df = self._combine_experiment_data(results, fill_method)
+
+        # Add metadata
+        df = self._add_experiment_metadata(df, experiment_ids)
+
+        return df
+
+    def _get_all_available_metrics(self, experiment_ids: List[str]) -> List[str]:
+        """Get union of all metrics available across experiments."""
+        all_metrics = set()
+        for exp_id in experiment_ids:
+            try:
+                metrics = self._get_experiment_metrics(exp_id).columns
+                all_metrics.update(metrics)
+            except Exception as e:
+                logging.warning(
+                    f"Could not get metrics for experiment '{exp_id}': {str(e)}"
+                )
+        return sorted(all_metrics)
+
+    def _combine_experiment_data(
+        self, results: Dict[str, pd.DataFrame], fill_method: str
+    ) -> pd.DataFrame:
+        """Combine experiment data with proper handling of missing values."""
+        # Create list of DataFrames with experiment ID as index
+        dfs = []
+        for exp_id, data in results.items():
+            df = data.copy()
+            df["experiment_id"] = exp_id
+            dfs.append(df)
+
+        # Combine all DataFrames
+        combined_df = pd.concat(dfs, axis=0, ignore_index=True)
+
+        # Handle missing values based on specified method
+        if fill_method == "zero":
+            combined_df.fillna(0, inplace=True)
+        elif fill_method == "interpolate":
+            combined_df = combined_df.groupby("experiment_id").apply(
+                lambda x: x.interpolate(method="linear")
+            )
+        # 'nan' method leaves values as NaN
+
+        return combined_df
+
+    def _add_experiment_metadata(
+        self, df: pd.DataFrame, experiment_ids: List[str]
+    ) -> pd.DataFrame:
+        """Add experiment metadata to the DataFrame."""
+        metadata = []
+        for exp_id in experiment_ids:
+            if exp_id in self.metadata["experiments"]:
+                exp_meta = self.metadata["experiments"][exp_id]
+                metadata.append(
+                    {
+                        "experiment_id": exp_id,
+                        "name": exp_meta.get("name", ""),
+                        "description": exp_meta.get("description", ""),
+                        "timestamp": exp_meta.get("timestamp", ""),
+                        "config": str(exp_meta.get("config", {})),
+                    }
+                )
+
+        meta_df = pd.DataFrame(metadata)
+        return df.merge(meta_df, on="experiment_id", how="left")
+
+    def generate_comparison_summary(
+        self, experiment_ids: List[str], metrics: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate a summary of the comparison including missing data statistics.
+
+        Parameters
+        ----------
+        experiment_ids : List[str]
+            List of experiment IDs to compare
+        metrics : Optional[List[str]]
+            Specific metrics to compare
+
+        Returns
+        -------
+        Dict[str, Any]
+            Summary statistics and missing data information
+        """
+        df = self.compare_experiments(experiment_ids, metrics)
+
+        summary = {
+            "total_experiments": len(experiment_ids),
+            "valid_experiments": df["experiment_id"].nunique(),
+            "metrics_analyzed": list(df.select_dtypes(include=[np.number]).columns),
+            "missing_data": {
+                "total_missing_values": df.isna().sum().to_dict(),
+                "missing_percentage": (df.isna().mean() * 100).round(2).to_dict(),
+            },
+            "basic_stats": df.describe().to_dict(),
+            "warnings": [],
+        }
+
+        # Add warnings for significant missing data
+        for col in df.columns:
+            missing_pct = df[col].isna().mean() * 100
+            if missing_pct > 20:
+                summary["warnings"].append(
+                    f"Metric '{col}' is missing {missing_pct:.1f}% of values"
+                )
+
+        return summary
 
     def _create_visualizations(self, df: pd.DataFrame, plot_path: Path) -> None:
         """
@@ -301,136 +424,52 @@ class ExperimentTracker:
         self, experiment_ids: List[str], output_file: Path | str | None = None
     ) -> None:
         """
-        Generate a comprehensive HTML report comparing multiple experiments.
+        Generate a comparison report for multiple experiments using HTML templates.
 
         Parameters
         ----------
         experiment_ids : List[str]
-            List of experiment IDs to include in the report
-        output_file : Path | str | None, optional
-            Path where the HTML report should be saved. If None, saves to
-            experiments_dir/comparison_report.html
-
-        Raises
-        ------
-        ValueError
-            If no valid experiments are found
-        IOError
-            If report cannot be written to disk
+            List of experiment IDs to compare
+        output_file : Path, optional
+            Output file path for the report
         """
-        try:
-            # Setup output path
-            if output_file is None:
-                output_file = self.experiments_dir / "comparison_report.html"
-            else:
-                output_file = Path(output_file)
+        # Prepare data for template
+        experiment_data = {
+            exp_id: {
+                "name": self.metadata["experiments"][exp_id]["name"],
+                "description": self.metadata["experiments"][exp_id]["description"],
+                "timestamp": self.metadata["experiments"][exp_id]["timestamp"],
+                "metrics": self._get_experiment_metrics(exp_id),
+            }
+            for exp_id in experiment_ids
+        }
 
-            # Get comparison data
-            df = self.compare_experiments(experiment_ids)
-            if df.empty:
-                logging.warning("No data available for comparison report")
-                return
+        # Generate config comparison table
+        config_table = self._generate_config_comparison_table(experiment_ids)
 
-            # Create visualizations
-            plot_path = self.experiments_dir / "comparison_plots.png"
-            self._create_visualizations(df, plot_path)
+        # Generate performance plots
+        plot_path = self._generate_comparison_plots(experiment_ids)
 
-            # Generate HTML report
-            html_content = self._generate_html_report(
-                experiment_ids=experiment_ids, plot_path=plot_path, comparison_data=df
-            )
+        # Generate statistics summary
+        stats_summary = self._generate_statistics_summary(experiment_ids)
 
-            # Save report
-            with output_file.open("w", encoding="utf-8") as f:
-                f.write(html_content)
+        # Render template
+        template = self.template_env.get_template("comparison_report.html")
+        html = template.render(
+            experiments=experiment_data,
+            config_table=config_table,
+            plot_path=plot_path.name if plot_path else None,
+            stats_summary=stats_summary,
+            generation_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
 
-            logging.info(f"Generated comparison report at {output_file}")
+        # Write output
+        if output_file is None:
+            output_file = Path(f"comparison_report_{datetime.now():%Y%m%d_%H%M%S}.html")
 
-        except Exception as e:
-            logging.error(f"Failed to generate comparison report: {e}")
-            raise
-
-    def _generate_html_report(
-        self, experiment_ids: List[str], plot_path: Path, comparison_data: pd.DataFrame
-    ) -> str:
-        """
-        Generate HTML content for the comparison report.
-
-        Parameters
-        ----------
-        experiment_ids : List[str]
-            List of experiment IDs to include
-        plot_path : Path
-            Path to the generated visualization plots
-        comparison_data : pd.DataFrame
-            DataFrame containing comparison metrics
-
-        Returns
-        -------
-        str
-            Complete HTML content for the report
-
-        Raises
-        ------
-        KeyError
-            If required metadata is missing
-        Exception
-            If HTML generation fails
-        """
-        try:
-            html = f"""
-            <html>
-            <head>
-                <title>Experiment Comparison Report</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; margin: 20px; }}
-                    table {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
-                    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                    th {{ background-color: #f5f5f5; }}
-                    h1, h2 {{ color: #333; }}
-                    .plot-container {{ margin: 20px 0; }}
-                    .plot-container img {{ max-width: 100%; }}
-                    .summary {{ background-color: #f9f9f9; padding: 15px; border-radius: 5px; }}
-                </style>
-            </head>
-            <body>
-                <h1>Experiment Comparison Report</h1>
-                
-                <h2>Experiments Included</h2>
-                <table>
-                    <tr>
-                        <th>ID</th>
-                        <th>Name</th>
-                        <th>Timestamp</th>
-                    </tr>
-                    {''.join(
-                        f"<tr><td>{exp_id}</td>"
-                        f"<td>{self.metadata['experiments'][exp_id]['name']}</td>"
-                        f"<td>{self.metadata['experiments'][exp_id]['timestamp']}</td></tr>"
-                        for exp_id in experiment_ids
-                    )}
-                </table>
-                
-                <h2>Configuration Comparison</h2>
-                {self._generate_config_comparison_table(experiment_ids)}
-                
-                <h2>Results Visualization</h2>
-                <div class="plot-container">
-                    <img src="{plot_path}" alt="Experiment Comparison Plots"/>
-                </div>
-                
-                <h2>Statistical Summary</h2>
-                <div class="summary">
-                    {self._generate_statistical_summary(comparison_data)}
-                </div>
-            </body>
-            </html>
-            """
-            return html
-
-        except Exception as e:
-            logging.error(f"Failed to generate HTML content: {e}")
-            raise
+        output_file = Path(output_file)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_text(html)
 
     def _generate_config_comparison_table(self, experiment_ids: List[str]) -> str:
         """
@@ -438,14 +477,17 @@ class ExperimentTracker:
 
         Parameters
         ----------
-            experiment_ids (List[str]): List of experiment IDs to compare
+        experiment_ids : List[str]
+            List of experiment IDs to compare
 
         Returns
         -------
-            str: HTML string containing the configuration comparison table
+        str
+            HTML string containing the configuration comparison table
         """
+        # Flatten all configs
         configs = {
-            exp_id: self.metadata["experiments"][exp_id]["config"]
+            exp_id: self._flatten_config(self.metadata["experiments"][exp_id]["config"])
             for exp_id in experiment_ids
         }
 
@@ -454,21 +496,40 @@ class ExperimentTracker:
         for config in configs.values():
             all_params.update(config.keys())
 
-        # Generate table
-        html = "<table><tr><th>Parameter</th>"
+        # Generate header row
+        header_cells = []
         for exp_id in experiment_ids:
-            html += f'<th>{self.metadata["experiments"][exp_id]["name"]}</th>'
-        html += "</tr>"
+            header_cells.append(
+                f'<th>{self.metadata["experiments"][exp_id]["name"]}</th>'
+            )
 
+        # Start table
+        table_parts = [
+            "<table>",
+            "<tr>",
+            "<th>Parameter</th>",
+            "".join(header_cells),
+            "</tr>",
+        ]
+
+        # Generate rows for each parameter
         for param in sorted(all_params):
-            html += f"<tr><td>{param}</td>"
-            for exp_id in experiment_ids:
-                value = configs[exp_id].get(param, "")
-                html += f"<td>{value}</td>"
-            html += "</tr>"
+            values = [str(configs[exp_id].get(param, "")) for exp_id in experiment_ids]
+            all_same = len(set(values)) == 1
 
-        html += "</table>"
-        return html
+            # Generate cells for this row
+            cells = []
+            for val in values:
+                style = "" if all_same else ' style="background-color: #ffeb3b36"'
+                cells.append(f"<td{style}>{val}</td>")
+
+            # Add row to table
+            table_parts.append(f"<tr><td>{param}</td>{''.join(cells)}</tr>")
+
+        # Close table
+        table_parts.append("</table>")
+
+        return "\n".join(table_parts)
 
     def _generate_statistical_summary(self, df: pd.DataFrame) -> str:
         """

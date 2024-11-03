@@ -4,12 +4,11 @@ import tkinter as tk
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
+from agents import main as run_simulation
 from analysis import SimulationAnalyzer
 from batch_runner import BatchRunner
 from config import SimulationConfig
 from visualization import SimulationVisualizer
-
-from agents import main as run_simulation
 
 
 class SimulationGUI:
