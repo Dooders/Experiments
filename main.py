@@ -8,14 +8,41 @@ from agents import main as run_simulation
 from analysis import SimulationAnalyzer
 from batch_runner import BatchRunner
 from config import SimulationConfig
+from gui_config import *
 from visualization import SimulationVisualizer
 
 
 class SimulationGUI:
-    def __init__(self, root):
+    """
+    Main GUI application for running and visualizing agent-based simulations.
+
+    This class provides a graphical interface for:
+    - Running new simulations
+    - Loading existing simulations
+    - Configuring simulation parameters
+    - Visualizing simulation results
+    - Analyzing simulation data
+    - Generating reports
+
+    Attributes
+    ----------
+    root (tk.Tk):
+        The main window of the application
+    current_db_path (str):
+        Path to the current simulation database
+    visualizer (SimulationVisualizer):
+        Instance of visualization component
+
+    Methods
+    -------
+    log_message(message: str) -> None
+        Add a message to the log display.
+    """
+
+    def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("Agent-Based Simulation")
-        self.root.geometry("1200x800")
+        self.root.title(WINDOW_TITLE)
+        self.root.geometry(WINDOW_SIZE)
 
         # Initialize variables
         self.current_db_path = None
@@ -25,14 +52,22 @@ class SimulationGUI:
         self._setup_main_frame()
         self._setup_logging()
 
-    def _setup_main_frame(self):
-        """Setup the main container frame."""
+    def _setup_main_frame(self) -> None:
+        """
+        Setup the main container frame and layout of the application.
+
+        Creates a two-pane layout:
+        - Left pane: Main visualization/welcome area
+        - Right pane: Log display and progress indicators
+
+        Configures grid weights and scrollbars for proper resizing behavior.
+        """
         self.main_frame = ttk.Frame(self.root)
         self.main_frame.pack(fill=tk.BOTH, expand=True)
 
         # Configure grid weights for main frame
-        self.main_frame.grid_columnconfigure(0, weight=3)  # Left pane gets more space
-        self.main_frame.grid_columnconfigure(1, weight=1)  # Right pane
+        self.main_frame.grid_columnconfigure(0, weight=LEFT_PANE_WEIGHT)
+        self.main_frame.grid_columnconfigure(1, weight=RIGHT_PANE_WEIGHT)
         self.main_frame.grid_rowconfigure(0, weight=1)  # Allow vertical expansion
 
         # Create left and right panes
@@ -55,15 +90,7 @@ class SimulationGUI:
         self.log_frame.grid_rowconfigure(0, weight=1)
 
         # Create log text widget with scrollbar
-        self.log_text = tk.Text(
-            self.log_frame,
-            wrap=tk.WORD,
-            bg="black",
-            fg="#00FF00",
-            font=("Courier", 10),
-            height=20,
-            width=50,
-        )
+        self.log_text = tk.Text(self.log_frame, **LOG_TEXT_CONFIG)
         self.log_text.grid(row=0, column=0, sticky="nsew")
 
         self.log_scrollbar = ttk.Scrollbar(self.log_frame, command=self.log_text.yview)
@@ -97,14 +124,31 @@ class SimulationGUI:
         )
         self.welcome_label.grid(row=0, column=0, sticky="nsew")
 
-    def log_message(self, message):
-        """Add a message to the log."""
+    def log_message(self, message: str) -> None:
+        """
+        Add a message to the log display.
+
+        Parameters
+        ----------
+        message : str
+            Message to be displayed in log
+
+        Updates the log text widget and auto-scrolls to the bottom.
+        """
         self.log_text.insert(tk.END, f"{message}\n")
         self.log_text.see(tk.END)  # Auto-scroll to bottom
         self.log_text.update()
 
-    def _new_simulation(self):
-        """Start a new simulation."""
+    def _new_simulation(self) -> None:
+        """
+        Start a new simulation run.
+
+        - Creates a new database with timestamp
+        - Loads configuration from YAML
+        - Sets up logging handlers
+        - Runs simulation in separate thread
+        - Updates UI with progress
+        """
         try:
             # Restore default layout
             self._restore_default_layout()
@@ -118,11 +162,11 @@ class SimulationGUI:
 
             # Create new database path
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.current_db_path = f"simulations/simulation_{timestamp}.db"
-            os.makedirs("simulations", exist_ok=True)
+            self.current_db_path = f"{SIMULATIONS_DIR}/simulation_{timestamp}.db"
+            os.makedirs(SIMULATIONS_DIR, exist_ok=True)
 
             # Load default configuration
-            config = SimulationConfig.from_yaml("config.yaml")
+            config = SimulationConfig.from_yaml(CONFIG_FILE)
 
             # Remove all existing handlers from root logger to prevent double logging
             root_logger = logging.getLogger()
@@ -150,7 +194,7 @@ class SimulationGUI:
             def run_sim():
                 try:
                     run_simulation(
-                        num_steps=500,  # Default steps
+                        num_steps=DEFAULT_SIMULATION_STEPS,
                         config=config,
                         db_path=self.current_db_path,
                     )
@@ -168,7 +212,7 @@ class SimulationGUI:
         except Exception as e:
             self._simulation_error(str(e))
 
-    def _simulation_complete(self):
+    def _simulation_complete(self) -> None:
         """Handle simulation completion."""
         self.progress_bar.stop()
         self.progress_label.config(text="Simulation completed")
@@ -180,14 +224,21 @@ class SimulationGUI:
         # Start visualizer
         self._start_visualizer()
 
-    def _simulation_error(self, error_msg):
+    def _simulation_error(self, error_msg: str) -> None:
         """Handle simulation error."""
         self.progress_bar.stop()
         self.progress_label.config(text="Simulation failed")
         self.log_message(f"ERROR: {error_msg}")
 
-    def _start_visualizer(self):
-        """Start the simulation visualizer."""
+    def _start_visualizer(self) -> None:
+        """
+        Initialize and display the simulation visualizer.
+
+        - Clears existing content
+        - Reconfigures layout for visualization
+        - Creates new SimulationVisualizer instance
+        - Loads simulation data from database
+        """
         # Clear left pane
         for widget in self.left_pane.winfo_children():
             widget.destroy()
@@ -207,8 +258,21 @@ class SimulationGUI:
             self.left_pane, db_path=self.current_db_path
         )
 
-    def _export_data(self):
-        """Export simulation data to CSV."""
+    def _export_data(self) -> None:
+        """
+        Export simulation data to CSV format.
+
+        Opens a file dialog for the user to choose save location.
+        Uses SimulationAnalyzer to export the current simulation data.
+        Shows success/error messages via messagebox.
+
+        Raises
+        ------
+        Warning
+            If no simulation data exists
+        Error
+            If export fails
+        """
         if not self.current_db_path:
             messagebox.showwarning("Warning", "No simulation data to export.")
             return
@@ -217,7 +281,7 @@ class SimulationGUI:
             filepath = filedialog.asksaveasfilename(
                 title="Export Data",
                 defaultextension=".csv",
-                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                filetypes=FILE_TYPES["csv"],
             )
 
             if filepath:
@@ -229,28 +293,44 @@ class SimulationGUI:
             messagebox.showerror("Error", f"Failed to export data: {str(e)}")
             logging.error(f"Failed to export data: {str(e)}", exc_info=True)
 
-    def _run_batch(self):
-        """Run batch simulations."""
+    def _run_batch(self) -> None:
+        """
+        Run multiple simulations with varying parameters.
+
+        Creates a BatchRunner instance with the base configuration,
+        adds parameter variations for system and individual agents,
+        and executes the batch simulation.
+
+        Default variations:
+        - System agents: [20, 30, 40]
+        - Individual agents: [20, 30, 40]
+        """
         try:
             # Load base configuration
-            config = SimulationConfig.from_yaml("config.yaml")
+            config = SimulationConfig.from_yaml(CONFIG_FILE)
 
             # Create batch runner
             runner = BatchRunner(config)
 
-            # Add some default parameter variations
-            runner.add_parameter_variation("system_agents", [20, 30, 40])
-            runner.add_parameter_variation("individual_agents", [20, 30, 40])
+            # Add parameter variations from config
+            for param, values in DEFAULT_BATCH_VARIATIONS.items():
+                runner.add_parameter_variation(param, values)
 
             # Run batch
-            runner.run("batch_experiment", num_steps=500)
+            runner.run("batch_experiment", num_steps=DEFAULT_SIMULATION_STEPS)
             self.log_message("Batch simulation completed!")
 
         except Exception as e:
             self._simulation_error(f"Failed to run batch simulation: {str(e)}")
 
-    def _configure_simulation(self):
-        """Open configuration dialog."""
+    def _configure_simulation(self) -> None:
+        """
+        Open configuration dialog for simulation parameters.
+
+        Creates a scrollable window containing editable fields for all
+        configuration parameters from config.yaml. Changes are saved
+        back to the configuration file when applied.
+        """
         config_window = tk.Toplevel(self.root)
         config_window.title("Simulation Configuration")
         config_window.geometry("400x600")
@@ -279,8 +359,23 @@ class SimulationGUI:
         scrollbar.pack(side="right", fill="y")
         canvas.pack(side="left", fill="both", expand=True)
 
-    def _create_config_fields(self, parent, config):
-        """Create input fields for configuration parameters."""
+    def _create_config_fields(
+        self, parent: tk.Widget, config: SimulationConfig
+    ) -> None:
+        """
+        Create input fields for configuration parameters.
+
+        Parameters
+        ----------
+        parent : tk.Widget
+            Parent widget to contain the fields
+        config : SimulationConfig
+            Current configuration object
+
+        Creates labeled entry fields for each configuration parameter,
+        excluding visualization settings. Includes save button with
+        validation.
+        """
         row = 0
         entries = {}
 
@@ -325,8 +420,21 @@ class SimulationGUI:
             row=row, column=0, columnspan=2, pady=20
         )
 
-    def _generate_report(self):
-        """Generate analysis report."""
+    def _generate_report(self) -> None:
+        """
+        Generate HTML analysis report of simulation results.
+
+        Opens file dialog for save location, then uses SimulationAnalyzer
+        to generate a comprehensive report including:
+        - Survival rates
+        - Resource efficiency
+        - Population dynamics
+        - Other key metrics
+
+        Raises:
+            Warning if no simulation data exists
+            Error if report generation fails
+        """
         if not self.current_db_path:
             messagebox.showwarning("Warning", "No simulation data to analyze.")
             return
@@ -346,8 +454,24 @@ class SimulationGUI:
         except Exception as e:
             self._simulation_error(f"Failed to generate report: {str(e)}")
 
-    def _view_statistics(self):
-        """Show simulation statistics window."""
+    def _view_statistics(self) -> None:
+        """
+        Display window showing key simulation statistics.
+
+        Shows:
+        - Survival rates by agent type
+        - Resource efficiency metrics
+        - Statistical summaries
+
+        Creates a new window with scrollable text display.
+
+        Raises
+        ------
+        Warning
+            If no simulation data exists
+        Error
+            If statistics calculation fails
+        """
         if not self.current_db_path:
             messagebox.showwarning("Warning", "No simulation data to analyze.")
             return
@@ -379,10 +503,19 @@ class SimulationGUI:
         except Exception as e:
             self._simulation_error(f"Failed to load statistics: {str(e)}")
 
-    def _show_documentation(self):
-        """Show documentation window."""
+    def _show_documentation(self) -> None:
+        """
+        Display simulation documentation from agents.md file.
+
+        Creates a new window with scrollable text display of the
+        markdown documentation. Documentation includes:
+        - Agent behaviors
+        - System mechanics
+        - Configuration options
+        - Usage instructions
+        """
         try:
-            with open("agents.md", "r") as f:
+            with open(DOCS_FILE, "r") as f:
                 content = f.read()
 
             doc_window = tk.Toplevel(self.root)
@@ -397,25 +530,43 @@ class SimulationGUI:
         except Exception as e:
             self._simulation_error(f"Failed to load documentation: {str(e)}")
 
-    def _show_about(self):
-        """Show about dialog."""
-        messagebox.showinfo(
-            "About",
-            "Agent-Based Simulation\n\n"
-            "A simulation environment for studying emergent behaviors "
-            "in populations of system and individual agents.\n\n"
-            "Version 1.0",
-        )
+    def _show_about(self) -> None:
+        """
+        Display about dialog with application information.
 
-    def _on_exit(self):
-        """Handle application exit."""
+        Shows:
+        - Application name
+        - Version number
+        - Brief description
+        - Basic usage information
+        """
+        messagebox.showinfo("About", ABOUT_TEXT)
+
+    def _on_exit(self) -> None:
+        """
+        Handle application exit request.
+
+        - Prompts for confirmation
+        - Closes visualizer if active
+        - Terminates application
+        """
         if messagebox.askokcancel("Exit", "Do you want to exit the application?"):
             if self.visualizer:
                 self.visualizer.close()
             self.root.quit()
 
-    def _setup_menu(self):
-        """Create the menu bar with tooltips."""
+    def _setup_menu(self) -> None:
+        """
+        Create the application menu bar with tooltips.
+
+        Creates menus for:
+        - File operations (new/open/export)
+        - Simulation controls (batch/configure)
+        - Analysis tools (reports/statistics)
+        - Help documentation
+
+        Each menu item includes hover tooltips.
+        """
         self.menubar = tk.Menu(self.root)
         self.root.config(menu=self.menubar)
 
@@ -495,8 +646,22 @@ class SimulationGUI:
             help_menu.add_command(label=label, command=command)
             self._add_menu_tooltip(help_menu, label, tooltip)
 
-    def _add_menu_tooltip(self, menu, label, tooltip_text):
-        """Add tooltip to a menu item."""
+    def _add_menu_tooltip(self, menu: tk.Menu, label: str, tooltip_text: str) -> None:
+        """
+        Add hover tooltip to a menu item.
+
+        Parameters
+        ----------
+        menu : tk.Menu
+            Menu widget containing the item
+        label : str
+            Label of the menu item
+        tooltip_text : str
+            Text to display in tooltip
+
+        Creates a temporary label that appears when hovering
+        over the menu item and auto-destroys after 2 seconds.
+        """
 
         def show_tooltip(event):
             tooltip = tk.Label(
@@ -509,12 +674,28 @@ class SimulationGUI:
                 font=("Arial", 9),
             )
             tooltip.place(x=event.x_root, y=event.y_root + 20)
-            self.root.after(2000, tooltip.destroy)  # Destroy after 2 seconds
+            self.root.after(TOOLTIP_DURATION, tooltip.destroy)
 
         menu.bind("<Enter>", show_tooltip)
 
-    def _open_simulation(self):
-        """Open an existing simulation database."""
+    def _open_simulation(self) -> None:
+        """
+        Open an existing simulation database file.
+
+        Opens file dialog in simulations directory,
+        loads selected database, and initializes visualizer
+        with the loaded data.
+
+        Updates:
+            - current_db_path
+            - log display
+            - visualization
+
+        Raises
+        ------
+        Error
+            If file loading fails
+        """
         try:
             filepath = filedialog.askopenfilename(
                 title="Open Simulation",
@@ -538,8 +719,16 @@ class SimulationGUI:
         except Exception as e:
             self._simulation_error(f"Failed to open simulation: {str(e)}")
 
-    def _setup_logging(self):
-        """Setup logging configuration."""
+    def _setup_logging(self) -> None:
+        """
+        Configure application logging system.
+
+        Sets up:
+        - File logging to dated log files
+        - GUI logging to text widget
+        - Formatting for log messages
+        - Log level filtering
+        """
         if not os.path.exists("logs"):
             os.makedirs("logs")
 
@@ -580,8 +769,15 @@ class SimulationGUI:
 
         logging.info("Logging system initialized")
 
-    def _restore_default_layout(self):
-        """Restore the default layout with log and progress frames."""
+    def _restore_default_layout(self) -> None:
+        """
+        Reset the GUI layout to its default state.
+
+        Restores:
+        - Two-pane layout
+        - Log and progress frames
+        - Original grid weights
+        """
         # Show right pane
         self.right_pane.grid()
 
@@ -591,15 +787,25 @@ class SimulationGUI:
         )
 
         # Restore original grid weights
-        self.main_frame.grid_columnconfigure(0, weight=3)
-        self.main_frame.grid_columnconfigure(1, weight=1)
+        self.main_frame.grid_columnconfigure(0, weight=LEFT_PANE_WEIGHT)
+        self.main_frame.grid_columnconfigure(1, weight=RIGHT_PANE_WEIGHT)
 
         # Show log and progress frames
         self.log_frame.grid()
         self.progress_frame.grid()
 
-    def _setup_controls(self):
-        """Setup playback controls with consistent ttk styling and tooltips."""
+    def _setup_controls(self) -> None:
+        """
+        Setup simulation playback control panel.
+
+        Creates:
+        - Play/pause button
+        - Step controls (forward/backward)
+        - Speed adjustment slider
+        - Export button
+
+        All controls include tooltips and consistent styling.
+        """
         # Configure styles for controls
         style = ttk.Style()
         style.configure("Control.TButton", padding=5)
@@ -678,8 +884,21 @@ class SimulationGUI:
         export_btn.pack(side="right", padx=5)
         self._add_tooltip(export_btn, "Export simulation data to CSV file")
 
-    def _add_tooltip(self, widget, text):
-        """Add a tooltip to a widget."""
+    def _add_tooltip(self, widget: tk.Widget, text: str) -> None:
+        """
+        Add hover tooltip to any widget.
+
+        Parameters
+        ----------
+        widget : tk.Widget
+            Widget to add tooltip to
+        text : str
+            Text to display in tooltip
+
+        Creates a label that appears below the widget on hover
+        and disappears when mouse leaves the widget area.
+        Handles proper positioning and timing.
+        """
         tooltip = tk.Label(
             widget,
             text=text,
@@ -707,6 +926,12 @@ class SimulationGUI:
 
 
 def main():
+    """
+    Main entry point for the simulation GUI application.
+
+    Creates the root window and initializes the SimulationGUI
+    instance. Starts the Tkinter main event loop.
+    """
     root = tk.Tk()
     app = SimulationGUI(root)
     root.mainloop()

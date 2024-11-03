@@ -32,7 +32,7 @@ gamma: 0.95
 epsilon_start: 1.0
 epsilon_min: 0.01
 epsilon_decay: 0.995
-memory_size: 2000
+memory_size: 32
 batch_size: 32
 training_frequency: 4
 dqn_hidden_size: 24
