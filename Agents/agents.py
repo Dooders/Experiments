@@ -11,7 +11,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from colorama import Fore, Style, init  # Add color support for console
+from colorama import Fore, Style, init
 from config import SimulationConfig
 from database import SimulationDatabase
 from PIL import Image, ImageDraw, ImageFont
@@ -43,7 +43,7 @@ class Environment:
         self.db = SimulationDatabase(db_path)
         self.next_agent_id = 0
         self.next_resource_id = 0
-        self.max_resource = max_resource  # New parameter for max resource
+        self.max_resource = max_resource
         self.initialize_resources(resource_distribution)
 
     def get_next_resource_id(self):
@@ -331,8 +331,8 @@ class Agent:
             return
 
         # Made reproduction easier
-        if self.resource_level >= 10:  # Reduced from 12
-            offspring_cost = 6  # Reduced from 8
+        if self.resource_level >= 10:
+            offspring_cost = 6
             if self.resource_level >= offspring_cost + 2:
                 new_agent = self.create_offspring()
                 self.environment.add_agent(new_agent)

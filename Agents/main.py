@@ -416,41 +416,103 @@ class SimulationGUI:
             self.root.quit()
 
     def _setup_menu(self):
-        """Create the menu bar."""
+        """Create the menu bar with tooltips."""
         self.menubar = tk.Menu(self.root)
         self.root.config(menu=self.menubar)
 
         # File Menu
         file_menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="New Simulation", command=self._new_simulation)
-        file_menu.add_command(label="Open Simulation", command=self._open_simulation)
-        file_menu.add_separator()
-        file_menu.add_command(label="Export Data", command=self._export_data)
-        file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self._on_exit)
+
+        file_menu_items = [
+            ("New Simulation", self._new_simulation, "Start a new simulation"),
+            ("Open Simulation", self._open_simulation, "Open an existing simulation"),
+            (None, None, None),  # Separator
+            ("Export Data", self._export_data, "Export simulation data to CSV"),
+            (None, None, None),  # Separator
+            ("Exit", self._on_exit, "Exit the application"),
+        ]
+
+        for label, command, tooltip in file_menu_items:
+            if label is None:
+                file_menu.add_separator()
+            else:
+                file_menu.add_command(label=label, command=command)
+                if tooltip:
+                    self._add_menu_tooltip(file_menu, label, tooltip)
 
         # Simulation Menu
         sim_menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="Simulation", menu=sim_menu)
-        sim_menu.add_command(label="Run Batch", command=self._run_batch)
-        sim_menu.add_command(label="Configure", command=self._configure_simulation)
+
+        sim_menu_items = [
+            (
+                "Run Batch",
+                self._run_batch,
+                "Run multiple simulations with different parameters",
+            ),
+            (
+                "Configure",
+                self._configure_simulation,
+                "Configure simulation parameters",
+            ),
+        ]
+
+        for label, command, tooltip in sim_menu_items:
+            sim_menu.add_command(label=label, command=command)
+            self._add_menu_tooltip(sim_menu, label, tooltip)
 
         # Analysis Menu
         analysis_menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="Analysis", menu=analysis_menu)
-        analysis_menu.add_command(
-            label="Generate Report", command=self._generate_report
-        )
-        analysis_menu.add_command(
-            label="View Statistics", command=self._view_statistics
-        )
+
+        analysis_menu_items = [
+            (
+                "Generate Report",
+                self._generate_report,
+                "Generate detailed analysis report",
+            ),
+            ("View Statistics", self._view_statistics, "View simulation statistics"),
+        ]
+
+        for label, command, tooltip in analysis_menu_items:
+            analysis_menu.add_command(label=label, command=command)
+            self._add_menu_tooltip(analysis_menu, label, tooltip)
 
         # Help Menu
         help_menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="Help", menu=help_menu)
-        help_menu.add_command(label="Documentation", command=self._show_documentation)
-        help_menu.add_command(label="About", command=self._show_about)
+
+        help_menu_items = [
+            (
+                "Documentation",
+                self._show_documentation,
+                "View simulation documentation",
+            ),
+            ("About", self._show_about, "About this application"),
+        ]
+
+        for label, command, tooltip in help_menu_items:
+            help_menu.add_command(label=label, command=command)
+            self._add_menu_tooltip(help_menu, label, tooltip)
+
+    def _add_menu_tooltip(self, menu, label, tooltip_text):
+        """Add tooltip to a menu item."""
+
+        def show_tooltip(event):
+            tooltip = tk.Label(
+                self.root,
+                text=tooltip_text,
+                background="#FFFFEA",
+                foreground="black",
+                relief="solid",
+                borderwidth=1,
+                font=("Arial", 9),
+            )
+            tooltip.place(x=event.x_root, y=event.y_root + 20)
+            self.root.after(2000, tooltip.destroy)  # Destroy after 2 seconds
+
+        menu.bind("<Enter>", show_tooltip)
 
     def _open_simulation(self):
         """Open an existing simulation database."""
@@ -536,6 +598,113 @@ class SimulationGUI:
         # Show log and progress frames
         self.log_frame.grid()
         self.progress_frame.grid()
+
+    def _setup_controls(self):
+        """Setup playback controls with consistent ttk styling and tooltips."""
+        # Configure styles for controls
+        style = ttk.Style()
+        style.configure("Control.TButton", padding=5)
+
+        # Configure Scale style
+        style.layout(
+            "Horizontal.TScale",
+            [
+                (
+                    "Horizontal.Scale.trough",
+                    {
+                        "sticky": "nswe",
+                        "children": [
+                            ("Horizontal.Scale.slider", {"side": "left", "sticky": ""})
+                        ],
+                    },
+                )
+            ],
+        )
+        style.configure("Horizontal.TScale", background="white")
+
+        # Control buttons frame
+        buttons_frame = ttk.Frame(self.controls_frame)
+        buttons_frame.pack(side="left", fill="x", expand=True)
+
+        # Playback controls
+        self.play_button = ttk.Button(
+            buttons_frame,
+            text="▶ Play/Pause",
+            command=self._toggle_playback,
+            style="Control.TButton",
+        )
+        self.play_button.pack(side="left", padx=5)
+        self._add_tooltip(self.play_button, "Start or pause the simulation playback")
+
+        # Step controls with consistent styling and tooltips
+        step_controls = [
+            ("⏪", lambda: self._step_to(self.current_step - 10), "Go back 10 steps"),
+            ("◀", lambda: self._step_to(self.current_step - 1), "Previous step"),
+            ("▶", lambda: self._step_to(self.current_step + 1), "Next step"),
+            (
+                "⏩",
+                lambda: self._step_to(self.current_step + 10),
+                "Skip forward 10 steps",
+            ),
+        ]
+
+        for text, command, tooltip in step_controls:
+            btn = ttk.Button(
+                buttons_frame, text=text, command=command, style="Control.TButton"
+            )
+            btn.pack(side="left", padx=2)
+            self._add_tooltip(btn, tooltip)
+
+        # Speed control frame
+        speed_frame = ttk.Frame(self.controls_frame)
+        speed_frame.pack(side="left", fill="x", expand=True, padx=10)
+
+        speed_label = ttk.Label(speed_frame, text="Playback Speed:")
+        speed_label.pack(side="left", padx=5)
+        self._add_tooltip(speed_label, "Adjust the simulation playback speed")
+
+        # Create scale with tooltip
+        self.speed_scale = ttk.Scale(speed_frame, from_=1, to=50, orient="horizontal")
+        self.speed_scale.set(10)
+        self.speed_scale.pack(side="left", padx=5, fill="x", expand=True)
+        self._add_tooltip(self.speed_scale, "1 = Slowest, 50 = Fastest")
+
+        # Export button with tooltip
+        export_btn = ttk.Button(
+            self.controls_frame,
+            text="Export Data",
+            command=self._export_data,
+            style="Control.TButton",
+        )
+        export_btn.pack(side="right", padx=5)
+        self._add_tooltip(export_btn, "Export simulation data to CSV file")
+
+    def _add_tooltip(self, widget, text):
+        """Add a tooltip to a widget."""
+        tooltip = tk.Label(
+            widget,
+            text=text,
+            background="#FFFFEA",
+            foreground="black",
+            relief="solid",
+            borderwidth=1,
+            font=("Arial", 9),
+        )
+        tooltip.bind(
+            "<Enter>", lambda e: tooltip.place_forget()
+        )  # Hide if mouse enters tooltip
+
+        def enter(event):
+            # Position tooltip below the widget
+            x = widget.winfo_rootx()
+            y = widget.winfo_rooty() + widget.winfo_height() + 2
+            tooltip.place(x=x, y=y)
+
+        def leave(event):
+            tooltip.place_forget()
+
+        widget.bind("<Enter>", enter)
+        widget.bind("<Leave>", leave)
 
 
 def main():
