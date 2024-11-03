@@ -752,7 +752,7 @@ def run_simulation(environment, num_steps, data_collector):
 
     # Save the animation with longer duration per frame
     frames[0].save(
-        "Agents/resource_distribution.gif",
+        "resource_distribution.gif",
         save_all=True,
         append_images=frames[1:],
         duration=200,  # Changed from 50 to 200 milliseconds per frame
@@ -819,7 +819,7 @@ def visualize_results(df):
     plt.ylabel("Agent Count")
     plt.title("Agent Population Over Time")
     plt.legend()
-    plt.savefig("Agents/population_over_time.png")
+    plt.savefig("population_over_time.png")
     plt.close()
 
     # Combined Resources and Consumption chart
@@ -835,7 +835,7 @@ def visualize_results(df):
     plt.ylabel("Resource Units")
     plt.title("Resource Levels and Consumption Over Time")
     plt.legend()
-    plt.savefig("Agents/resource_metrics.png")
+    plt.savefig("resource_metrics.png")
     plt.close()
 
     # Average resources per agent chart
@@ -850,7 +850,7 @@ def visualize_results(df):
     plt.ylabel("Average Resource per Agent")
     plt.title("Average Resource per Agent Over Time")
     plt.legend()
-    plt.savefig("Agents/average_resource_per_agent.png")
+    plt.savefig("average_resource_per_agent.png")
     plt.close()
 
 

@@ -123,7 +123,7 @@ class SimulationGUI:
             os.makedirs("simulations", exist_ok=True)
 
             # Load default configuration
-            config = SimulationConfig.from_yaml("Agents/config.yaml")
+            config = SimulationConfig.from_yaml("config.yaml")
 
             # Remove all existing handlers from root logger to prevent double logging
             root_logger = logging.getLogger()
@@ -234,7 +234,7 @@ class SimulationGUI:
         """Run batch simulations."""
         try:
             # Load base configuration
-            config = SimulationConfig.from_yaml("Agents/config.yaml")
+            config = SimulationConfig.from_yaml("config.yaml")
 
             # Create batch runner
             runner = BatchRunner(config)
@@ -257,7 +257,7 @@ class SimulationGUI:
         config_window.geometry("400x600")
 
         # Load current configuration
-        config = SimulationConfig.from_yaml("Agents/config.yaml")
+        config = SimulationConfig.from_yaml("config.yaml")
 
         # Create scrollable frame
         canvas = tk.Canvas(config_window)
@@ -315,7 +315,7 @@ class SimulationGUI:
                         setattr(config, key, value)
 
                 # Save to file
-                config.to_yaml("Agents/config.yaml")
+                config.to_yaml("config.yaml")
                 messagebox.showinfo("Success", "Configuration saved successfully!")
                 parent.master.master.destroy()  # Close config window
 
@@ -383,7 +383,7 @@ class SimulationGUI:
     def _show_documentation(self):
         """Show documentation window."""
         try:
-            with open("Agents/agents.md", "r") as f:
+            with open("agents.md", "r") as f:
                 content = f.read()
 
             doc_window = tk.Toplevel(self.root)
