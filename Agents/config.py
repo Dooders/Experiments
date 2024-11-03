@@ -49,6 +49,11 @@ class SimulationConfig:
     individual_agents: int = 25
     initial_resource_level: int = 12
     max_population: int = 300
+    starvation_threshold: int = 0
+    max_starvation_time: int = 15
+    offspring_cost: int = 6
+    min_reproduction_resources: int = 10
+    offspring_initial_resources: int = 5
 
     # Resource settings
     initial_resources: int = 60
@@ -61,6 +66,7 @@ class SimulationConfig:
     max_movement: int = 8
     gathering_range: int = 20
     max_gather_amount: int = 3
+    territory_range: int = 30  # Range for considering nearby agents
 
     # Learning parameters
     learning_rate: float = 0.001
@@ -68,6 +74,10 @@ class SimulationConfig:
     epsilon_start: float = 1.0
     epsilon_min: float = 0.01
     epsilon_decay: float = 0.995
+    memory_size: int = 2000
+    batch_size: int = 32
+    training_frequency: int = 4
+    dqn_hidden_size: int = 24
 
     # Visualization settings (separate config)
     visualization: VisualizationConfig = field(default_factory=VisualizationConfig)
