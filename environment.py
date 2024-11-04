@@ -59,6 +59,7 @@ class Environment:
         self.agents.append(agent)
 
     def update(self):
+        """Update environment state with batch processing."""
         self.time += 1
 
         # Vectorize resource regeneration
@@ -74,18 +75,10 @@ class Environment:
                     self.max_resource or float("inf"),
                 )
 
-        # Batch process all agents
-        alive_agents = [agent for agent in self.agents if agent.alive]
-        positions = np.array([agent.position for agent in alive_agents])
-
-        # Calculate all distances at once using broadcasting
-        resource_positions = np.array([r.position for r in self.resources])
-        distances = np.sqrt(
-            ((positions[:, np.newaxis] - resource_positions) ** 2).sum(axis=2)
-        )
-
-        # Update metrics and log state
+        # Calculate metrics and log state
         metrics = self._calculate_metrics()
+
+        # Log state with batch processing
         self.db.log_simulation_step(
             step_number=self.time,
             agents=self.agents,

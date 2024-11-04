@@ -36,6 +36,12 @@ class SimulationDatabase:
         if table_names:
             self.tables.update(table_names)
 
+        # Add batch processing parameters
+        self.batch_size = 1000
+        self.agent_state_buffer = []
+        self.resource_state_buffer = []
+        self.metric_buffer = []
+
         self.setup_tables()
 
     def setup_tables(self):
@@ -145,76 +151,95 @@ class SimulationDatabase:
         agents: List[Any],
         resources: List[Any],
         metrics: Dict[str, float],
-        batch_size=1000,
     ) -> None:
-        """Log the current state of the simulation."""
+        """Log the current state of the simulation with batch processing."""
         # Insert step first
         self.cursor.execute(
             "INSERT INTO SimulationSteps (step_number) VALUES (?)", (step_number,)
         )
         step_id = self.cursor.lastrowid
 
-        # Prepare agent data with all required columns
-        agent_data = [
-            (
-                agent.agent_id,
-                step_id,
-                agent.position[0],  # position_x
-                agent.position[1],  # position_y
-                agent.resource_level,
-                agent.alive,
-                agent.__class__.__name__,  # agent_type
-            )
-            for agent in agents
-        ]
+        # Add data to buffers
+        self.agent_state_buffer.extend(
+            [
+                (
+                    agent.agent_id,
+                    step_id,
+                    agent.position[0],
+                    agent.position[1],
+                    agent.resource_level,
+                    agent.alive,
+                    agent.__class__.__name__,
+                )
+                for agent in agents
+            ]
+        )
 
-        # Prepare resource data
-        resource_data = [
-            (
-                resource.resource_id,
-                step_id,
-                resource.position[0],  # position_x
-                resource.position[1],  # position_y
-                resource.amount,
-            )
-            for resource in resources
-        ]
+        self.resource_state_buffer.extend(
+            [
+                (
+                    resource.resource_id,
+                    step_id,
+                    resource.position[0],
+                    resource.position[1],
+                    resource.amount,
+                )
+                for resource in resources
+            ]
+        )
 
-        # Batch insert agent states
-        for i in range(0, len(agent_data), batch_size):
-            batch = agent_data[i : i + batch_size]
+        self.metric_buffer.extend(
+            [(step_id, name, value) for name, value in metrics.items()]
+        )
+
+        # Process buffers if they exceed batch size
+        if len(self.agent_state_buffer) >= self.batch_size:
+            self._flush_agent_states()
+        if len(self.resource_state_buffer) >= self.batch_size:
+            self._flush_resource_states()
+        if len(self.metric_buffer) >= self.batch_size:
+            self._flush_metrics()
+
+    def _flush_agent_states(self) -> None:
+        """Flush agent state buffer to database."""
+        if self.agent_state_buffer:
             self.cursor.executemany(
                 """
                 INSERT INTO AgentStates 
                 (agent_id, step_id, position_x, position_y, resource_level, alive, agent_type)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                batch,
+                self.agent_state_buffer,
             )
+            self.agent_state_buffer = []
+            self.conn.commit()
 
-        # Batch insert resource states
-        for i in range(0, len(resource_data), batch_size):
-            batch = resource_data[i : i + batch_size]
+    def _flush_resource_states(self) -> None:
+        """Flush resource state buffer to database."""
+        if self.resource_state_buffer:
             self.cursor.executemany(
                 """
                 INSERT INTO ResourceStates 
                 (resource_id, step_id, position_x, position_y, amount)
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                batch,
+                self.resource_state_buffer,
             )
+            self.resource_state_buffer = []
+            self.conn.commit()
 
-        # Log metrics
-        metric_data = [(step_id, name, value) for name, value in metrics.items()]
-        self.cursor.executemany(
-            """
-            INSERT INTO SimulationMetrics (step_id, metric_name, metric_value)
-            VALUES (?, ?, ?)
-            """,
-            metric_data,
-        )
-
-        self.conn.commit()
+    def _flush_metrics(self) -> None:
+        """Flush metrics buffer to database."""
+        if self.metric_buffer:
+            self.cursor.executemany(
+                """
+                INSERT INTO SimulationMetrics (step_id, metric_name, metric_value)
+                VALUES (?, ?, ?)
+                """,
+                self.metric_buffer,
+            )
+            self.metric_buffer = []
+            self.conn.commit()
 
     def update_agent_death(self, agent_id: int, death_time: int) -> None:
         """Update the death time of an agent."""
@@ -276,7 +301,10 @@ class SimulationDatabase:
         }
 
     def close(self):
-        """Close the database connection."""
+        """Close the database connection after flushing all buffers."""
+        self._flush_agent_states()
+        self._flush_resource_states()
+        self._flush_metrics()
         self.conn.close()
 
     def get_historical_data(
