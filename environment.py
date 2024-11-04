@@ -1,6 +1,8 @@
 import os
 import random
 
+import numpy as np
+
 from agents import IndividualAgent, SystemAgent
 from database import SimulationDatabase
 from resources import Resource
@@ -58,30 +60,38 @@ class Environment:
 
     def update(self):
         self.time += 1
-        self.regenerate_resources()
 
-        # Calculate metrics
+        # Vectorize resource regeneration
+        regen_mask = (
+            np.random.random(len(self.resources)) < self.config.resource_regen_rate
+        )
+        for resource, should_regen in zip(self.resources, regen_mask):
+            if should_regen and (
+                self.max_resource is None or resource.amount < self.max_resource
+            ):
+                resource.amount = min(
+                    resource.amount + self.config.resource_regen_amount,
+                    self.max_resource or float("inf"),
+                )
+
+        # Batch process all agents
+        alive_agents = [agent for agent in self.agents if agent.alive]
+        positions = np.array([agent.position for agent in alive_agents])
+
+        # Calculate all distances at once using broadcasting
+        resource_positions = np.array([r.position for r in self.resources])
+        distances = np.sqrt(
+            ((positions[:, np.newaxis] - resource_positions) ** 2).sum(axis=2)
+        )
+
+        # Update metrics and log state
         metrics = self._calculate_metrics()
-
-        # Log current state to database
         self.db.log_simulation_step(
             step_number=self.time,
             agents=self.agents,
             resources=self.resources,
             metrics=metrics,
         )
-
-    def regenerate_resources(self):
-        for resource in self.resources:
-            # Only check max_resource if it's set
-            if random.random() < 0.1:  # 10% chance to regenerate
-                if self.max_resource is None:
-                    # No maximum, just add the regeneration amount
-                    resource.amount += 2
-                else:
-                    # Only regenerate if below maximum
-                    if resource.amount < self.max_resource:
-                        resource.amount = min(resource.amount + 2, self.max_resource)
 
     def _calculate_metrics(self):
         """Calculate various metrics for the current simulation state."""

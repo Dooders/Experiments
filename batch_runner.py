@@ -2,6 +2,7 @@ import itertools
 import logging
 import os
 from datetime import datetime
+from multiprocessing import Pool
 from typing import Any, Dict, List
 
 import pandas as pd
@@ -70,21 +71,27 @@ class BatchRunner:
 
         logging.info(f"Starting batch run with {len(combinations)} combinations")
 
-        # Run simulation for each combination
-        for i, combination in enumerate(combinations):
-            params = dict(zip(param_names, combination))
-            logging.info(f"Running combination {i+1}/{len(combinations)}: {params}")
+        # Prepare arguments for parallel processing
+        args = [
+            (
+                dict(zip(param_names, combo)),
+                self.base_config,
+                num_steps,
+                f"{batch_dir}/sim_{i}.db",
+            )
+            for i, combo in enumerate(combinations)
+        ]
 
-            # Create configuration for this run
-            config = self._create_config_variation(params)
+        # Run simulations in parallel
+        with Pool() as pool:
+            results = pool.map(run_simulation_wrapper, args)
 
-            # Run simulation
-            db_path = f"{batch_dir}/sim_{i}.db"
-            try:
-                environment = run_simulation(num_steps, config, db_path)
-                self._collect_results(params, environment)
-            except Exception as e:
-                logging.error(f"Simulation failed for params {params}: {str(e)}")
+        # Collect results from completed simulations
+        for result in results:
+            if result is not None:
+                self._collect_results(
+                    dict(zip(param_names, combinations[results.index(result)])), result
+                )
 
         self._save_results(batch_dir)
 
@@ -143,3 +150,15 @@ class BatchRunner:
         results_df = pd.DataFrame(self.results)
         results_df.to_csv(f"{batch_dir}/results.csv", index=False)
         logging.info(f"Results saved to {batch_dir}/results.csv")
+
+
+def run_simulation_wrapper(args):
+    params, config, num_steps, db_path = args
+    try:
+        config_copy = SimulationConfig.from_yaml(config.config_file)
+        for param, value in params.items():
+            setattr(config_copy, param, value)
+        return run_simulation(num_steps, config_copy, db_path)
+    except Exception as e:
+        logging.error(f"Simulation failed with params {params}: {str(e)}")
+        return None

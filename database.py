@@ -73,6 +73,7 @@ class SimulationDatabase:
                 position_y REAL,
                 resource_level REAL,
                 alive BOOLEAN,
+                agent_type TEXT,
                 FOREIGN KEY(agent_id) REFERENCES {self.tables['agents']}(agent_id),
                 FOREIGN KEY(step_id) REFERENCES {self.tables['steps']}(step_id)
             );
@@ -81,6 +82,8 @@ class SimulationDatabase:
                 state_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 resource_id INTEGER,
                 step_id INTEGER,
+                position_x REAL,
+                position_y REAL,
                 amount INTEGER,
                 FOREIGN KEY(resource_id) REFERENCES {self.tables['resources']}(resource_id),
                 FOREIGN KEY(step_id) REFERENCES {self.tables['steps']}(step_id)
@@ -142,52 +145,74 @@ class SimulationDatabase:
         agents: List[Any],
         resources: List[Any],
         metrics: Dict[str, float],
+        batch_size=1000,
     ) -> None:
         """Log the current state of the simulation."""
-        # Insert step
+        # Insert step first
         self.cursor.execute(
             "INSERT INTO SimulationSteps (step_number) VALUES (?)", (step_number,)
         )
         step_id = self.cursor.lastrowid
 
-        # Log agent states
-        for agent in agents:
-            if hasattr(agent, "position"):  # Check if agent has required attributes
-                self.cursor.execute(
-                    """
-                    INSERT INTO AgentStates (agent_id, step_id, position_x, position_y, 
-                                           resource_level, alive)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                    (
-                        agent.agent_id,
-                        step_id,
-                        agent.position[0],
-                        agent.position[1],
-                        agent.resource_level,
-                        agent.alive,
-                    ),
-                )
+        # Prepare agent data with all required columns
+        agent_data = [
+            (
+                agent.agent_id,
+                step_id,
+                agent.position[0],  # position_x
+                agent.position[1],  # position_y
+                agent.resource_level,
+                agent.alive,
+                agent.__class__.__name__,  # agent_type
+            )
+            for agent in agents
+        ]
 
-        # Log resource states
-        for resource in resources:
-            self.cursor.execute(
+        # Prepare resource data
+        resource_data = [
+            (
+                resource.resource_id,
+                step_id,
+                resource.position[0],  # position_x
+                resource.position[1],  # position_y
+                resource.amount,
+            )
+            for resource in resources
+        ]
+
+        # Batch insert agent states
+        for i in range(0, len(agent_data), batch_size):
+            batch = agent_data[i : i + batch_size]
+            self.cursor.executemany(
                 """
-                INSERT INTO ResourceStates (resource_id, step_id, amount)
-                VALUES (?, ?, ?)
-            """,
-                (resource.resource_id, step_id, resource.amount),
+                INSERT INTO AgentStates 
+                (agent_id, step_id, position_x, position_y, resource_level, alive, agent_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                batch,
+            )
+
+        # Batch insert resource states
+        for i in range(0, len(resource_data), batch_size):
+            batch = resource_data[i : i + batch_size]
+            self.cursor.executemany(
+                """
+                INSERT INTO ResourceStates 
+                (resource_id, step_id, position_x, position_y, amount)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                batch,
             )
 
         # Log metrics
-        for metric_name, value in metrics.items():
-            self.cursor.execute(
-                """
-                INSERT INTO SimulationMetrics (step_id, metric_name, metric_value)
-                VALUES (?, ?, ?)
+        metric_data = [(step_id, name, value) for name, value in metrics.items()]
+        self.cursor.executemany(
+            """
+            INSERT INTO SimulationMetrics (step_id, metric_name, metric_value)
+            VALUES (?, ?, ?)
             """,
-                (step_id, metric_name, value),
-            )
+            metric_data,
+        )
 
         self.conn.commit()
 

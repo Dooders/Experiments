@@ -135,21 +135,20 @@ class BaseAgent:
         self.total_reward += reward
         self.episode_rewards.append(reward)
 
-        # Store experience more efficiently
+        # Store experience
         self.memory.append(
             (self.last_state, self.last_action, reward, self.get_state())
         )
 
-        # Only train if we have enough samples and it's time to train
+        # Only train on larger batches less frequently
         if (
-            len(self.memory) >= self.config.batch_size
-            and len(self.memory) % self.config.training_frequency == 0
+            len(self.memory) >= self.config.batch_size * 4
+            and len(self.memory) % (self.config.training_frequency * 4) == 0
         ):
-            # Sample batch efficiently
-            indices = random.sample(range(len(self.memory)), self.config.batch_size)
-            batch = [self.memory[i] for i in indices]
+            # Sample larger batch
+            batch = random.sample(self.memory, self.config.batch_size * 4)
 
-            # Batch process tensors
+            # Process entire batch at once
             states = torch.stack([x[0] for x in batch])
             actions = torch.tensor([x[1] for x in batch], device=self.device)
             rewards = torch.tensor(
@@ -157,24 +156,20 @@ class BaseAgent:
             )
             next_states = torch.stack([x[3] for x in batch])
 
-            # Compute Q values in one batch
+            # Compute Q values efficiently
             with torch.no_grad():
-                next_q_values = self.model(next_states)
-                max_next_q_values = next_q_values.max(1)[0]
-                target_q_values = rewards + (self.gamma * max_next_q_values)
+                next_q_values = self.model(next_states).max(1)[0]
+                target_q_values = rewards + (self.gamma * next_q_values)
 
-            # Compute current Q values and loss
             current_q_values = self.model(states).gather(1, actions.unsqueeze(1))
             loss = self.criterion(current_q_values.squeeze(), target_q_values)
 
-            # Optimize
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
 
-            # Store loss and decay epsilon
             self.losses.append(loss.item())
-            self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+            self.epsilon *= self.epsilon_decay
 
     def act(self):
         # Base resource consumption
@@ -212,3 +207,27 @@ class BaseAgent:
         self.environment.db.update_agent_death(
             agent_id=self.agent_id, death_time=self.environment.time
         )
+
+    def gather_resources(self):
+        if not self.environment.resources:
+            return
+
+        # Convert positions to numpy arrays
+        agent_pos = np.array(self.position)
+        resource_positions = np.array([r.position for r in self.environment.resources])
+
+        # Calculate all distances at once
+        distances = np.sqrt(((resource_positions - agent_pos) ** 2).sum(axis=1))
+
+        # Find closest resource within range
+        in_range = distances < self.config.gathering_range
+        if not np.any(in_range):
+            return
+
+        closest_idx = distances[in_range].argmin()
+        resource = self.environment.resources[closest_idx]
+
+        if not resource.is_depleted():
+            gather_amount = min(self.config.max_gather_amount, resource.amount)
+            resource.consume(gather_amount)
+            self.resource_level += gather_amount
