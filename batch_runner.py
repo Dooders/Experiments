@@ -1,78 +1,164 @@
 import itertools
-from typing import Any, Dict, List
-import concurrent.futures
-from pathlib import Path
 import logging
+import os
 from datetime import datetime
+from multiprocessing import Pool
+from typing import Any, Dict, List
+
+import pandas as pd
 
 from config import SimulationConfig
-from agents import main as run_simulation
-from experiment_tracker import ExperimentTracker
+from simulation import run_simulation, setup_logging
+
 
 class BatchRunner:
+    """
+    Runs multiple simulations with varying parameters.
+
+    This class handles:
+    - Parameter variation management
+    - Batch execution of simulations
+    - Results collection and analysis
+    """
+
     def __init__(self, base_config: SimulationConfig):
+        """
+        Initialize batch runner with base configuration.
+
+        Parameters
+        ----------
+        base_config : SimulationConfig
+            Base configuration to use for simulations
+        """
         self.base_config = base_config
         self.parameter_variations = {}
-        self.results_dir = Path('results')
-        self.results_dir.mkdir(exist_ok=True)
-        self.experiment_tracker = ExperimentTracker()
-        
-    def add_parameter_variation(self, param_name: str, values: List[Any]):
-        """Add a parameter to vary in the batch experiments."""
-        self.parameter_variations[param_name] = values
-        
-    def _generate_configs(self) -> List[SimulationConfig]:
-        """Generate all combinations of parameter variations."""
+        self.results = []
+
+    def add_parameter_variation(self, parameter: str, values: List[Any]) -> None:
+        """
+        Add parameter variations to test.
+
+        Parameters
+        ----------
+        parameter : str
+            Name of parameter to vary
+        values : List[Any]
+            List of values to test for this parameter
+        """
+        self.parameter_variations[parameter] = values
+
+    def run(self, experiment_name: str, num_steps: int = 1000) -> None:
+        """
+        Run batch of simulations with all parameter combinations.
+
+        Parameters
+        ----------
+        experiment_name : str
+            Name for this batch experiment
+        num_steps : int
+            Number of steps per simulation
+        """
+        # Setup logging for batch run
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        batch_dir = f"batch_results/{experiment_name}_{timestamp}"
+        os.makedirs(batch_dir, exist_ok=True)
+        setup_logging(f"{batch_dir}/batch.log")
+
+        # Generate all parameter combinations
         param_names = list(self.parameter_variations.keys())
         param_values = list(self.parameter_variations.values())
-        
-        configs = []
-        for values in itertools.product(*param_values):
-            config_dict = self.base_config.to_dict()
-            for name, value in zip(param_names, values):
-                config_dict[name] = value
-            configs.append(SimulationConfig(**config_dict))
-            
-        return configs
-        
-    def run(self, experiment_name: str, num_steps: int = 500, max_workers: int = None):
-        """Run all parameter combinations in parallel."""
-        configs = self._generate_configs()
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        experiment_ids = []
-        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-            futures = []
-            for i, config in enumerate(configs):
-                db_path = self.results_dir / f'simulation_{timestamp}_{i}.db'
-                
-                # Register experiment
-                exp_id = self.experiment_tracker.register_experiment(
-                    name=f"{experiment_name}_{i}",
-                    config=config.to_dict(),
-                    db_path=str(db_path)
-                )
-                experiment_ids.append(exp_id)
-                
-                futures.append(
-                    executor.submit(run_simulation, num_steps, config, str(db_path))
-                )
-            
-            # Wait for all simulations to complete
-            concurrent.futures.wait(futures)
-            
-        # Generate comparison report
-        self.experiment_tracker.generate_comparison_report(
-            experiment_ids,
-            output_file=self.results_dir / f'comparison_report_{timestamp}.html'
-        )
+        combinations = list(itertools.product(*param_values))
 
-if __name__ == '__main__':
-    # Example usage
-    base_config = SimulationConfig.from_yaml('config.yaml')
-    
-    runner = BatchRunner(base_config)
-    runner.add_parameter_variation('system_agents', [20, 30, 40])
-    runner.add_parameter_variation('individual_agents', [20, 30, 40])
-    
-    runner.run(experiment_name='test_experiment', num_steps=500) 
+        logging.info(f"Starting batch run with {len(combinations)} combinations")
+
+        # Prepare arguments for parallel processing
+        args = [
+            (
+                dict(zip(param_names, combo)),
+                self.base_config,
+                num_steps,
+                f"{batch_dir}/sim_{i}.db",
+            )
+            for i, combo in enumerate(combinations)
+        ]
+
+        # Run simulations in parallel
+        with Pool() as pool:
+            results = pool.map(run_simulation_wrapper, args)
+
+        # Collect results from completed simulations
+        for result in results:
+            if result is not None:
+                self._collect_results(
+                    dict(zip(param_names, combinations[results.index(result)])), result
+                )
+
+        self._save_results(batch_dir)
+
+    def _create_config_variation(self, params: Dict[str, Any]) -> SimulationConfig:
+        """
+        Create new configuration with specified parameter values.
+
+        Parameters
+        ----------
+        params : Dict[str, Any]
+            Dictionary of parameter values to use
+
+        Returns
+        -------
+        SimulationConfig
+            New configuration object with updated parameters
+        """
+        config = SimulationConfig.from_yaml(self.base_config.config_file)
+        for param, value in params.items():
+            setattr(config, param, value)
+        return config
+
+    def _collect_results(self, params: Dict[str, Any], environment: Any) -> None:
+        """
+        Collect results from completed simulation.
+
+        Parameters
+        ----------
+        params : Dict[str, Any]
+            Parameters used for this simulation
+        environment : Environment
+            Completed simulation environment
+        """
+        result = {
+            **params,
+            "final_agents": len([a for a in environment.agents if a.alive]),
+            "total_resources": sum(r.amount for r in environment.resources),
+            "average_resources_per_agent": (
+                sum(a.resource_level for a in environment.agents if a.alive)
+                / len([a for a in environment.agents if a.alive])
+                if any(a.alive for a in environment.agents)
+                else 0
+            ),
+        }
+        self.results.append(result)
+
+    def _save_results(self, batch_dir: str) -> None:
+        """
+        Save batch results to CSV file.
+
+        Parameters
+        ----------
+        batch_dir : str
+            Directory to save results in
+        """
+        results_df = pd.DataFrame(self.results)
+        results_df.to_csv(f"{batch_dir}/results.csv", index=False)
+        logging.info(f"Results saved to {batch_dir}/results.csv")
+
+
+def run_simulation_wrapper(args):
+    params, config, num_steps, db_path = args
+    try:
+        config_copy = SimulationConfig.from_yaml(config.config_file)
+        for param, value in params.items():
+            setattr(config_copy, param, value)
+        return run_simulation(num_steps, config_copy, db_path)
+    except Exception as e:
+        logging.error(f"Simulation failed with params {params}: {str(e)}")
+        return None

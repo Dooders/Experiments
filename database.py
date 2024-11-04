@@ -1,6 +1,4 @@
-import logging
 import sqlite3
-from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
 import pandas as pd
@@ -37,6 +35,12 @@ class SimulationDatabase:
         # Update with custom table names if provided
         if table_names:
             self.tables.update(table_names)
+
+        # Add batch processing parameters
+        self.batch_size = 1000
+        self.agent_state_buffer = []
+        self.resource_state_buffer = []
+        self.metric_buffer = []
 
         self.setup_tables()
 
@@ -75,6 +79,7 @@ class SimulationDatabase:
                 position_y REAL,
                 resource_level REAL,
                 alive BOOLEAN,
+                agent_type TEXT,
                 FOREIGN KEY(agent_id) REFERENCES {self.tables['agents']}(agent_id),
                 FOREIGN KEY(step_id) REFERENCES {self.tables['steps']}(step_id)
             );
@@ -83,6 +88,8 @@ class SimulationDatabase:
                 state_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 resource_id INTEGER,
                 step_id INTEGER,
+                position_x REAL,
+                position_y REAL,
                 amount INTEGER,
                 FOREIGN KEY(resource_id) REFERENCES {self.tables['resources']}(resource_id),
                 FOREIGN KEY(step_id) REFERENCES {self.tables['steps']}(step_id)
@@ -145,53 +152,94 @@ class SimulationDatabase:
         resources: List[Any],
         metrics: Dict[str, float],
     ) -> None:
-        """Log the current state of the simulation."""
-        # Insert step
+        """Log the current state of the simulation with batch processing."""
+        # Insert step first
         self.cursor.execute(
             "INSERT INTO SimulationSteps (step_number) VALUES (?)", (step_number,)
         )
         step_id = self.cursor.lastrowid
 
-        # Log agent states
-        for agent in agents:
-            if hasattr(agent, "position"):  # Check if agent has required attributes
-                self.cursor.execute(
-                    """
-                    INSERT INTO AgentStates (agent_id, step_id, position_x, position_y, 
-                                           resource_level, alive)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                    (
-                        agent.agent_id,
-                        step_id,
-                        agent.position[0],
-                        agent.position[1],
-                        agent.resource_level,
-                        agent.alive,
-                    ),
+        # Add data to buffers
+        self.agent_state_buffer.extend(
+            [
+                (
+                    agent.agent_id,
+                    step_id,
+                    agent.position[0],
+                    agent.position[1],
+                    agent.resource_level,
+                    agent.alive,
+                    agent.__class__.__name__,
                 )
+                for agent in agents
+            ]
+        )
 
-        # Log resource states
-        for resource in resources:
-            self.cursor.execute(
+        self.resource_state_buffer.extend(
+            [
+                (
+                    resource.resource_id,
+                    step_id,
+                    resource.position[0],
+                    resource.position[1],
+                    resource.amount,
+                )
+                for resource in resources
+            ]
+        )
+
+        self.metric_buffer.extend(
+            [(step_id, name, value) for name, value in metrics.items()]
+        )
+
+        # Process buffers if they exceed batch size
+        if len(self.agent_state_buffer) >= self.batch_size:
+            self._flush_agent_states()
+        if len(self.resource_state_buffer) >= self.batch_size:
+            self._flush_resource_states()
+        if len(self.metric_buffer) >= self.batch_size:
+            self._flush_metrics()
+
+    def _flush_agent_states(self) -> None:
+        """Flush agent state buffer to database."""
+        if self.agent_state_buffer:
+            self.cursor.executemany(
                 """
-                INSERT INTO ResourceStates (resource_id, step_id, amount)
-                VALUES (?, ?, ?)
-            """,
-                (resource.resource_id, step_id, resource.amount),
+                INSERT INTO AgentStates 
+                (agent_id, step_id, position_x, position_y, resource_level, alive, agent_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                self.agent_state_buffer,
             )
+            self.agent_state_buffer = []
+            self.conn.commit()
 
-        # Log metrics
-        for metric_name, value in metrics.items():
-            self.cursor.execute(
+    def _flush_resource_states(self) -> None:
+        """Flush resource state buffer to database."""
+        if self.resource_state_buffer:
+            self.cursor.executemany(
+                """
+                INSERT INTO ResourceStates 
+                (resource_id, step_id, position_x, position_y, amount)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                self.resource_state_buffer,
+            )
+            self.resource_state_buffer = []
+            self.conn.commit()
+
+    def _flush_metrics(self) -> None:
+        """Flush metrics buffer to database."""
+        if self.metric_buffer:
+            self.cursor.executemany(
                 """
                 INSERT INTO SimulationMetrics (step_id, metric_name, metric_value)
                 VALUES (?, ?, ?)
-            """,
-                (step_id, metric_name, value),
+                """,
+                self.metric_buffer,
             )
-
-        self.conn.commit()
+            self.metric_buffer = []
+            self.conn.commit()
 
     def update_agent_death(self, agent_id: int, death_time: int) -> None:
         """Update the death time of an agent."""
@@ -253,7 +301,10 @@ class SimulationDatabase:
         }
 
     def close(self):
-        """Close the database connection."""
+        """Close the database connection after flushing all buffers."""
+        self._flush_agent_states()
+        self._flush_resource_states()
+        self._flush_metrics()
         self.conn.close()
 
     def get_historical_data(

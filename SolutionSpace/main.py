@@ -68,7 +68,7 @@ class VectorDataset(Dataset):
 
 # Define the RL agent with experience replay
 class PredictorAgent:
-    def __init__(self, state_size, memory_size=10, batch_size=256):
+    def __init__(self, state_size, memory_size=32, batch_size=32):
         self.state_size = state_size
         self.memory = deque(maxlen=memory_size)
         self.batch_size = batch_size
