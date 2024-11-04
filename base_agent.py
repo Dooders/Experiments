@@ -1,4 +1,3 @@
-import logging
 import random
 from collections import deque
 
@@ -6,6 +5,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+
+from action import Action, attack_action, gather_action, move_action, share_action
 
 
 class DQN(nn.Module):
@@ -54,6 +55,19 @@ class BaseAgent:
         self.starvation_threshold = self.config.starvation_threshold
         self.max_starvation = self.config.max_starvation_time
         self.birth_time = environment.time
+
+        # Add default actions
+        self.actions = [
+            Action("move", 0.4, move_action),
+            Action("gather", 0.3, gather_action),
+            Action("share", 0.2, share_action),
+            Action("attack", 0.1, attack_action),
+        ]
+
+        # Normalize weights
+        total_weight = sum(action.weight for action in self.actions)
+        for action in self.actions:
+            action.weight /= total_weight
 
         # Log agent creation to database
         environment.db.log_agent(
@@ -171,7 +185,17 @@ class BaseAgent:
             self.losses.append(loss.item())
             self.epsilon *= self.epsilon_decay
 
+    def select_action(self):
+        """Select an action based on weighted probabilities."""
+        weights = [action.weight for action in self.actions]
+        selected_action = np.random.choice(self.actions, p=weights)
+        return selected_action
+
     def act(self):
+        # First check if agent should die
+        if not self.alive:
+            return
+
         # Base resource consumption
         self.resource_level -= self.config.base_consumption_rate
 
@@ -182,6 +206,10 @@ class BaseAgent:
                 return
         else:
             self.starvation_threshold = 0
+
+        # Select and execute an action
+        action = self.select_action()
+        action.execute(self)
 
     def reproduce(self):
         if len(self.environment.agents) >= self.config.max_population:
@@ -202,11 +230,25 @@ class BaseAgent:
         )
 
     def die(self):
+        """
+        Handle agent death by:
+        1. Setting alive status to False
+        2. Logging death to database
+        3. Notifying environment for visualization updates
+        """
         self.alive = False
+
         # Log death to database
         self.environment.db.update_agent_death(
             agent_id=self.agent_id, death_time=self.environment.time
         )
+
+        # Remove agent from environment's active agents list
+        if hasattr(self.environment, "agents"):
+            try:
+                self.environment.agents.remove(self)
+            except ValueError:
+                pass  # Agent was already removed
 
     def gather_resources(self):
         if not self.environment.resources:
