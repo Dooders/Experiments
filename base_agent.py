@@ -186,10 +186,17 @@ class BaseAgent:
             self.epsilon *= self.epsilon_decay
 
     def select_action(self):
-        """Select an action based on weighted probabilities."""
-        weights = [action.weight for action in self.actions]
-        selected_action = np.random.choice(self.actions, p=weights)
-        return selected_action
+        # Select an action based on weights
+        actions = [action for action in self.actions]
+        action_weights = [action.weight for action in actions]
+
+        # Normalize weights to make them probabilities
+        total_weight = sum(action_weights)
+        action_probs = [weight / total_weight for weight in action_weights]
+
+        # Choose an action based on the weighted probabilities
+        chosen_action = random.choices(actions, weights=action_probs, k=1)[0]
+        return chosen_action
 
     def act(self):
         # First check if agent should die
