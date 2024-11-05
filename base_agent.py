@@ -1,5 +1,6 @@
 import random
 from collections import deque
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -7,7 +8,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from action import *
-from typing import TYPE_CHECKING, Protocol
+
 if TYPE_CHECKING:
     from environment import Environment
 
@@ -99,7 +100,7 @@ class BaseAgent:
         agent_id: int,
         position: tuple[int, int],
         resource_level: int,
-        environment: 'Environment',
+        environment: "Environment",
         action_set: list[Action] = BASE_ACTION_SET,
     ):
         # Add default actions
@@ -329,8 +330,8 @@ class BaseAgent:
             resource.consume(gather_amount)
             self.resource_level += gather_amount
 
-    def get_environment(self) -> 'Environment':
+    def get_environment(self) -> "Environment":
         return self._environment
 
-    def set_environment(self, environment: 'Environment') -> None:
+    def set_environment(self, environment: "Environment") -> None:
         self._environment = environment

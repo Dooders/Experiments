@@ -143,6 +143,7 @@ class SimulationGUI:
         """
         Start a new simulation run.
 
+        - Cleans up old logs and databases (temporary behavior)
         - Creates a new database with timestamp
         - Loads configuration from YAML
         - Sets up logging handlers
@@ -150,6 +151,9 @@ class SimulationGUI:
         - Updates UI with progress
         """
         try:
+            # Clean up old files (temporary behavior)
+            self._cleanup_old_files()
+
             # Restore default layout
             self._restore_default_layout()
 
@@ -923,6 +927,45 @@ class SimulationGUI:
 
         widget.bind("<Enter>", enter)
         widget.bind("<Leave>", leave)
+
+    def _cleanup_old_files(self) -> None:
+        """
+        Temporarily clean up old simulation files.
+
+        Removes:
+        - All database files in SIMULATIONS_DIR
+        - All log files in logs directory
+
+        Note: This is temporary behavior and may be changed in the future
+        to implement file retention policies.
+        """
+        try:
+            # Clean up old database files
+            if os.path.exists(SIMULATIONS_DIR):
+                for file in os.listdir(SIMULATIONS_DIR):
+                    if file.endswith(".db"):
+                        file_path = os.path.join(SIMULATIONS_DIR, file)
+                        try:
+                            os.remove(file_path)
+                            logging.info(f"Removed old database: {file}")
+                        except Exception as e:
+                            logging.warning(f"Failed to remove database {file}: {e}")
+
+            # Clean up old log files
+            log_dir = "logs"
+            if os.path.exists(log_dir):
+                for file in os.listdir(log_dir):
+                    if file.endswith(".log"):
+                        file_path = os.path.join(log_dir, file)
+                        try:
+                            os.remove(file_path)
+                            logging.info(f"Removed old log file: {file}")
+                        except Exception as e:
+                            logging.warning(f"Failed to remove log file {file}: {e}")
+
+        except Exception as e:
+            logging.warning(f"Error during cleanup: {e}")
+            # Don't raise the exception - cleanup is non-critical
 
 
 def main():
