@@ -6,26 +6,110 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from action import Action, attack_action, gather_action, move_action, share_action
+from action import *
+from typing import TYPE_CHECKING, Protocol
+if TYPE_CHECKING:
+    from environment import Environment
 
 
-class DQN(nn.Module):
-    def __init__(self, input_dim, output_dim, hidden_size=24):
-        super(DQN, self).__init__()
+class AgentModel(nn.Module):
+    def __init__(self, input_dim, output_dim, config):
+        super(AgentModel, self).__init__()
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         self.network = nn.Sequential(
-            nn.Linear(input_dim, hidden_size),
+            nn.Linear(input_dim, config.dqn_hidden_size),
             nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
+            nn.Linear(config.dqn_hidden_size, config.dqn_hidden_size),
             nn.ReLU(),
-            nn.Linear(hidden_size, output_dim),
-        )
+            nn.Linear(config.dqn_hidden_size, output_dim),
+        ).to(self.device)
+
+        self.optimizer = optim.Adam(self.parameters(), lr=config.learning_rate)
+        self.criterion = nn.MSELoss()
+        self.memory = deque(maxlen=config.memory_size)
+        self.gamma = config.gamma
+        self.epsilon = config.epsilon_start
+        self.epsilon_min = config.epsilon_min
+        self.epsilon_decay = config.epsilon_decay
+        self.config = config
 
     def forward(self, x):
         return self.network(x)
 
+    def learn(self, batch):
+        if len(batch) < self.config.batch_size:
+            return None
+
+        states = torch.stack([x[0] for x in batch])
+        actions = torch.tensor([x[1] for x in batch], device=self.device)
+        rewards = torch.tensor(
+            [x[2] for x in batch], dtype=torch.float32, device=self.device
+        )
+        next_states = torch.stack([x[3] for x in batch])
+
+        with torch.no_grad():
+            next_q_values = self(next_states).max(1)[0]
+            target_q_values = rewards + (self.gamma * next_q_values)
+
+        current_q_values = self(states).gather(1, actions.unsqueeze(1))
+        loss = self.criterion(current_q_values.squeeze(), target_q_values)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+        return loss.item()
+
+
+class AgentState:
+    def __init__(self, distance, angle, resource_level, target_resource_amount):
+        self.normalized_distance = distance  # Distance to nearest resource (normalized by diagonal of environment)
+        self.normalized_angle = angle  # Angle to nearest resource (normalized by π)
+        self.normalized_resource_level = (
+            resource_level  # Agent's current resources (normalized by 20)
+        )
+        self.normalized_target_amount = (
+            target_resource_amount  # Target resource amount (normalized by 20)
+        )
+
+    def to_tensor(self, device):
+        return torch.FloatTensor(
+            [
+                self.normalized_distance,
+                self.normalized_angle,
+                self.normalized_resource_level,
+                self.normalized_target_amount,
+            ]
+        ).to(device)
+
+
+BASE_ACTION_SET = [
+    Action("move", 0.4, move_action),
+    Action("gather", 0.3, gather_action),
+    Action("share", 0.2, share_action),
+    Action("attack", 0.1, attack_action),
+]
+
 
 class BaseAgent:
-    def __init__(self, agent_id, position, resource_level, environment):
+    def __init__(
+        self,
+        agent_id: int,
+        position: tuple[int, int],
+        resource_level: int,
+        environment: 'Environment',
+        action_set: list[Action] = BASE_ACTION_SET,
+    ):
+        # Add default actions
+        self.actions = action_set
+
+        # Normalize weights
+        total_weight = sum(action.weight for action in self.actions)
+        for action in self.actions:
+            action.weight /= total_weight
+
         self.agent_id = agent_id
         self.position = position
         self.resource_level = resource_level
@@ -34,18 +118,11 @@ class BaseAgent:
         self.config = environment.config
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = DQN(
-            input_dim=4, output_dim=4, hidden_size=self.config.dqn_hidden_size
-        ).to(self.device)
-        self.optimizer = optim.Adam(
-            self.model.parameters(), lr=self.config.learning_rate
+        self.model = AgentModel(
+            input_dim=len(self.get_state()),
+            output_dim=len(self.actions),
+            config=self.config,
         )
-        self.criterion = nn.MSELoss()
-        self.memory = deque(maxlen=self.config.memory_size)
-        self.gamma = self.config.gamma
-        self.epsilon = self.config.epsilon_start
-        self.epsilon_min = self.config.epsilon_min
-        self.epsilon_decay = self.config.epsilon_decay
         self.last_state = None
         self.last_action = None
         self.max_movement = self.config.max_movement
@@ -55,19 +132,6 @@ class BaseAgent:
         self.starvation_threshold = self.config.starvation_threshold
         self.max_starvation = self.config.max_starvation_time
         self.birth_time = environment.time
-
-        # Add default actions
-        self.actions = [
-            Action("move", 0.4, move_action),
-            Action("gather", 0.3, gather_action),
-            Action("share", 0.2, share_action),
-            Action("attack", 0.1, attack_action),
-        ]
-
-        # Normalize weights
-        total_weight = sum(action.weight for action in self.actions)
-        for action in self.actions:
-            action.weight /= total_weight
 
         # Log agent creation to database
         environment.db.log_agent(
@@ -95,29 +159,33 @@ class BaseAgent:
         if closest_resource is None:
             return torch.zeros(4, device=self.device)
 
-        # State: [distance_to_resource, angle_to_resource, current_resources, resource_amount]
+        # Calculate normalized values
         dx = closest_resource.position[0] - self.position[0]
         dy = closest_resource.position[1] - self.position[1]
         angle = np.arctan2(dy, dx)
 
-        state = torch.FloatTensor(
-            [
-                min_distance
-                / np.sqrt(self.environment.width**2 + self.environment.height**2),
-                angle / np.pi,
-                self.resource_level / 20,
-                closest_resource.amount / 20,
-            ]
-        ).to(self.device)
+        normalized_distance = min_distance / np.sqrt(
+            self.environment.width**2 + self.environment.height**2
+        )
+        normalized_angle = angle / np.pi
+        normalized_resource_level = self.resource_level / 20
+        normalized_target_amount = closest_resource.amount / 20
 
-        return state
+        state = AgentState(
+            distance=normalized_distance,
+            angle=normalized_angle,
+            resource_level=normalized_resource_level,
+            target_resource_amount=normalized_target_amount,
+        )
+
+        return state.to_tensor(self.device)
 
     def move(self):
         # Get state once and reuse
         state = self.get_state()
 
         # Epsilon-greedy action selection with vectorized operations
-        if random.random() < self.epsilon:
+        if random.random() < self.model.epsilon:
             action = random.randint(0, 3)
         else:
             with torch.no_grad():
@@ -150,40 +218,20 @@ class BaseAgent:
         self.episode_rewards.append(reward)
 
         # Store experience
-        self.memory.append(
+        self.model.memory.append(
             (self.last_state, self.last_action, reward, self.get_state())
         )
 
         # Only train on larger batches less frequently
         if (
-            len(self.memory) >= self.config.batch_size * 4
-            and len(self.memory) % (self.config.training_frequency * 4) == 0
+            len(self.model.memory) >= self.config.batch_size * 4
+            and len(self.model.memory) % (self.config.training_frequency * 4) == 0
         ):
-            # Sample larger batch
-            batch = random.sample(self.memory, self.config.batch_size * 4)
 
-            # Process entire batch at once
-            states = torch.stack([x[0] for x in batch])
-            actions = torch.tensor([x[1] for x in batch], device=self.device)
-            rewards = torch.tensor(
-                [x[2] for x in batch], dtype=torch.float32, device=self.device
-            )
-            next_states = torch.stack([x[3] for x in batch])
-
-            # Compute Q values efficiently
-            with torch.no_grad():
-                next_q_values = self.model(next_states).max(1)[0]
-                target_q_values = rewards + (self.gamma * next_q_values)
-
-            current_q_values = self.model(states).gather(1, actions.unsqueeze(1))
-            loss = self.criterion(current_q_values.squeeze(), target_q_values)
-
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
-
-            self.losses.append(loss.item())
-            self.epsilon *= self.epsilon_decay
+            batch = random.sample(self.model.memory, self.config.batch_size * 4)
+            loss = self.model.learn(batch)
+            if loss is not None:
+                self.losses.append(loss)
 
     def select_action(self):
         # Select an action based on weights
@@ -280,3 +328,9 @@ class BaseAgent:
             gather_amount = min(self.config.max_gather_amount, resource.amount)
             resource.consume(gather_amount)
             self.resource_level += gather_amount
+
+    def get_environment(self) -> 'Environment':
+        return self._environment
+
+    def set_environment(self, environment: 'Environment') -> None:
+        self._environment = environment
