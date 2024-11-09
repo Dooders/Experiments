@@ -427,14 +427,21 @@ class SimulationVisualizer:
             try:
                 data = self.db.get_simulation_data(self.current_step + 1)
                 if not data["agent_states"] and not data["resource_states"]:
-                    self.playing = False
-                    return
-
-                self._step_to(self.current_step + 1)
-                delay = int(1000 / self.speed_scale.get())
-                if self.birth_animations or self.death_animations:
-                    delay = min(delay, self.ANIMATION_MIN_DELAY)
-                self.root.after(delay, self._play_simulation)
+                    if self.current_step < self.total_steps:
+                        self._step_to(self.current_step + 1)
+                        delay = int(1000 / self.speed_scale.get())
+                        if self.birth_animations or self.death_animations:
+                            delay = min(delay, self.ANIMATION_MIN_DELAY)
+                        self.root.after(delay, self._play_simulation)
+                    else:
+                        self.playing = False
+                        return
+                else:
+                    self._step_to(self.current_step + 1)
+                    delay = int(1000 / self.speed_scale.get())
+                    if self.birth_animations or self.death_animations:
+                        delay = min(delay, self.ANIMATION_MIN_DELAY)
+                    self.root.after(delay, self._play_simulation)
             except Exception as e:
                 messagebox.showerror(
                     "Playback Error", f"Failed to advance simulation: {str(e)}"
@@ -455,6 +462,10 @@ class SimulationVisualizer:
                         "Population Extinct",
                         f"All agents have died at step {step_number}",
                     )
+            else:
+                if step_number < self.total_steps:
+                    self.current_step = step_number
+                    self._update_visualization(data)
         except Exception as e:
             messagebox.showerror(
                 "Database Error", f"Failed to load step {step_number}: {str(e)}"
