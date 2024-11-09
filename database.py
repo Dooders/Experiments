@@ -153,52 +153,66 @@ class SimulationDatabase:
         metrics: Dict[str, float],
     ) -> None:
         """Log the current state of the simulation with batch processing."""
-        # Insert step first
-        self.cursor.execute(
-            "INSERT INTO SimulationSteps (step_number) VALUES (?)", (step_number,)
-        )
-        step_id = self.cursor.lastrowid
+        try:
+            # Insert step first
+            self.cursor.execute(
+                "INSERT INTO SimulationSteps (step_number) VALUES (?)", (step_number,)
+            )
+            step_id = self.cursor.lastrowid
 
-        # Add data to buffers
-        self.agent_state_buffer.extend(
-            [
-                (
-                    agent.agent_id,
-                    step_id,
-                    agent.position[0],
-                    agent.position[1],
-                    agent.resource_level,
-                    agent.alive,
-                    agent.__class__.__name__,
-                )
-                for agent in agents
-            ]
-        )
+            # Add metrics to buffer
+            for metric_name, value in metrics.items():
+                self.metric_buffer.append((step_id, metric_name, value))
 
-        self.resource_state_buffer.extend(
-            [
-                (
-                    resource.resource_id,
-                    step_id,
-                    resource.position[0],
-                    resource.position[1],
-                    resource.amount,
-                )
-                for resource in resources
-            ]
-        )
+            # Add agent states to buffer
+            self.agent_state_buffer.extend(
+                [
+                    (
+                        agent.agent_id,
+                        step_id,
+                        agent.position[0],
+                        agent.position[1],
+                        agent.resource_level,
+                        agent.alive,
+                        agent.__class__.__name__,
+                    )
+                    for agent in agents
+                ]
+            )
 
-        self.metric_buffer.extend(
-            [(step_id, name, value) for name, value in metrics.items()]
-        )
+            # Add resource states to buffer
+            self.resource_state_buffer.extend(
+                [
+                    (
+                        resource.resource_id,
+                        step_id,
+                        resource.position[0],
+                        resource.position[1],
+                        resource.amount,
+                    )
+                    for resource in resources
+                ]
+            )
 
-        # Process buffers if they exceed batch size
-        if len(self.agent_state_buffer) >= self.batch_size:
-            self._flush_agent_states()
-        if len(self.resource_state_buffer) >= self.batch_size:
-            self._flush_resource_states()
-        if len(self.metric_buffer) >= self.batch_size:
-            self._flush_metrics()
+            # Force flush buffers if this is step 400 or any multiple of batch_size
+            if step_number >= 400 or step_number % self.batch_size == 0:
+                self._flush_agent_states()
+                self._flush_resource_states()
+                self._flush_metrics()
+
+            # Process buffers if they exceed batch size
+            if len(self.agent_state_buffer) >= self.batch_size:
+                self._flush_agent_states()
+            if len(self.resource_state_buffer) >= self.batch_size:
+                self._flush_resource_states()
+            if len(self.metric_buffer) >= self.batch_size:
+                self._flush_metrics()
+
+        except Exception as e:
+            print(f"Error logging simulation step {step_number}: {e}")
+            import traceback
+
+            traceback.print_exc()
 
     def _flush_agent_states(self) -> None:
         """Flush agent state buffer to database."""
@@ -307,37 +321,79 @@ class SimulationDatabase:
         self._flush_metrics()
         self.conn.close()
 
-    def get_historical_data(
-        self, start_step: int = 0, end_step: int = None
-    ) -> Dict[str, List]:
-        """Retrieve historical simulation data between start and end steps."""
-        query = f"""
-            SELECT s.step_number, m.metric_name, m.metric_value
-            FROM {self.tables['metrics']} m
-            JOIN {self.tables['steps']} s ON s.step_id = m.step_id
-            WHERE s.step_number >= ?
-            {' AND s.step_number <= ?' if end_step is not None else ''}
-            ORDER BY s.step_number
+    def get_historical_data(self):
         """
+        Fetch historical data for all metrics up to the current step.
+        Returns a dictionary with steps and metrics.
+        """
+        try:
+            # Get all metrics grouped by step
+            self.cursor.execute(
+                """
+                SELECT s.step_number,
+                       m.metric_name,
+                       m.metric_value
+                FROM SimulationSteps s
+                JOIN SimulationMetrics m ON m.step_id = s.step_id
+                ORDER BY s.step_number ASC
+            """
+            )
 
-        params = [start_step]
-        if end_step is not None:
-            params.append(end_step)
+            rows = self.cursor.fetchall()
 
-        self.cursor.execute(query, params)
-        results = self.cursor.fetchall()
+            if not rows:
+                return {
+                    "steps": [],
+                    "metrics": {
+                        "system_agents": [],
+                        "individual_agents": [],
+                        "total_resources": [],
+                    },
+                }
 
-        # Organize data by metric
-        history = {}
-        steps = []
-        for step, metric_name, value in results:
-            if step not in steps:
-                steps.append(step)
-            if metric_name not in history:
-                history[metric_name] = []
-            history[metric_name].append(value)
+            # Process the data
+            steps = []
+            metrics = {
+                "system_agents": [],
+                "individual_agents": [],
+                "total_resources": [],
+                "average_agent_resources": [],
+            }
 
-        return {"steps": steps, "metrics": history}
+            current_step = None
+            step_metrics = {}
+
+            for step, metric_name, metric_value in rows:
+                if step != current_step:
+                    if current_step is not None:
+                        # Store the completed step data
+                        steps.append(current_step)
+                        for metric_key in metrics:
+                            metrics[metric_key].append(step_metrics.get(metric_key, 0))
+                    # Start new step
+                    current_step = step
+                    step_metrics = {}
+
+                step_metrics[metric_name] = metric_value
+
+            # Don't forget to add the last step
+            if current_step is not None:
+                steps.append(current_step)
+                for metric_key in metrics:
+                    metrics[metric_key].append(step_metrics.get(metric_key, 0))
+
+            return {"steps": steps, "metrics": metrics}
+
+        except Exception as e:
+            # Only log critical errors
+            return {
+                "steps": [],
+                "metrics": {
+                    "system_agents": [],
+                    "individual_agents": [],
+                    "total_resources": [],
+                },
+            }
 
     def export_data(self, output_file: str = "simulation_data.csv") -> None:
         """Export simulation data to a CSV file."""

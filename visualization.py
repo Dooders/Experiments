@@ -4,10 +4,11 @@ from tkinter import ttk
 from typing import Dict, List
 
 import numpy as np
-from database import SimulationDatabase
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from PIL import Image, ImageDraw, ImageFont, ImageTk
+
+from database import SimulationDatabase
 
 
 class SimulationVisualizer:
@@ -680,86 +681,41 @@ class SimulationVisualizer:
     def _update_charts(self):
         """Update the population and resource charts with historical data."""
         try:
-            # Fetch historical data
+            # Fetch historical data up to the current step
             history = self.db.get_historical_data()
 
             if not history["steps"]:
                 return  # No data to plot
 
+            # Convert to numpy arrays for better performance
             steps = np.array(history["steps"])
             system_agents = np.array(history["metrics"]["system_agents"])
             individual_agents = np.array(history["metrics"]["individual_agents"])
             total_resources = np.array(history["metrics"]["total_resources"])
 
-            # Create masks for past and future data
-            past_mask = steps <= self.current_step
-            future_mask = ~past_mask
-
-            # Update past data
-            if np.any(past_mask):
-                self.lines["system_agents"].set_data(
-                    steps[past_mask], system_agents[past_mask]
-                )
-                self.lines["individual_agents"].set_data(
-                    steps[past_mask], individual_agents[past_mask]
-                )
-                self.lines["resources"].set_data(
-                    steps[past_mask], total_resources[past_mask]
-                )
-
-            # Update future data
-            if np.any(future_mask):
-                self.lines["system_agents_future"].set_data(
-                    steps[future_mask], system_agents[future_mask]
-                )
-                self.lines["individual_agents_future"].set_data(
-                    steps[future_mask], individual_agents[future_mask]
-                )
-                self.lines["resources_future"].set_data(
-                    steps[future_mask], total_resources[future_mask]
-                )
+            # Update all lines with full data
+            self.lines["system_agents"].set_data(steps, system_agents)
+            self.lines["individual_agents"].set_data(steps, individual_agents)
+            self.lines["resources"].set_data(steps, total_resources)
 
             # Update current step line
             self.lines["current_step"].set_xdata([self.current_step, self.current_step])
-
-            # Update axis limits only if needed
-            self._update_axis_limits(
-                steps, system_agents, individual_agents, total_resources
+            max_y = max(
+                max(system_agents), max(individual_agents), max(total_resources)
             )
+            self.lines["current_step"].set_ydata([0, max_y])
+
+            # Update axis limits with padding
+            self.ax1.set_xlim(0, max(steps) + 10)
+            self.ax1.set_ylim(0, max(max(system_agents), max(individual_agents)) * 1.1)
+            self.ax2.set_ylim(0, max(total_resources) * 1.1)
 
             # Redraw canvas
-            self.canvas.draw_idle()  # Use draw_idle instead of draw for better performance
+            self.canvas.draw()
 
         except Exception as e:
+            # Only log critical errors
             messagebox.showerror("Chart Error", f"Failed to update charts: {str(e)}")
-
-    def _update_axis_limits(
-        self, steps, system_agents, individual_agents, total_resources
-    ):
-        """Update axis limits only if the data exceeds current limits."""
-        # Get current limits
-        x_min, x_max = self.ax1.get_xlim()
-        y1_min, y1_max = self.ax1.get_ylim()
-        y2_min, y2_max = self.ax2.get_ylim()
-
-        # Calculate new limits with padding
-        padding = 0.1  # 10% padding
-        new_x_max = max(steps) * (1 + padding)
-        new_y1_max = max(max(system_agents), max(individual_agents)) * (1 + padding)
-        new_y2_max = max(total_resources) * (1 + padding)
-
-        # Update limits only if they need to change
-        if new_x_max > x_max:
-            self.ax1.set_xlim(0, new_x_max)
-
-        if new_y1_max > y1_max:
-            self.ax1.set_ylim(0, new_y1_max)
-
-        if new_y2_max > y2_max:
-            self.ax2.set_ylim(0, new_y2_max)
-
-        # Adjust layout if needed
-        self.fig.tight_layout()
 
     def run(self):
         """Start the visualization."""
