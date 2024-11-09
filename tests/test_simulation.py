@@ -159,5 +159,33 @@ class TestSimulation(unittest.TestCase):
             
         self.assertGreater(env.resources[0].amount, initial_amount)
 
+    def test_simulation_playback_continues_to_end(self):
+        """Test that simulation playback continues until the last step with data."""
+        env = Environment(
+            width=self.config.width,
+            height=self.config.height,
+            resource_distribution={"type": "random", "amount": self.config.initial_resources},
+            db_path=str(self.db_path)
+        )
+        
+        # Add some agents
+        agent = SystemAgent(0, (25, 25), self.config.initial_resource_level, env)
+        env.add_agent(agent)
+        
+        # Run the simulation for a specific number of steps
+        num_steps = 200
+        for _ in range(num_steps):
+            env.update()
+        
+        # Check that the last step has data
+        db = SimulationDatabase(str(self.db_path))
+        data = db.get_simulation_data(step_number=num_steps)
+        
+        self.assertIsNotNone(data['agent_states'])
+        self.assertIsNotNone(data['resource_states'])
+        self.assertIsNotNone(data['metrics'])
+        
+        db.close()
+
 if __name__ == '__main__':
-    unittest.main() 
+    unittest.main()
