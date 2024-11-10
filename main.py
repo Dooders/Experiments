@@ -4,6 +4,9 @@ import tkinter as tk
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
+from matplotlib import pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
 from analysis import SimulationAnalyzer
 from batch_runner import BatchRunner
 from config import SimulationConfig
@@ -459,23 +462,7 @@ class SimulationGUI:
             self._simulation_error(f"Failed to generate report: {str(e)}")
 
     def _view_statistics(self) -> None:
-        """
-        Display window showing key simulation statistics.
-
-        Shows:
-        - Survival rates by agent type
-        - Resource efficiency metrics
-        - Statistical summaries
-
-        Creates a new window with scrollable text display.
-
-        Raises
-        ------
-        Warning
-            If no simulation data exists
-        Error
-            If statistics calculation fails
-        """
+        """Display window showing key simulation statistics."""
         if not self.current_db_path:
             messagebox.showwarning("Warning", "No simulation data to analyze.")
             return
@@ -483,29 +470,88 @@ class SimulationGUI:
         # Create statistics window
         stats_window = tk.Toplevel(self.root)
         stats_window.title("Simulation Statistics")
-        stats_window.geometry("600x400")
+        stats_window.geometry("800x600")
 
-        # Add statistics content
+        # Create notebook for tabbed interface
+        notebook = ttk.Notebook(stats_window)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
         try:
             analyzer = SimulationAnalyzer(self.current_db_path)
-            survival_rates = analyzer.calculate_survival_rates()
-            efficiency_data = analyzer.analyze_resource_efficiency()
 
-            # Display statistics
-            text = tk.Text(stats_window, wrap=tk.WORD)
-            text.pack(fill=tk.BOTH, expand=True)
+            # Survival rates tab
+            survival_tab = ttk.Frame(notebook)
+            notebook.add(survival_tab, text="Survival Rates")
+            survival_data = analyzer.calculate_survival_rates()
+            self._create_survival_plot(survival_tab, survival_data)
 
-            text.insert(tk.END, "Survival Rates:\n\n")
-            for agent_type, rate in survival_rates.items():
-                text.insert(tk.END, f"{agent_type}: {rate:.2%}\n")
+            # Resource distribution tab
+            resource_tab = ttk.Frame(notebook)
+            notebook.add(resource_tab, text="Resource Distribution")
+            resource_data = analyzer.analyze_resource_distribution()
+            self._create_resource_plot(resource_tab, resource_data)
 
-            text.insert(tk.END, "\nEfficiency Statistics:\n\n")
-            text.insert(tk.END, efficiency_data.describe().to_string())
-
-            text.config(state=tk.DISABLED)
+            # Competitive interactions tab
+            interactions_tab = ttk.Frame(notebook)
+            notebook.add(interactions_tab, text="Competitive Interactions")
+            interaction_data = analyzer.analyze_competitive_interactions()
+            self._create_interaction_plot(interactions_tab, interaction_data)
 
         except Exception as e:
             self._simulation_error(f"Failed to load statistics: {str(e)}")
+
+    def _create_survival_plot(self, parent, data):
+        """Create survival rate plot using matplotlib."""
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.plot(data["step"], data["system_alive"], label="System Agents")
+        ax.plot(data["step"], data["independent_alive"], label="Independent Agents")
+        ax.set_xlabel("Simulation Step")
+        ax.set_ylabel("Surviving Agents")
+        ax.set_title("Agent Survival Over Time")
+        ax.legend()
+
+        canvas = FigureCanvasTkAgg(fig, parent)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def _create_resource_plot(self, parent, data):
+        """Create resource distribution plot using matplotlib."""
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8))
+
+        # Average resources over time
+        for agent_type in data["agent_type"].unique():
+            agent_data = data[data["agent_type"] == agent_type]
+            ax1.plot(
+                agent_data["step"],
+                agent_data["avg_resources"],
+                label=f"{agent_type} Avg",
+            )
+            ax1.fill_between(
+                agent_data["step"],
+                agent_data["min_resources"],
+                agent_data["max_resources"],
+                alpha=0.2,
+            )
+        ax1.set_xlabel("Simulation Step")
+        ax1.set_ylabel("Resources")
+        ax1.set_title("Resource Distribution Over Time")
+        ax1.legend()
+
+        canvas = FigureCanvasTkAgg(fig, parent)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def _create_interaction_plot(self, parent, data):
+        """Create competitive interactions plot using matplotlib."""
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.plot(data["step"], data["competitive_interactions"])
+        ax.set_xlabel("Simulation Step")
+        ax.set_ylabel("Number of Competitive Interactions")
+        ax.set_title("Competitive Interactions Over Time")
+
+        canvas = FigureCanvasTkAgg(fig, parent)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
     def _show_documentation(self) -> None:
         """

@@ -6,52 +6,89 @@ from typing import Dict, List, Tuple
 
 from database import SimulationDatabase
 
+
 class SimulationAnalyzer:
-    def __init__(self, db_path: str = 'simulation_results.db'):
+    def __init__(self, db_path: str = "simulation_results.db"):
         self.db = SimulationDatabase(db_path)
-        
+
     def calculate_survival_rates(self) -> Dict[str, float]:
-        """Calculate survival rates for different agent types."""
-        query = '''
-            SELECT agent_type, 
-                   COUNT(*) as total,
-                   SUM(CASE WHEN death_time IS NULL THEN 1 ELSE 0 END) as survived
-            FROM Agents
-            GROUP BY agent_type
-        '''
+        """Calculate survival rates for different agent types over time."""
+        query = """
+            SELECT s.step_number,
+                   COUNT(CASE WHEN a.agent_type = 'SystemAgent' AND st.alive = 1 THEN 1 END) as system_alive,
+                   COUNT(CASE WHEN a.agent_type = 'IndependentAgent' AND st.alive = 1 THEN 1 END) as independent_alive
+            FROM SimulationSteps s
+            LEFT JOIN AgentStates st ON s.step_id = st.step_id
+            LEFT JOIN Agents a ON st.agent_id = a.agent_id
+            GROUP BY s.step_number
+            ORDER BY s.step_number
+        """
         self.db.cursor.execute(query)
         results = self.db.cursor.fetchall()
-        
-        return {
-            agent_type: survived/total 
-            for agent_type, total, survived in results
-        }
-        
-    def analyze_resource_efficiency(self) -> pd.DataFrame:
-        """Analyze resource usage efficiency over time."""
-        history = self.db.get_historical_data()
-        df = pd.DataFrame({
-            'step': history['steps'],
-            'resources': history['metrics']['total_resources'],
-            'total_agents': history['metrics']['total_agents']
-        })
-        
-        df['efficiency'] = df['total_agents'] / df['resources'].replace(0, np.nan)
-        return df
-        
-    def generate_report(self, output_file: str = 'simulation_report.html'):
+
+        return pd.DataFrame(
+            results, columns=["step", "system_alive", "independent_alive"]
+        )
+
+    def analyze_resource_distribution(self) -> pd.DataFrame:
+        """Analyze resource accumulation and distribution patterns."""
+        query = """
+            SELECT s.step_number,
+                   a.agent_type,
+                   AVG(st.resource_level) as avg_resources,
+                   MIN(st.resource_level) as min_resources,
+                   MAX(st.resource_level) as max_resources,
+                   COUNT(*) as agent_count
+            FROM SimulationSteps s
+            JOIN AgentStates st ON s.step_id = st.step_id
+            JOIN Agents a ON st.agent_id = a.agent_id
+            WHERE st.alive = 1
+            GROUP BY s.step_number, a.agent_type
+            ORDER BY s.step_number
+        """
+        self.db.cursor.execute(query)
+        results = self.db.cursor.fetchall()
+
+        return pd.DataFrame(
+            results,
+            columns=[
+                "step",
+                "agent_type",
+                "avg_resources",
+                "min_resources",
+                "max_resources",
+                "agent_count",
+            ],
+        )
+
+    def analyze_competitive_interactions(self) -> pd.DataFrame:
+        """Analyze patterns in competitive interactions."""
+        query = """
+            SELECT s.step_number,
+                   m.metric_value as competitive_interactions
+            FROM SimulationSteps s
+            JOIN Metrics m ON s.step_id = m.step_id
+            WHERE m.metric_name = 'competitive_interactions'
+            ORDER BY s.step_number
+        """
+        self.db.cursor.execute(query)
+        results = self.db.cursor.fetchall()
+
+        return pd.DataFrame(results, columns=["step", "competitive_interactions"])
+
+    def generate_report(self, output_file: str = "simulation_report.html"):
         """Generate an HTML report with analysis results."""
         survival_rates = self.calculate_survival_rates()
         efficiency_data = self.analyze_resource_efficiency()
-        
+
         # Create plots
         plt.figure(figsize=(10, 6))
-        plt.plot(efficiency_data['step'], efficiency_data['efficiency'])
-        plt.title('Resource Efficiency Over Time')
-        plt.savefig('efficiency_plot.png')
-        
+        plt.plot(efficiency_data["step"], efficiency_data["efficiency"])
+        plt.title("Resource Efficiency Over Time")
+        plt.savefig("efficiency_plot.png")
+
         # Generate HTML report
-        html = f'''
+        html = f"""
         <html>
         <head><title>Simulation Analysis Report</title></head>
         <body>
@@ -71,7 +108,7 @@ class SimulationAnalyzer:
             <pre>{efficiency_data.describe().to_string()}</pre>
         </body>
         </html>
-        '''
-        
-        with open(output_file, 'w') as f:
-            f.write(html) 
+        """
+
+        with open(output_file, "w") as f:
+            f.write(html)

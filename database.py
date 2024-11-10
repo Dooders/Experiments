@@ -411,3 +411,53 @@ class SimulationDatabase:
         # Export to CSV
         df_pivot.to_csv(output_file)
         return df_pivot
+
+    def log_competitive_interaction(
+        self,
+        step_id: int,
+        initiator_id: int,
+        target_id: int,
+        interaction_type: str,
+        outcome: float,
+    ) -> None:
+        """Log a competitive interaction between agents."""
+        self.cursor.execute(
+            """
+            INSERT INTO CompetitiveInteractions 
+            (step_id, initiator_id, target_id, interaction_type, outcome)
+            VALUES (?, ?, ?, ?, ?)
+        """,
+            (step_id, initiator_id, target_id, interaction_type, outcome),
+        )
+
+        if len(self.metric_buffer) >= self.BUFFER_SIZE:
+            self._flush_buffers()
+
+    def _flush_buffers(self):
+        """Flush all data buffers to database."""
+        if self.metric_buffer:
+            self.cursor.executemany(
+                "INSERT INTO Metrics (step_id, metric_name, metric_value) VALUES (?, ?, ?)",
+                self.metric_buffer,
+            )
+            self.metric_buffer.clear()
+
+        if self.agent_state_buffer:
+            self.cursor.executemany(
+                """INSERT INTO AgentStates 
+                   (agent_id, step_id, x_pos, y_pos, resource_level, alive, agent_type) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                self.agent_state_buffer,
+            )
+            self.agent_state_buffer.clear()
+
+        if self.resource_state_buffer:
+            self.cursor.executemany(
+                """INSERT INTO ResourceStates 
+                   (resource_id, step_id, x_pos, y_pos, amount) 
+                   VALUES (?, ?, ?, ?, ?)""",
+                self.resource_state_buffer,
+            )
+            self.resource_state_buffer.clear()
+
+        self.conn.commit()
