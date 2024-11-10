@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from config import SimulationConfig
-from agents import Environment, SystemAgent, IndividualAgent, Resource
+from agents import Environment, SystemAgent, IndependentAgent, Resource
 from database import SimulationDatabase
 
 class TestSimulation(unittest.TestCase):
@@ -46,12 +46,12 @@ class TestSimulation(unittest.TestCase):
         
         # Create one of each agent type
         system_agent = SystemAgent(0, (25, 25), self.config.initial_resource_level, env)
-        individual_agent = IndividualAgent(1, (25, 25), self.config.initial_resource_level, env)
+        independent_agent = IndependentAgent(1, (25, 25), self.config.initial_resource_level, env)
         
         self.assertTrue(system_agent.alive)
-        self.assertTrue(individual_agent.alive)
+        self.assertTrue(independent_agent.alive)
         self.assertEqual(system_agent.resource_level, self.config.initial_resource_level)
-        self.assertEqual(individual_agent.resource_level, self.config.initial_resource_level)
+        self.assertEqual(independent_agent.resource_level, self.config.initial_resource_level)
 
     def test_resource_consumption(self):
         """Test that resources are consumed correctly."""

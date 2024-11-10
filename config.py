@@ -20,7 +20,7 @@ class VisualizationConfig:
     birth_radius_scale: int = 4
     death_mark_scale: float = 1.5
     agent_colors: Dict[str, str] = field(
-        default_factory=lambda: {"SystemAgent": "blue", "IndividualAgent": "red"}
+        default_factory=lambda: {"SystemAgent": "blue", "IndependentAgent": "red"}
     )
     min_font_size: int = 10
     font_scale_factor: int = 40
@@ -31,7 +31,7 @@ class VisualizationConfig:
         default_factory=lambda: {
             "total_agents": "#4a90e2",
             "system_agents": "#50c878",
-            "individual_agents": "#e74c3c",
+            "independent_agents": "#e74c3c",
             "total_resources": "#f39c12",
             "average_agent_resources": "#9b59b6",
         }
@@ -46,7 +46,7 @@ class SimulationConfig:
 
     # Agent settings
     system_agents: int = 25
-    individual_agents: int = 25
+    independent_agents: int = 25
     initial_resource_level: int = 12
     max_population: int = 300
     starvation_threshold: int = 0

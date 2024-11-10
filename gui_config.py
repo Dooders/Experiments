@@ -30,14 +30,14 @@ DEFAULT_SIMULATION_STEPS = 200
 # Batch simulation parameters
 DEFAULT_BATCH_VARIATIONS = {
     "system_agents": [20, 30, 40],
-    "individual_agents": [20, 30, 40],
+    "independent_agents": [20, 30, 40],
 }
 
 # About dialog text
 ABOUT_TEXT = """Agent-Based Simulation
 
 A simulation environment for studying emergent behaviors 
-in populations of system and individual agents.
+in populations of system and independent agents.
 
 Version 1.0"""
 

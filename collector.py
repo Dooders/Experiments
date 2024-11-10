@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from agents import IndividualAgent, SystemAgent
+from agents import IndependentAgent, SystemAgent
 
 
 class DataCollector:
@@ -15,15 +15,15 @@ class DataCollector:
         system_agents = [
             agent for agent in environment.agents if isinstance(agent, SystemAgent)
         ]
-        individual_agents = [
-            agent for agent in environment.agents if isinstance(agent, IndividualAgent)
+        independent_agents = [
+            agent for agent in environment.agents if isinstance(agent, IndependentAgent)
         ]
 
         data_point = {
             "step": step,
             # Existing metrics
             "system_agent_count": len(system_agents),
-            "individual_agent_count": len(individual_agents),
+            "independent_agent_count": len(independent_agents),
             "total_resources": sum(
                 resource.amount for resource in environment.resources
             ),
@@ -41,8 +41,8 @@ class DataCollector:
             "system_agent_territory": self._calculate_territory_control(
                 system_agents, environment
             ),
-            "individual_agent_territory": self._calculate_territory_control(
-                individual_agents, environment
+            "independent_agent_territory": self._calculate_territory_control(
+                independent_agents, environment
             ),
             "resource_density": self._calculate_resource_density(environment),
             "population_stability": self._calculate_population_stability(),
@@ -117,7 +117,7 @@ class DataCollector:
             return 1.0
 
         recent_population = [
-            d["system_agent_count"] + d["individual_agent_count"]
+            d["system_agent_count"] + d["independent_agent_count"]
             for d in self.data[-10:]
         ]
         return 1.0 - np.std(recent_population) / max(np.mean(recent_population), 1)

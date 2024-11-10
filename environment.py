@@ -3,7 +3,7 @@ import random
 
 import numpy as np
 
-from agents import IndividualAgent, SystemAgent
+from agents import IndependentAgent, SystemAgent
 from database import SimulationDatabase
 from resources import Resource
 
@@ -90,12 +90,12 @@ class Environment:
         """Calculate various metrics for the current simulation state."""
         alive_agents = [agent for agent in self.agents if agent.alive]
         system_agents = [a for a in alive_agents if isinstance(a, SystemAgent)]
-        individual_agents = [a for a in alive_agents if isinstance(a, IndividualAgent)]
+        independent_agents = [a for a in alive_agents if isinstance(a, IndependentAgent)]
 
         return {
             "total_agents": len(alive_agents),
             "system_agents": len(system_agents),
-            "individual_agents": len(individual_agents),
+            "independent_agents": len(independent_agents),
             "total_resources": sum(r.amount for r in self.resources),
             "average_agent_resources": (
                 sum(a.resource_level for a in alive_agents) / len(alive_agents)

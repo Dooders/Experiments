@@ -2,7 +2,7 @@
 width: 50
 height: 50
 system_agents: 5
-individual_agents: 5
+independent_agents: 5
 initial_resource_level: 10
 max_population: 50
 initial_resources: 20
