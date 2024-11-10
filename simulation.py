@@ -18,17 +18,25 @@ def setup_logging(log_dir: str = "logs") -> None:
     log_dir : str
         Directory to store log files
     """
+    # Create absolute path for log directory
+    log_dir = os.path.abspath(log_dir)
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = f"{log_dir}/simulation_{timestamp}.log"
+    #! removed timestamp from log file name
+    # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = os.path.join(log_dir, f"simulation.log")
 
+    # Add more detailed logging format and ensure file is writable
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        handlers=[logging.FileHandler(log_file, mode="w"), logging.StreamHandler()],
+        force=True,  # This ensures logging config is reset
     )
+
+    # Test log file creation
+    logging.info(f"Logging initialized. Log file: {log_file}")
 
 
 def create_initial_agents(
@@ -129,9 +137,9 @@ def run_simulation(
 
     # Main simulation loop
     try:
+        start_time = datetime.now()
         for step in range(num_steps):
-            if step % 100 == 0:
-                logging.info(f"Step {step}/{num_steps}")
+            logging.info(f"Starting step {step}/{num_steps}")
 
             # Process agents in batches
             alive_agents = [agent for agent in environment.agents if agent.alive]
@@ -159,7 +167,8 @@ def run_simulation(
         logging.error(f"Simulation failed: {str(e)}", exc_info=True)
         raise
 
-    logging.info("Simulation completed")
+    elapsed_time = datetime.now() - start_time
+    logging.info(f"Simulation completed in {elapsed_time.total_seconds():.2f} seconds")
     return environment
 
 
