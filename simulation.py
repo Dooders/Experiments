@@ -127,7 +127,7 @@ def run_simulation(
             "amount": config.initial_resources,
             "distribution": "random",
         },
-        db_path=db_path or "simulation_results.db",
+        db_path=db_path or "simulations/simulation_results.db",
         max_resource=config.max_resource_amount,
         config=config,
     )
@@ -163,8 +163,18 @@ def run_simulation(
             # Update environment once per step
             environment.update()
 
+        # Ensure final state is saved
+        environment.update()
+        
+        # Force final flush of database buffers
+        if environment.db:
+            environment.db.flush_all_buffers()
+            environment.db.close()
+
     except Exception as e:
         logging.error(f"Simulation failed: {str(e)}", exc_info=True)
+        if environment.db:
+            environment.db.close()
         raise
 
     elapsed_time = datetime.now() - start_time
@@ -180,7 +190,7 @@ def main():
     config = SimulationConfig.from_yaml("config.yaml")
 
     # Run simulation
-    run_simulation(num_steps=1000, config=config)  # Default number of steps
+    run_simulation(num_steps=500, config=config)  # Default number of steps
 
 
 if __name__ == "__main__":

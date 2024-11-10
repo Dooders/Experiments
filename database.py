@@ -313,10 +313,10 @@ class SimulationDatabase:
 
     def close(self):
         """Close the database connection after flushing all buffers."""
-        self._flush_agent_states()
-        self._flush_resource_states()
-        self._flush_metrics()
-        self.conn.close()
+        try:
+            self.flush_all_buffers()
+        finally:
+            self.conn.close()
 
     def get_historical_data(self):
         """
@@ -460,4 +460,11 @@ class SimulationDatabase:
             )
             self.resource_state_buffer.clear()
 
+        self.conn.commit()
+
+    def flush_all_buffers(self) -> None:
+        """Flush all data buffers to database."""
+        self._flush_agent_states()
+        self._flush_resource_states()
+        self._flush_metrics()
         self.conn.commit()
