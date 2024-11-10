@@ -90,11 +90,11 @@ class SystemAgent(BaseAgent):
             self.resource_level -= 1
 
 
-class IndividualAgent(BaseAgent):
+class IndependentAgent(BaseAgent):
     def __init__(self, agent_id, position, resource_level, environment):
         super().__init__(agent_id, position, resource_level, environment)
 
-        # Override default actions with IndividualAgent-specific weights
+        # Override default actions with IndependentAgent-specific weights
         self.actions = [
             Action("move", 0.25, move_action),
             Action("gather", 0.35, gather_action),

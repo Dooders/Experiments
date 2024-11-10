@@ -37,7 +37,7 @@ class SimulationVisualizer:
 
     # Colors
     SYSTEM_AGENT_COLOR = "blue"
-    INDIVIDUAL_AGENT_COLOR = "red"
+    INDEPENDENT_AGENT_COLOR = "red"
     DEATH_MARK_COLOR = (255, 0, 0)  # Red
     BIRTH_MARK_COLOR = (255, 255, 255)  # White
     BACKGROUND_COLOR = "black"
@@ -46,7 +46,7 @@ class SimulationVisualizer:
     CARD_COLORS = {
         "total_agents": "#4a90e2",  # Blue
         "system_agents": "#50c878",  # Emerald green
-        "individual_agents": "#e74c3c",  # Red
+        "independent_agents": "#e74c3c",  # Red
         "total_resources": "#f39c12",  # Orange
         "average_agent_resources": "#9b59b6",  # Purple
     }
@@ -179,9 +179,9 @@ class SimulationVisualizer:
                 "color": "#50c878",  # Emerald green
                 "column": right_column,
             },
-            "individual_agents": {
+            "independent_agents": {
                 "var": tk.StringVar(value="0"),
-                "label": "Individual Agents",
+                "label": "Independent Agents",
                 "color": "#e74c3c",  # Red
                 "column": left_column,
             },
@@ -247,12 +247,12 @@ class SimulationVisualizer:
         # Initialize empty line objects
         self.lines = {
             "system_agents": self.ax1.plot([], [], "b-", label="System Agents")[0],
-            "individual_agents": self.ax1.plot([], [], "r-", label="Individual Agents")[
+            "independent_agents": self.ax1.plot([], [], "r-", label="Independent Agents")[
                 0
             ],
             "resources": self.ax2.plot([], [], "g-", label="Resources")[0],
             "system_agents_future": self.ax1.plot([], [], "b-", alpha=0.3)[0],
-            "individual_agents_future": self.ax1.plot([], [], "r-", alpha=0.3)[0],
+            "independent_agents_future": self.ax1.plot([], [], "r-", alpha=0.3)[0],
             "resources_future": self.ax2.plot([], [], "g-", alpha=0.3)[0],
             "current_step": self.ax1.axvline(
                 x=0, color="gray", linestyle="--", alpha=0.5
@@ -603,7 +603,7 @@ class SimulationVisualizer:
             color = (
                 self.SYSTEM_AGENT_COLOR
                 if agent[1] == "SystemAgent"
-                else self.INDIVIDUAL_AGENT_COLOR
+                else self.INDEPENDENT_AGENT_COLOR
             )
             radius = max(1, int(self.AGENT_RADIUS_SCALE * params["scale"]))
             draw.ellipse(
@@ -687,24 +687,26 @@ class SimulationVisualizer:
             # Convert to numpy arrays for better performance
             steps = np.array(history["steps"])
             system_agents = np.array(history["metrics"]["system_agents"])
-            individual_agents = np.array(history["metrics"]["individual_agents"])
+            independent_agents = np.array(history["metrics"]["independent_agents"])
             total_resources = np.array(history["metrics"]["total_resources"])
 
             # Update all lines with full data
             self.lines["system_agents"].set_data(steps, system_agents)
-            self.lines["individual_agents"].set_data(steps, individual_agents)
+            self.lines["independent_agents"].set_data(steps, independent_agents)
             self.lines["resources"].set_data(steps, total_resources)
 
             # Update current step line
             self.lines["current_step"].set_xdata([self.current_step, self.current_step])
             max_y = max(
-                max(system_agents), max(individual_agents), max(total_resources)
+                max(system_agents), max(independent_agents), max(total_resources)
             )
             self.lines["current_step"].set_ydata([0, max_y])
 
             # Update axis limits with padding
             self.ax1.set_xlim(0, max(steps) + 10)
-            self.ax1.set_ylim(0, max(max(system_agents), max(individual_agents)) * 1.1)
+            self.ax1.set_ylim(
+                0, max(max(system_agents), max(independent_agents)) * 1.1
+            )
             self.ax2.set_ylim(0, max(total_resources) * 1.1)
 
             # Redraw canvas

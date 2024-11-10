@@ -43,8 +43,8 @@ def main():
                        help='Number of simulation steps')
     parser.add_argument('--system-agents', type=int, default=25,
                        help='Initial number of system agents')
-    parser.add_argument('--individual-agents', type=int, default=25,
-                       help='Initial number of individual agents')
+    parser.add_argument('--independent-agents', type=int, default=25,
+                       help='Initial number of independent agents')
     parser.add_argument('--resources', type=int, default=60,
                        help='Initial number of resources')
     
@@ -64,8 +64,8 @@ def main():
         # Override config with command line arguments if provided
         if args.system_agents:
             config.system_agents = args.system_agents
-        if args.individual_agents:
-            config.individual_agents = args.individual_agents
+        if args.independent_agents:
+            config.independent_agents = args.independent_agents
         if args.resources:
             config.initial_resources = args.resources
             

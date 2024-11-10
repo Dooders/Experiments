@@ -4,7 +4,7 @@ import random
 from datetime import datetime
 from typing import List, Optional, Tuple
 
-from agents import IndividualAgent, SystemAgent
+from agents import IndependentAgent, SystemAgent
 from config import SimulationConfig
 from environment import Environment
 
@@ -32,7 +32,7 @@ def setup_logging(log_dir: str = "logs") -> None:
 
 
 def create_initial_agents(
-    environment: Environment, num_system_agents: int, num_individual_agents: int
+    environment: Environment, num_system_agents: int, num_independent_agents: int
 ) -> List[Tuple[float, float]]:
     """
     Create initial population of agents.
@@ -43,8 +43,8 @@ def create_initial_agents(
         Simulation environment
     num_system_agents : int
         Number of system agents to create
-    num_individual_agents : int
-        Number of individual agents to create
+    num_independent_agents : int
+        Number of independent agents to create
 
     Returns
     -------
@@ -68,13 +68,13 @@ def create_initial_agents(
         environment.add_agent(agent)
         positions.append(position)
 
-    # Create individual agents
-    for _ in range(num_individual_agents):
+    # Create independent agents
+    for _ in range(num_independent_agents):
         position = (
             random.uniform(0, environment.width),
             random.uniform(0, environment.height),
         )
-        agent = IndividualAgent(
+        agent = IndependentAgent(
             agent_id=environment.get_next_agent_id(),
             position=position,
             resource_level=10,  # Initial resource level
@@ -125,7 +125,7 @@ def run_simulation(
     )
 
     # Create initial agents
-    create_initial_agents(environment, config.system_agents, config.individual_agents)
+    create_initial_agents(environment, config.system_agents, config.independent_agents)
 
     # Main simulation loop
     try:

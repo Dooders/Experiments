@@ -343,7 +343,7 @@ class SimulationDatabase:
                     "steps": [],
                     "metrics": {
                         "system_agents": [],
-                        "individual_agents": [],
+                        "independent_agents": [],
                         "total_resources": [],
                     },
                 }
@@ -352,7 +352,7 @@ class SimulationDatabase:
             steps = []
             metrics = {
                 "system_agents": [],
-                "individual_agents": [],
+                "independent_agents": [],
                 "total_resources": [],
                 "average_agent_resources": [],
             }
@@ -387,7 +387,7 @@ class SimulationDatabase:
                 "steps": [],
                 "metrics": {
                     "system_agents": [],
-                    "individual_agents": [],
+                    "independent_agents": [],
                     "total_resources": [],
                 },
             }

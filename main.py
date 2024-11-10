@@ -302,12 +302,12 @@ class SimulationGUI:
         Run multiple simulations with varying parameters.
 
         Creates a BatchRunner instance with the base configuration,
-        adds parameter variations for system and individual agents,
+        adds parameter variations for system and independent agents,
         and executes the batch simulation.
 
         Default variations:
         - System agents: [20, 30, 40]
-        - Individual agents: [20, 30, 40]
+        - Independent agents: [20, 30, 40]
         """
         try:
             # Load base configuration
