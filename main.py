@@ -782,15 +782,6 @@ class SimulationGUI:
         if not os.path.exists("logs"):
             os.makedirs("logs")
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        # Create file handler
-        file_handler = logging.FileHandler(f"logs/simulation_gui_{timestamp}.log")
-        file_handler.setLevel(logging.INFO)
-        file_handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-        )
-
         # Create console handler that writes to our log window
         class GUIHandler(logging.Handler):
             def __init__(self, gui):
@@ -814,7 +805,6 @@ class SimulationGUI:
             root_logger.removeHandler(handler)
 
         # Add our handlers
-        root_logger.addHandler(file_handler)
         root_logger.addHandler(gui_handler)
 
         logging.info("Logging system initialized")

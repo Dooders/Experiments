@@ -4,8 +4,8 @@ height: 100
 
 # Agent settings
 system_agents: 0
-independent_agents: 50
-initial_resource_level: 12
+independent_agents: 10
+initial_resource_level: 5
 max_population: 300
 starvation_threshold: 0
 max_starvation_time: 15
@@ -14,7 +14,7 @@ min_reproduction_resources: 10
 offspring_initial_resources: 5
 
 # Resource settings
-initial_resources: 60
+initial_resources: 15
 resource_regen_rate: 0.1
 resource_regen_amount: 2
 max_resource_amount: 30

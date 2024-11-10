@@ -165,7 +165,7 @@ def run_simulation(
 
         # Ensure final state is saved
         environment.update()
-        
+
         # Force final flush of database buffers
         if environment.db:
             environment.db.flush_all_buffers()
