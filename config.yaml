@@ -14,7 +14,7 @@ min_reproduction_resources: 10
 offspring_initial_resources: 5
 
 # Resource settings
-initial_resources: 15
+initial_resources: 20
 resource_regen_rate: 0.1
 resource_regen_amount: 2
 max_resource_amount: 30

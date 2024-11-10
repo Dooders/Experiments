@@ -168,8 +168,7 @@ class SimulationGUI:
             self.progress_bar.start()
 
             # Create new database path
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.current_db_path = f"{SIMULATIONS_DIR}/simulation_{timestamp}.db"
+            self.current_db_path = f"{SIMULATIONS_DIR}/simulation.db"
             os.makedirs(SIMULATIONS_DIR, exist_ok=True)
 
             # Load default configuration
