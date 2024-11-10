@@ -237,6 +237,20 @@ class SimulationVisualizer:
                 style=f"{stat_id}.CardValue.TLabel",
             ).pack(anchor="e", padx=8, pady=(0, 5))
 
+            # Add tooltips
+            tooltips = {
+                "total_agents": "Total number of agents in the simulation",
+                "system_agents": "Number of system-controlled agents",
+                "independent_agents": "Number of independently-controlled agents",
+                "total_resources": "Total resources available in the environment",
+                "average_agent_resources": "Average resources per agent",
+            }
+
+            if stat_id in tooltips:
+                # Find the label widget in the card's padding frame
+                label = padding_frame.winfo_children()[0]  # First child is the label
+                ToolTip(label, tooltips[stat_id])
+
     def _setup_chart(self):
         """Setup the chart with click interaction."""
         self.fig = Figure(figsize=(8, 4))
@@ -247,9 +261,9 @@ class SimulationVisualizer:
         # Initialize empty line objects
         self.lines = {
             "system_agents": self.ax1.plot([], [], "b-", label="System Agents")[0],
-            "independent_agents": self.ax1.plot([], [], "r-", label="Independent Agents")[
-                0
-            ],
+            "independent_agents": self.ax1.plot(
+                [], [], "r-", label="Independent Agents"
+            )[0],
             "resources": self.ax2.plot([], [], "g-", label="Resources")[0],
             "system_agents_future": self.ax1.plot([], [], "b-", alpha=0.3)[0],
             "independent_agents_future": self.ax1.plot([], [], "r-", alpha=0.3)[0],
@@ -704,9 +718,7 @@ class SimulationVisualizer:
 
             # Update axis limits with padding
             self.ax1.set_xlim(0, max(steps) + 10)
-            self.ax1.set_ylim(
-                0, max(max(system_agents), max(independent_agents)) * 1.1
-            )
+            self.ax1.set_ylim(0, max(max(system_agents), max(independent_agents)) * 1.1)
             self.ax2.set_ylim(0, max(total_resources) * 1.1)
 
             # Redraw canvas
@@ -758,3 +770,35 @@ class SimulationVisualizer:
             self._update_visualization(initial_data)
             # Force an update of the window
             self.root.update_idletasks()
+
+
+class ToolTip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tooltip = None
+        self.widget.bind("<Enter>", self.show_tooltip)
+        self.widget.bind("<Leave>", self.hide_tooltip)
+
+    def show_tooltip(self, event=None):
+        x, y, _, _ = self.widget.bbox("insert")
+        x += self.widget.winfo_rootx() + 25
+        y += self.widget.winfo_rooty() + 20
+
+        self.tooltip = tk.Toplevel(self.widget)
+        self.tooltip.wm_overrideredirect(True)
+        self.tooltip.wm_geometry(f"+{x}+{y}")
+
+        label = ttk.Label(
+            self.tooltip,
+            text=self.text,
+            background="#ffffe0",
+            relief="solid",
+            borderwidth=1,
+        )
+        label.pack()
+
+    def hide_tooltip(self, event=None):
+        if self.tooltip:
+            self.tooltip.destroy()
+            self.tooltip = None
