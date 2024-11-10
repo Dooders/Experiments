@@ -452,10 +452,7 @@ class SimulationVisualizer:
 
                 # Show message when agents die out, but continue playback
                 if not data["agent_states"] and self.playing:
-                    messagebox.showinfo(
-                        "Population Extinct",
-                        f"All agents have died at step {step_number}",
-                    )
+                    print(f"Agent states empty at step {step_number}")
         except Exception as e:
             messagebox.showerror(
                 "Database Error", f"Failed to load step {step_number}: {str(e)}"

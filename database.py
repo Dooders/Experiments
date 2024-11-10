@@ -194,18 +194,15 @@ class SimulationDatabase:
                 ]
             )
 
-            # Force flush buffers if this is step 400 or any multiple of batch_size
-            if step_number >= 400 or step_number % self.batch_size == 0:
-                self._flush_agent_states()
-                self._flush_resource_states()
-                self._flush_metrics()
+            # Flush if buffer size exceeds batch_size OR if it's a batch interval
+            should_flush = (
+                len(self.agent_state_buffer) >= self.batch_size
+                or step_number % self.batch_size == 0
+            )
 
-            # Process buffers if they exceed batch size
-            if len(self.agent_state_buffer) >= self.batch_size:
+            if should_flush:
                 self._flush_agent_states()
-            if len(self.resource_state_buffer) >= self.batch_size:
                 self._flush_resource_states()
-            if len(self.metric_buffer) >= self.batch_size:
                 self._flush_metrics()
 
         except Exception as e:
