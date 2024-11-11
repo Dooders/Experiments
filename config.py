@@ -1,7 +1,8 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Tuple
 
 import yaml
+import copy
 
 
 @dataclass
@@ -108,3 +109,7 @@ class SimulationConfig:
         config_dict = self.__dict__.copy()
         config_dict["visualization"] = self.visualization.__dict__
         return config_dict
+
+    def copy(self):
+        """Create a deep copy of the configuration."""
+        return copy.deepcopy(self)

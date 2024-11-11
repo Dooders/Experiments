@@ -2,12 +2,14 @@ import argparse
 import logging
 import os
 from datetime import datetime
+import json
 
 import tkinter as tk
 from agents import main as run_simulation
 from analysis import SimulationAnalyzer
 from visualization import SimulationVisualizer
 from config import SimulationConfig
+from experiment import ExperimentRunner
 
 def setup_logging(log_dir='logs'):
     """Setup logging configuration."""
@@ -26,9 +28,24 @@ def setup_logging(log_dir='logs'):
         ]
     )
 
+def run_experiment(args):
+    """Run experiment with specified parameters."""
+    config = SimulationConfig.from_yaml(args.config)
+    experiment = ExperimentRunner(config, args.experiment_name)
+    
+    if args.variations:
+        # Load variations from JSON file
+        with open(args.variations) as f:
+            variations = json.load(f)
+        experiment.run_iterations(args.iterations, variations)
+    else:
+        experiment.run_iterations(args.iterations)
+    
+    experiment.generate_report()
+
 def main():
     parser = argparse.ArgumentParser(description='Agent-Based Simulation CLI')
-    parser.add_argument('--mode', choices=['simulate', 'visualize', 'analyze'], 
+    parser.add_argument('--mode', choices=['simulate', 'visualize', 'analyze', 'experiment'], 
                        default='simulate',
                        help='Mode of operation')
     parser.add_argument('--db-path', default='simulation_results.db',
@@ -52,6 +69,11 @@ def main():
                        help='Path to configuration file')
     parser.add_argument('--save-config', type=str,
                        help='Save current configuration to file')
+    
+    # Experiment parameters
+    parser.add_argument("--experiment-name", help="Name of the experiment")
+    parser.add_argument("--iterations", type=int, default=3, help="Number of iterations to run")
+    parser.add_argument("--variations", help="Path to JSON file containing parameter variations")
     
     args = parser.parse_args()
     
@@ -104,6 +126,9 @@ def main():
         if args.export_path:
             analyzer.db.export_data(args.export_path)
             logging.info(f"Data exported to: {args.export_path}")
+    
+    elif args.mode == 'experiment':
+        run_experiment(args)
 
 if __name__ == '__main__':
     main() 
