@@ -23,9 +23,9 @@ def run_resource_distribution_experiment():
     experiment = ExperimentRunner(base_config, "resource_distribution_test")
     
     variations = [
-        {"initial_resources": 100, "num_steps": 1000},
-        {"initial_resources": 200, "num_steps": 1000},
-        {"initial_resources": 300, "num_steps": 1000},
+        {"initial_resources": 10, "num_steps": 1000},
+        {"initial_resources": 20, "num_steps": 1000},
+        {"initial_resources": 30, "num_steps": 1000},
     ]
     
     try:

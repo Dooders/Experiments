@@ -1,3 +1,4 @@
+import logging
 import random
 from collections import deque
 from typing import TYPE_CHECKING
@@ -11,6 +12,8 @@ from action import *
 
 if TYPE_CHECKING:
     from environment import Environment
+
+logger = logging.getLogger(__name__)
 
 
 class AgentModel(nn.Module):
@@ -133,6 +136,9 @@ class BaseAgent:
         self.starvation_threshold = self.config.starvation_threshold
         self.max_starvation = self.config.max_starvation_time
         self.birth_time = environment.time
+        logger.info(
+            f"Agent {self.agent_id} created at {self.position} during step {environment.time}"
+        )
 
         # Log agent creation to database
         environment.db.log_agent(
@@ -181,36 +187,6 @@ class BaseAgent:
 
         return state.to_tensor(self.device)
 
-    def move(self):
-        # Get state once and reuse
-        state = self.get_state()
-
-        # Epsilon-greedy action selection with vectorized operations
-        if random.random() < self.model.epsilon:
-            action = random.randint(0, 3)
-        else:
-            with torch.no_grad():
-                action = self.model(state).argmax().item()
-
-        # Use lookup table instead of if-else
-        move_map = {
-            0: (self.max_movement, 0),  # Right
-            1: (-self.max_movement, 0),  # Left
-            2: (0, self.max_movement),  # Up
-            3: (0, -self.max_movement),  # Down
-        }
-        dx, dy = move_map[action]
-
-        # Update position with vectorized operations
-        self.position = (
-            max(0, min(self.environment.width, self.position[0] + dx)),
-            max(0, min(self.environment.height, self.position[1] + dy)),
-        )
-
-        # Store for learning
-        self.last_state = state
-        self.last_action = action
-
     def learn(self, reward):
         if self.last_state is None:
             return
@@ -251,7 +227,7 @@ class BaseAgent:
         # First check if agent should die
         if not self.alive:
             return
-
+        initial_resources = self.resource_level
         # Base resource consumption
         self.resource_level -= self.config.base_consumption_rate
 
@@ -267,6 +243,10 @@ class BaseAgent:
         action = self.select_action()
         action.execute(self)
 
+        # Calculate reward based on resource change
+        reward = self.resource_level - initial_resources
+        self.learn(reward)
+
     def reproduce(self):
         if len(self.environment.agents) >= self.config.max_population:
             return
@@ -276,6 +256,10 @@ class BaseAgent:
                 new_agent = self.create_offspring()
                 self.environment.add_agent(new_agent)
                 self.resource_level -= self.config.offspring_cost
+
+                logger.info(
+                    f"Agent {self.agent_id} reproduced at {self.position} during step {self.environment.time} creating agent {new_agent.agent_id}"
+                )
 
     def create_offspring(self):
         return type(self)(
@@ -306,29 +290,9 @@ class BaseAgent:
             except ValueError:
                 pass  # Agent was already removed
 
-    def gather_resources(self):
-        if not self.environment.resources:
-            return
-
-        # Convert positions to numpy arrays
-        agent_pos = np.array(self.position)
-        resource_positions = np.array([r.position for r in self.environment.resources])
-
-        # Calculate all distances at once
-        distances = np.sqrt(((resource_positions - agent_pos) ** 2).sum(axis=1))
-
-        # Find closest resource within range
-        in_range = distances < self.config.gathering_range
-        if not np.any(in_range):
-            return
-
-        closest_idx = distances[in_range].argmin()
-        resource = self.environment.resources[closest_idx]
-
-        if not resource.is_depleted():
-            gather_amount = min(self.config.max_gather_amount, resource.amount)
-            resource.consume(gather_amount)
-            self.resource_level += gather_amount
+        logger.info(
+            f"Agent {self.agent_id} died at {self.position} during step {self.environment.time}"
+        )
 
     def get_environment(self) -> "Environment":
         return self._environment

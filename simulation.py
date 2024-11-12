@@ -148,11 +148,6 @@ def run_simulation(
             for i in range(0, len(alive_agents), batch_size):
                 batch = alive_agents[i : i + batch_size]
 
-                # Process movements in parallel
-                for agent in batch:
-                    agent.move()
-
-                # Process actions in parallel
                 for agent in batch:
                     agent.act()
 
