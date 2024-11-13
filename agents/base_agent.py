@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from action import *
+from actions.move import MoveModule
 
 if TYPE_CHECKING:
     from environment import Environment
@@ -148,6 +149,9 @@ class BaseAgent:
             position=self.position,
             initial_resources=self.resource_level,
         )
+
+        # Add move module
+        self.move_module = MoveModule(self.config)
 
     def get_state(self):
         # Get closest resource position

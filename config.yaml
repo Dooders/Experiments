@@ -26,16 +26,27 @@ gathering_range: 20
 max_gather_amount: 3
 territory_range: 30
 
-# Learning parameters
+# General Learning parameters
 learning_rate: 0.001
 gamma: 0.95
 epsilon_start: 1.0
 epsilon_min: 0.01
 epsilon_decay: 0.995
-memory_size: 32
+memory_size: 2000
 batch_size: 32
 training_frequency: 4
 dqn_hidden_size: 24
+
+# Movement Module Parameters
+move_target_update_freq: 100
+move_memory_size: 10000
+move_learning_rate: 0.001
+move_gamma: 0.99
+move_epsilon_start: 1.0
+move_epsilon_min: 0.01
+move_epsilon_decay: 0.995
+move_dqn_hidden_size: 64
+move_batch_size: 32
 
 # Visualization settings
 visualization:

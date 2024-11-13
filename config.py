@@ -1,8 +1,8 @@
+import copy
 from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Tuple
 
 import yaml
-import copy
 
 
 @dataclass
@@ -67,18 +67,30 @@ class SimulationConfig:
     max_movement: int = 8
     gathering_range: int = 20
     max_gather_amount: int = 3
-    territory_range: int = 30  # Range for considering nearby agents
+    territory_range: int = 30
 
-    # Learning parameters
+    # Learning and Movement Module Parameters
+    target_update_freq: int = 100
+    memory_size: int = 10000
     learning_rate: float = 0.001
-    gamma: float = 0.95
+    gamma: float = 0.99
     epsilon_start: float = 1.0
     epsilon_min: float = 0.01
     epsilon_decay: float = 0.995
-    memory_size: int = 2000
+    dqn_hidden_size: int = 64
     batch_size: int = 32
-    training_frequency: int = 4
-    dqn_hidden_size: int = 24
+    training_frequency: int = 50
+
+    # Movement Module Parameters
+    move_target_update_freq: int = 100
+    move_memory_size: int = 10000
+    move_learning_rate: float = 0.001
+    move_gamma: float = 0.99
+    move_epsilon_start: float = 1.0
+    move_epsilon_min: float = 0.01
+    move_epsilon_decay: float = 0.995
+    move_dqn_hidden_size: int = 64
+    move_batch_size: int = 32
 
     # Visualization settings (separate config)
     visualization: VisualizationConfig = field(default_factory=VisualizationConfig)
