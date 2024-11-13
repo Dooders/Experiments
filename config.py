@@ -95,6 +95,24 @@ class SimulationConfig:
     # Visualization settings (separate config)
     visualization: VisualizationConfig = field(default_factory=VisualizationConfig)
 
+    # Action probability adjustment parameters
+    social_range = 30  # Range for social interactions (share/attack)
+    
+    # Movement multipliers
+    move_mult_no_resources = 1.5  # Multiplier when no resources nearby
+    
+    # Gathering multipliers
+    gather_mult_low_resources = 1.5  # Multiplier when resources needed
+    
+    # Sharing multipliers
+    share_mult_wealthy = 1.3  # Multiplier when agent has excess resources
+    share_mult_poor = 0.5    # Multiplier when agent needs resources
+    
+    # Attack multipliers
+    attack_starvation_threshold = 0.5  # Starvation risk threshold for desperate behavior
+    attack_mult_desperate = 1.4  # Multiplier when desperate for resources
+    attack_mult_stable = 0.6   # Multiplier when resource stable
+
     @classmethod
     def from_yaml(cls, file_path: str) -> "SimulationConfig":
         """Load configuration from a YAML file."""
