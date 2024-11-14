@@ -59,6 +59,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Move device check outside class for single evaluation
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 class MoveConfig:
     target_update_freq: int = 100
@@ -182,8 +185,10 @@ class MoveModule:
         tau (float): Soft update parameter for target network
     """
 
-    def __init__(self, config: MoveConfig = DEFAULT_MOVE_CONFIG):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def __init__(
+        self, config: MoveConfig = DEFAULT_MOVE_CONFIG, device: torch.device = DEVICE
+    ):
+        self.device = device
         self.q_network = MoveQNetwork(input_dim=4).to(self.device)
         self.target_network = MoveQNetwork(input_dim=4).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
@@ -246,12 +251,8 @@ class MoveModule:
             return random.randint(0, 3)
 
         with torch.no_grad():
-            # Ensure state is a tensor and on the correct device
-            if not isinstance(state, torch.Tensor):
-                state_tensor = torch.FloatTensor(state).to(self.device)
-            else:
-                state_tensor = state.to(self.device)
-            q_values = self.q_network(state_tensor)
+            # State is already a tensor on correct device from store_experience
+            q_values = self.q_network(state)
             return q_values.cpu().argmax().item()
 
     def train(self, batch) -> Optional[float]:
@@ -282,24 +283,11 @@ class MoveModule:
         if len(batch) < 2:  # Minimum batch size check
             return None
 
-        def state_to_tensor(state) -> torch.Tensor:
-            """Convert state to tensor format, handling multiple input types."""
-            if isinstance(state, torch.Tensor):
-                return state.to(self.device)
-            elif hasattr(state, "to_tensor"):
-                return state.to_tensor(self.device)
-            elif isinstance(state, np.ndarray):
-                return torch.FloatTensor(state).to(self.device)
-            else:
-                raise TypeError(f"Unexpected state type: {type(state)}")
-
-        # Convert states ensuring proper tensor format
-        states = torch.stack([state_to_tensor(state) for state, _, _, _, _ in batch])
+        # States are already tensors from memory, just stack them
+        states = torch.stack([state for state, _, _, _, _ in batch])
         actions = torch.LongTensor([[x[1]] for x in batch]).to(self.device)
         rewards = torch.FloatTensor([x[2] for x in batch]).to(self.device)
-        next_states = torch.stack(
-            [state_to_tensor(next_state) for _, _, _, next_state, _ in batch]
-        )
+        next_states = torch.stack([next_state for _, _, _, next_state, _ in batch])
         dones = torch.FloatTensor([x[4] for x in batch]).to(self.device)
 
         # Get current Q values
@@ -337,7 +325,7 @@ class MoveModule:
 
     def get_movement(self, agent, state):
         """Determine next movement position using learned policy."""
-        # Convert state to tensor if needed
+        # Convert state to tensor if needed and store for later use
         if not isinstance(state, torch.Tensor):
             if hasattr(state, "to_tensor"):
                 state = state.to_tensor(self.device)
@@ -355,29 +343,30 @@ class MoveModule:
         new_x = max(0, min(agent.environment.width, agent.position[0] + dx))
         new_y = max(0, min(agent.environment.height, agent.position[1] + dy))
 
-        # Store state for learning (keep as tensor)
+        # Store state for learning (already a tensor)
         self.last_state = state
         self.last_action = action
 
         return (new_x, new_y)
 
     def store_experience(self, state, action, reward, next_state, done):
-        """Store experience in replay memory."""
-        # Ensure states are tensors
-        if not isinstance(state, torch.Tensor):
-            if hasattr(state, "to_tensor"):
-                state = state.to_tensor(self.device)
-            else:
-                state = torch.FloatTensor(state).to(self.device)
+        """Store experience in replay memory with efficient tensor conversion."""
 
-        if not isinstance(next_state, torch.Tensor):
-            if hasattr(next_state, "to_tensor"):
-                next_state = next_state.to_tensor(self.device)
+        # Convert states to tensors only once when storing
+        def ensure_tensor(x) -> torch.Tensor:
+            if isinstance(x, torch.Tensor):
+                return x.to(self.device)
+            elif hasattr(x, "to_tensor"):
+                return x.to_tensor(self.device)
+            elif isinstance(x, np.ndarray):
+                return torch.FloatTensor(x).to(self.device)
             else:
-                next_state = torch.FloatTensor(next_state).to(self.device)
+                raise TypeError(f"Unexpected state type: {type(x)}")
 
-        # Store experience tuple
-        self.memory.append((state, action, reward, next_state, done))
+        # Convert and store experience tuple with tensors
+        state_tensor = ensure_tensor(state)
+        next_state_tensor = ensure_tensor(next_state)
+        self.memory.append((state_tensor, action, reward, next_state_tensor, done))
 
     def get_state(self) -> "ModelState":
         """Get current state of the move module.
