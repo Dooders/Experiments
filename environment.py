@@ -6,8 +6,8 @@ import numpy as np
 
 from agents import IndependentAgent, SystemAgent
 from database import SimulationDatabase
-from resources import Resource
 from models.state import EnvironmentState
+from resources import Resource
 
 
 class Environment:
@@ -91,10 +91,12 @@ class Environment:
     def _calculate_metrics(self):
         """Calculate various metrics for the current simulation state."""
         from agents import IndependentAgent, SystemAgent  # Local import
-        
+
         alive_agents = [agent for agent in self.agents if agent.alive]
         system_agents = [a for a in alive_agents if isinstance(a, SystemAgent)]
-        independent_agents = [a for a in alive_agents if isinstance(a, IndependentAgent)]
+        independent_agents = [
+            a for a in alive_agents if isinstance(a, IndependentAgent)
+        ]
 
         return {
             "total_agents": len(alive_agents),
@@ -116,3 +118,19 @@ class Environment:
     def get_state(self) -> EnvironmentState:
         """Get current environment state."""
         return EnvironmentState.from_environment(self)
+
+    def is_valid_position(self, position):
+        """Check if a position is valid within the environment bounds.
+
+        Parameters
+        ----------
+        position : tuple
+            (x, y) coordinates to check
+
+        Returns
+        -------
+        bool
+            True if position is within bounds, False otherwise
+        """
+        x, y = position
+        return (0 <= x <= self.width) and (0 <= y <= self.height)

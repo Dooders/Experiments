@@ -75,90 +75,38 @@ class Action:
 
 # Default action functions
 def move_action(agent):
-    """Execute movement using Deep Q-Learning based policy.
+    """Execute movement action for an agent."""
+    # Get current position and state
+    old_pos = agent.position
 
-    Implements intelligent movement behavior:
-    1. Converts agent state to appropriate format
-    2. Gets next position from move module
-    3. Calculates movement-based reward
-    4. Updates experience memory and trains network
+    # Get full state using AgentState
+    state = agent.get_state()  # This returns normalized state with all 4 dimensions
 
-    Args:
-        agent: Agent performing the movement
-            Required attributes:
-                - position: Current (x,y) coordinates
-                - move_module: DQN module for movement
-                - environment: Contains resources and boundaries
+    # Select action using move module
+    action = agent.move_module.select_action(state.to_tensor(agent.move_module.device))
 
-    Effects:
-        - Updates agent position
-        - Trains movement policy
-        - Logs movement details and rewards
+    # Calculate new position based on selected action
+    new_pos = agent.calculate_new_position(action)
 
-    Rewards:
-        - Base cost: -0.1
-        - Moving closer to resources: +0.3
-        - Moving away from resources: -0.2
-    """
-    # Convert state to numpy array and ensure it's on CPU
-    state = agent.get_state()
-    if isinstance(state, torch.Tensor):
-        state = state.cpu().numpy()
-    state = np.array(state).flatten()
-    initial_position = agent.position
+    # Update agent position if valid
+    if agent.environment.is_valid_position(new_pos):
+        agent.position = new_pos
 
-    # Get new position from move module
-    new_position = agent.move_module.get_movement(agent, state)
-    agent.position = new_position
+        # Get next state after movement
+        next_state = agent.get_state()
 
-    # Calculate movement distance for reward
-    distance_moved = np.sqrt(
-        (new_position[0] - initial_position[0]) ** 2
-        + (new_position[1] - initial_position[1]) ** 2
-    )
+        # Calculate reward based on resource gain
+        reward = agent.calculate_move_reward(old_pos, new_pos)
 
-    # Simple reward based on movement and resource proximity
-    reward = -0.1  # Base cost for moving
-    if distance_moved > 0:
-        # Add reward for moving closer to resources
-        closest_resource = min(
-            [r for r in agent.environment.resources if not r.is_depleted()],
-            key=lambda r: np.sqrt(
-                (r.position[0] - new_position[0]) ** 2
-                + (r.position[1] - new_position[1]) ** 2
-            ),
-            default=None,
-        )
-        if closest_resource:
-            old_distance = np.sqrt(
-                (closest_resource.position[0] - initial_position[0]) ** 2
-                + (closest_resource.position[1] - initial_position[1]) ** 2
-            )
-            new_distance = np.sqrt(
-                (closest_resource.position[0] - new_position[0]) ** 2
-                + (closest_resource.position[1] - new_position[1]) ** 2
-            )
-            reward += 0.3 if new_distance < old_distance else -0.2
-
-    # Store experience and train
-    if agent.move_module.last_state is not None:
+        # Store experience
         agent.move_module.store_experience(
-            agent.move_module.last_state,
-            agent.move_module.last_action,
-            reward,
-            state,
-            False,
-        )
-        agent.move_module.train(
-            random.sample(
-                agent.move_module.memory, min(32, len(agent.move_module.memory))
-            )
+            state=state, action=action, reward=reward, next_state=next_state, done=False
         )
 
-    logger.debug(
-        f"Agent {id(agent)} moved from {initial_position} to {new_position}. "
-        f"Reward: {reward:.3f}, Epsilon: {agent.move_module.epsilon:.3f}"
-    )
+        logger.debug(
+            f"Agent {id(agent)} moved from {old_pos} to {new_pos}. "
+            f"Reward: {reward:.3f}, Epsilon: {agent.move_module.epsilon:.3f}"
+        )
 
 
 def gather_action(agent):

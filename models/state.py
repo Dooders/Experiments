@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Dict, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, Optional
 
 import numpy as np
 import torch
@@ -169,12 +169,14 @@ class AgentState(BaseState):
             >>> print(tensor.shape)
             torch.Size([4])
         """
-        return torch.FloatTensor([
-            self.normalized_distance,
-            self.normalized_angle,
-            self.normalized_resource_level,
-            self.normalized_target_amount
-        ]).to(device)
+        return torch.FloatTensor(
+            [
+                self.normalized_distance,
+                self.normalized_angle,
+                self.normalized_resource_level,
+                self.normalized_target_amount,
+            ]
+        ).to(device)
 
     @classmethod
     def from_raw_values(
@@ -196,16 +198,12 @@ class AgentState(BaseState):
 
         Returns:
             AgentState: Normalized state instance
-
-        Example:
-            >>> state = AgentState.from_raw_values(
-            ...     distance=10.0,
-            ...     angle=1.57,
-            ...     resource_level=16.0,
-            ...     target_amount=12.0,
-            ...     env_diagonal=100.0
-            ... )
         """
+        # Clamp values to valid ranges before normalization
+        resource_level = max(0.0, min(resource_level, cls.RESOURCE_NORMALIZER))
+        target_amount = max(0.0, min(target_amount, cls.RESOURCE_NORMALIZER))
+        distance = max(0.0, min(distance, env_diagonal))
+
         return cls(
             normalized_distance=distance / env_diagonal,
             normalized_angle=(angle + np.pi) / (2 * np.pi),
@@ -243,6 +241,29 @@ class AgentState(BaseState):
             float: Angle in radians (-π to π)
         """
         return (self.normalized_angle * 2 * np.pi) - np.pi
+
+    def __eq__(self, other: object) -> bool:
+        """Compare two states for equality.
+
+        Parameters
+        ----------
+        other : object
+            Other state to compare with
+
+        Returns
+        -------
+        bool
+            True if states are equal, False otherwise
+        """
+        if not isinstance(other, AgentState):
+            return NotImplemented
+
+        return (
+            self.normalized_distance == other.normalized_distance
+            and self.normalized_angle == other.normalized_angle
+            and self.normalized_resource_level == other.normalized_resource_level
+            and self.normalized_target_amount == other.normalized_target_amount
+        )
 
 
 class EnvironmentState(BaseState):

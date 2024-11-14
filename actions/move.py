@@ -46,7 +46,7 @@ Dependencies:
 import logging
 import random
 from collections import deque
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional
 
 import numpy as np
 import torch
@@ -239,17 +239,17 @@ class MoveModule:
 
         def state_to_tensor(state) -> np.ndarray:
             """Convert state to tensor format, handling multiple input types.
-            
+
             Args:
                 state: Either AgentState object or numpy array
-                
+
             Returns:
                 np.ndarray: Normalized state values as numpy array
-                
+
             Raises:
                 TypeError: If state is neither AgentState nor ndarray
             """
-            if hasattr(state, 'to_tensor'):
+            if hasattr(state, "to_tensor"):
                 return state.to_tensor(self.device).cpu().numpy()
             elif isinstance(state, np.ndarray):
                 return state
@@ -257,19 +257,24 @@ class MoveModule:
                 raise TypeError(f"Unexpected state type: {type(state)}")
 
         # Convert states ensuring proper format
-        states = torch.FloatTensor([
-            state_to_tensor(state) for state, _, _, _, _ in batch
-        ]).to(self.device)
-        
+        states = torch.FloatTensor(
+            [state_to_tensor(state) for state, _, _, _, _ in batch]
+        ).to(self.device)
+
         actions = torch.LongTensor([[x[1]] for x in batch]).to(self.device)
         rewards = torch.FloatTensor([x[2] for x in batch]).to(self.device)
-        
-        next_states = torch.FloatTensor([
-            state_to_tensor(next_state) if next_state is not None 
-            else np.zeros(4)  # Match state dimensions
-            for _, _, _, next_state, _ in batch
-        ]).to(self.device)
-        
+
+        next_states = torch.FloatTensor(
+            [
+                (
+                    state_to_tensor(next_state)
+                    if next_state is not None
+                    else np.zeros(4)
+                )  # Match state dimensions
+                for _, _, _, next_state, _ in batch
+            ]
+        ).to(self.device)
+
         dones = torch.FloatTensor([x[4] for x in batch]).to(self.device)
 
         # Get current Q values
@@ -333,57 +338,41 @@ class MoveModule:
 
         return (new_x, new_y)
 
-    def store_experience(self, state, action: int, reward: float, next_state, done: bool) -> None:
-        """Store a transition in the replay memory.
+    def store_experience(self, state, action, reward, next_state, done):
+        """Store experience in replay memory.
 
-        Handles both AgentState objects and numpy arrays, converting numpy arrays
-        to AgentState objects for consistent state representation.
-
-        Args:
-            state (Union[AgentState, np.ndarray]): Current state
-            action (int): Action taken
-            reward (float): Reward received
-            next_state (Union[AgentState, np.ndarray, None]): Next state or None if terminal
-            done (bool): Whether this transition ended the episode
-
-        Note:
-            When numpy arrays are provided, they are assumed to be normalized and
-            contain values in the order: [distance, angle, resource_level, target_amount]
+        Parameters
+        ----------
+        state : AgentState
+            Current state
+        action : int
+            Action taken
+        reward : float
+            Reward received
+        next_state : AgentState
+            Next state
+        done : bool
+            Whether episode is done
         """
-        # Ensure states are in correct format before storing
-        if isinstance(state, np.ndarray):
-            from models.state import AgentState
-            state = AgentState.from_raw_values(
-                distance=state[0],
-                angle=state[1],
-                resource_level=state[2],
-                target_amount=state[3],
-                env_diagonal=1.0  # Already normalized
-            )
-        
-        if isinstance(next_state, np.ndarray) and next_state is not None:
-            from models.state import AgentState
-            next_state = AgentState.from_raw_values(
-                distance=next_state[0],
-                angle=next_state[1],
-                resource_level=next_state[2],
-                target_amount=next_state[3],
-                env_diagonal=1.0  # Already normalized
-            )
+        # Convert states to tensors
+        state_tensor = state.to_tensor(self.device)
+        next_state_tensor = next_state.to_tensor(self.device)
 
-        self.memory.append((state, action, reward, next_state, done))
+        # Store experience tuple
+        self.memory.append((state_tensor, action, reward, next_state_tensor, done))
 
     def get_state(self) -> "ModelState":
         """Get current state of the move module.
-        
+
         Returns:
             ModelState: Current state including learning parameters and metrics
-        
+
         Example:
             >>> state = move_module.get_state()
             >>> print(f"Current epsilon: {state.epsilon}")
         """
         from models.state import ModelState  # Import locally to avoid circle
+
         return ModelState.from_move_module(self)
 
 

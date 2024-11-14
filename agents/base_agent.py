@@ -47,6 +47,7 @@ class AgentModel(nn.Module):
         if len(batch) < self.config.batch_size:
             return None
 
+        # States are already tensors from memory
         states = torch.stack([x[0] for x in batch])
         actions = torch.tensor([x[1] for x in batch], device=self.device)
         rewards = torch.tensor(
@@ -134,10 +135,10 @@ class BaseAgent:
 
     def get_state(self) -> AgentState:
         """Get the current normalized state of the agent.
-        
+
         Calculates the agent's state relative to nearest resource and current
         resource levels. Returns None if no resources are available.
-        
+
         Returns:
             AgentState: Normalized state representation
         """
@@ -158,33 +159,34 @@ class BaseAgent:
             # Return zero state if no resources available
             return AgentState(
                 normalized_distance=1.0,  # Maximum distance
-                normalized_angle=0.5,     # Neutral angle
+                normalized_angle=0.5,  # Neutral angle
                 normalized_resource_level=0.0,
-                normalized_target_amount=0.0
+                normalized_target_amount=0.0,
             )
 
         # Calculate raw values
         dx = closest_resource.position[0] - self.position[0]
         dy = closest_resource.position[1] - self.position[1]
         angle = np.arctan2(dy, dx)
-        
+
         # Calculate environment diagonal for distance normalization
-        env_diagonal = np.sqrt(
-            self.environment.width**2 + self.environment.height**2
-        )
+        env_diagonal = np.sqrt(self.environment.width**2 + self.environment.height**2)
+
+        # Ensure resource level is non-negative
+        resource_level = max(0.0, self.resource_level)
 
         # Create normalized state using factory method
         return AgentState.from_raw_values(
             distance=min_distance,
             angle=angle,
-            resource_level=self.resource_level,
+            resource_level=resource_level,  # Use clamped value
             target_amount=closest_resource.amount,
-            env_diagonal=env_diagonal
+            env_diagonal=env_diagonal,
         )
 
     def learn(self, reward: float) -> None:
         """Update agent's learning based on received reward.
-        
+
         Args:
             reward (float): Reward value from last action
         """
@@ -196,8 +198,16 @@ class BaseAgent:
 
         # Store experience with proper state objects
         current_state = self.get_state()
+
+        # Convert states to tensors before storing in memory
+        last_state_tensor = self.last_state.to_tensor(self.device)
+        current_state_tensor = current_state.to_tensor(self.device)
+
+        # Get action index instead of storing Action object
+        action_idx = self.actions.index(self.last_action)
+
         self.model.memory.append(
-            (self.last_state, self.last_action, reward, current_state)
+            (last_state_tensor, action_idx, reward, current_state_tensor)
         )
 
         # Only train on larger batches less frequently
@@ -212,26 +222,26 @@ class BaseAgent:
 
     def select_action(self):
         """Select an action using a combination of weighted probabilities and state awareness.
-        
+
         Uses both predefined weights and current state to make intelligent decisions:
         1. Gets base probabilities from action weights
         2. Adjusts probabilities based on current state
         3. Applies epsilon-greedy exploration
-        
+
         Returns:
             Action: Selected action object to execute
         """
         # Get base probabilities from weights
         actions = [action for action in self.actions]
         action_weights = [action.weight for action in actions]
-        
+
         # Normalize base weights
         total_weight = sum(action_weights)
         base_probs = [weight / total_weight for weight in action_weights]
-        
+
         # State-based adjustments
         adjusted_probs = self._adjust_probabilities(base_probs)
-        
+
         # Epsilon-greedy exploration
         if random.random() < self.model.epsilon:
             # Random exploration
@@ -242,49 +252,56 @@ class BaseAgent:
 
     def _adjust_probabilities(self, base_probs):
         """Adjust action probabilities based on agent's current state.
-        
+
         Uses configurable multipliers to adjust probabilities based on:
         - Resource levels
         - Nearby resources
         - Nearby agents
         - Current health/starvation
-        
+
         Args:
             base_probs (list[float]): Original action probabilities
-            
+
         Returns:
             list[float]: Adjusted probability distribution
         """
         adjusted_probs = base_probs.copy()
-        
+
         # Get relevant state information
         state = self.get_state()
         resource_level = self.resource_level
         starvation_risk = self.starvation_threshold / self.max_starvation
-        
+
         # Find nearby entities
-        nearby_resources = [r for r in self.environment.resources 
-                           if not r.is_depleted() and 
-                           np.sqrt(((np.array(r.position) - np.array(self.position)) ** 2).sum()) 
-                           < self.config.gathering_range]
-        
-        nearby_agents = [a for a in self.environment.agents 
-                        if a != self and a.alive and
-                        np.sqrt(((np.array(a.position) - np.array(self.position)) ** 2).sum()) 
-                        < self.config.social_range]
-        
+        nearby_resources = [
+            r
+            for r in self.environment.resources
+            if not r.is_depleted()
+            and np.sqrt(((np.array(r.position) - np.array(self.position)) ** 2).sum())
+            < self.config.gathering_range
+        ]
+
+        nearby_agents = [
+            a
+            for a in self.environment.agents
+            if a != self
+            and a.alive
+            and np.sqrt(((np.array(a.position) - np.array(self.position)) ** 2).sum())
+            < self.config.social_range
+        ]
+
         # Adjust move probability
         move_idx = next(i for i, a in enumerate(self.actions) if a.name == "move")
         if not nearby_resources:
             # Increase move probability if no resources nearby
             adjusted_probs[move_idx] *= self.config.move_mult_no_resources
-        
+
         # Adjust gather probability
         gather_idx = next(i for i, a in enumerate(self.actions) if a.name == "gather")
         if nearby_resources and resource_level < self.config.min_reproduction_resources:
             # Increase gather probability if resources needed
             adjusted_probs[gather_idx] *= self.config.gather_mult_low_resources
-        
+
         # Adjust share probability
         share_idx = next(i for i, a in enumerate(self.actions) if a.name == "share")
         if resource_level > self.config.min_reproduction_resources and nearby_agents:
@@ -293,27 +310,31 @@ class BaseAgent:
         else:
             # Decrease share probability if resources needed
             adjusted_probs[share_idx] *= self.config.share_mult_poor
-        
+
         # Adjust attack probability
         attack_idx = next(i for i, a in enumerate(self.actions) if a.name == "attack")
-        if starvation_risk > self.config.attack_starvation_threshold and nearby_agents and resource_level > 2:
+        if (
+            starvation_risk > self.config.attack_starvation_threshold
+            and nearby_agents
+            and resource_level > 2
+        ):
             # Increase attack probability if desperate
             adjusted_probs[attack_idx] *= self.config.attack_mult_desperate
         else:
             # Decrease attack probability if stable
             adjusted_probs[attack_idx] *= self.config.attack_mult_stable
-        
+
         # Renormalize probabilities
         total = sum(adjusted_probs)
-        adjusted_probs = [p/total for p in adjusted_probs]
-        
+        adjusted_probs = [p / total for p in adjusted_probs]
+
         return adjusted_probs
 
     def act(self):
         """Execute an action based on current state."""
         if not self.alive:
             return
-            
+
         initial_resources = self.resource_level
         self.resource_level -= self.config.base_consumption_rate
 
@@ -327,7 +348,7 @@ class BaseAgent:
 
         # Get current state before action
         current_state = self.get_state()
-        
+
         # Select and execute action
         action = self.select_action()
         action.execute(self)
@@ -392,3 +413,87 @@ class BaseAgent:
 
     def set_environment(self, environment: "Environment") -> None:
         self._environment = environment
+
+    def calculate_new_position(self, action):
+        """Calculate new position based on movement action.
+
+        Parameters
+        ----------
+        action : int
+            Movement action index (0: right, 1: left, 2: up, 3: down)
+
+        Returns
+        -------
+        tuple
+            New (x, y) position coordinates
+        """
+        # Define movement vectors for each action
+        action_vectors = {
+            0: (1, 0),  # Right
+            1: (-1, 0),  # Left
+            2: (0, 1),  # Up
+            3: (0, -1),  # Down
+        }
+
+        # Get movement vector for the action
+        dx, dy = action_vectors[action]
+
+        # Scale by max_movement
+        dx *= self.config.max_movement
+        dy *= self.config.max_movement
+
+        # Calculate new position
+        new_x = max(0, min(self.environment.width, self.position[0] + dx))
+        new_y = max(0, min(self.environment.height, self.position[1] + dy))
+
+        return (new_x, new_y)
+
+    def calculate_move_reward(self, old_pos, new_pos):
+        """Calculate reward for a movement action.
+
+        Parameters
+        ----------
+        old_pos : tuple
+            Previous (x, y) position
+        new_pos : tuple
+            New (x, y) position
+
+        Returns
+        -------
+        float
+            Movement reward value
+        """
+        # Base cost for moving
+        reward = -0.1
+
+        # Calculate movement distance
+        distance_moved = np.sqrt(
+            (new_pos[0] - old_pos[0]) ** 2 + (new_pos[1] - old_pos[1]) ** 2
+        )
+
+        if distance_moved > 0:
+            # Find closest non-depleted resource
+            closest_resource = min(
+                [r for r in self.environment.resources if not r.is_depleted()],
+                key=lambda r: np.sqrt(
+                    (r.position[0] - new_pos[0]) ** 2
+                    + (r.position[1] - new_pos[1]) ** 2
+                ),
+                default=None,
+            )
+
+            if closest_resource:
+                # Calculate distances to resource before and after move
+                old_distance = np.sqrt(
+                    (closest_resource.position[0] - old_pos[0]) ** 2
+                    + (closest_resource.position[1] - old_pos[1]) ** 2
+                )
+                new_distance = np.sqrt(
+                    (closest_resource.position[0] - new_pos[0]) ** 2
+                    + (closest_resource.position[1] - new_pos[1]) ** 2
+                )
+
+                # Reward for moving closer to resources, penalty for moving away
+                reward += 0.3 if new_distance < old_distance else -0.2
+
+        return reward
