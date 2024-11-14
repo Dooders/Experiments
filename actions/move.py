@@ -213,24 +213,22 @@ class MoveModule:
         if len(batch) < 2:  # Minimum batch size check
             return None
 
-        def state_to_tensor(state) -> np.ndarray:
+        def state_to_tensor(state) -> torch.Tensor:
             """Convert state to tensor format, handling multiple input types."""
             if isinstance(state, torch.Tensor):
-                return state.to(self.device)  # Already a tensor, just move to correct device
-            elif hasattr(state, 'to_array'):
-                return torch.FloatTensor(state.to_array()).to(self.device)
+                return state.to(self.device)
+            elif hasattr(state, 'to_tensor'):  # Use AgentState's to_tensor method
+                return state.to_tensor(self.device)
             elif isinstance(state, np.ndarray):
                 return torch.FloatTensor(state).to(self.device)
             else:
                 raise TypeError(f"Unexpected state type: {type(state)}")
 
-        # Convert states ensuring proper format
+        # Convert states ensuring proper tensor format
         states = torch.stack([state_to_tensor(state) for state, _, _, _, _ in batch])
         actions = torch.LongTensor([[x[1]] for x in batch]).to(self.device)
         rewards = torch.FloatTensor([x[2] for x in batch]).to(self.device)
-        next_states = torch.stack(
-            [state_to_tensor(next_state) for _, _, _, next_state, _ in batch]
-        )
+        next_states = torch.stack([state_to_tensor(next_state) for _, _, _, next_state, _ in batch])
         dones = torch.FloatTensor([x[4] for x in batch]).to(self.device)
 
         # Get current Q values
@@ -258,21 +256,14 @@ class MoveModule:
         return loss.cpu().item()
 
     def get_movement(self, agent, state):
-        """Determine next movement position using learned policy.
+        """Determine next movement position using learned policy."""
+        # Convert state to tensor if needed
+        if not isinstance(state, torch.Tensor):
+            if hasattr(state, 'to_tensor'):
+                state = state.to_tensor(self.device)
+            else:
+                state = torch.FloatTensor(state).to(self.device)
 
-        Selects action using current policy and converts it to valid coordinates,
-        ensuring movement stays within environment bounds.
-
-        Args:
-            agent: Agent object with attributes:
-                - position (Tuple[float, float]): Current (x,y) position
-                - max_movement (float): Maximum movement distance
-                - environment: Environment with width/height bounds
-            state (Union[np.ndarray, torch.Tensor]): Current state observation
-
-        Returns:
-            Tuple[float, float]: New (x,y) position coordinates
-        """
         action = self.select_action(state)
         dx, dy = self.action_space[action]
 
@@ -284,23 +275,26 @@ class MoveModule:
         new_x = max(0, min(agent.environment.width, agent.position[0] + dx))
         new_y = max(0, min(agent.environment.height, agent.position[1] + dy))
 
-        # Store state and action for learning
-        # Convert state tensor to CPU if it's on CUDA
-        if isinstance(state, torch.Tensor):
-            self.last_state = state.cpu().numpy()
-        else:
-            self.last_state = state
+        # Store state for learning (keep as tensor)
+        self.last_state = state
         self.last_action = action
 
         return (new_x, new_y)
 
     def store_experience(self, state, action, reward, next_state, done):
         """Store experience in replay memory."""
-        # Convert numpy arrays to tensors if needed
-        if isinstance(state, np.ndarray):
-            state = torch.FloatTensor(state).to(self.device)
-        if isinstance(next_state, np.ndarray):
-            next_state = torch.FloatTensor(next_state).to(self.device)
+        # Ensure states are tensors
+        if not isinstance(state, torch.Tensor):
+            if hasattr(state, 'to_tensor'):
+                state = state.to_tensor(self.device)
+            else:
+                state = torch.FloatTensor(state).to(self.device)
+        
+        if not isinstance(next_state, torch.Tensor):
+            if hasattr(next_state, 'to_tensor'):
+                next_state = next_state.to_tensor(self.device)
+            else:
+                next_state = torch.FloatTensor(next_state).to(self.device)
         
         # Store experience tuple
         self.memory.append((state, action, reward, next_state, done))
@@ -322,30 +316,12 @@ class MoveModule:
 
 def move_action(agent):
     """Execute movement using Deep Q-Learning based policy."""
-    # Convert state to numpy array and ensure it's numeric
+    # Get state and convert to tensor
     state = agent.get_state()
-    
-    # Handle AgentState object
-    if hasattr(state, 'to_array'):
-        state = state.to_array()  # Convert AgentState to numpy array
-    elif isinstance(state, torch.Tensor):
-        state = state.cpu().numpy()
-    
-    # Ensure state is a flat numeric array
-    try:
-        state = np.array(state, dtype=np.float32).flatten()
-    except (ValueError, TypeError):
-        # If conversion fails, try extracting numeric values
-        if hasattr(state, '__array__'):
-            state = np.array([float(x) if isinstance(x, (int, float)) else 0.0 
-                            for x in state.__array__()], dtype=np.float32)
-        else:
-            state = np.zeros(4, dtype=np.float32)  # Fallback to zero state
-            logger.warning(f"Could not convert state to numeric array: {state}")
+    if not isinstance(state, torch.Tensor):
+        state = state.to_tensor(agent.move_module.device)
 
     initial_position = agent.position
-
-    # Get new position from move module
     new_position = agent.move_module.get_movement(agent, state)
     agent.position = new_position
 
@@ -380,24 +356,26 @@ def move_action(agent):
 
     # Store experience and train
     if agent.move_module.last_state is not None:
-        # Get next state and ensure it's properly converted
         next_state = agent.get_state()
-        if hasattr(next_state, 'to_array'):
-            next_state = next_state.to_array()
-        next_state = np.array(next_state, dtype=np.float32).flatten()
+        if not isinstance(next_state, torch.Tensor):
+            next_state = next_state.to_tensor(agent.move_module.device)
         
         agent.move_module.store_experience(
-            state=state,
+            state=agent.move_module.last_state,
             action=agent.move_module.last_action,
             reward=reward,
             next_state=next_state,
             done=False
         )
-        agent.move_module.train(
-            random.sample(
-                agent.move_module.memory, min(32, len(agent.move_module.memory))
+        
+        # Train if enough samples
+        if len(agent.move_module.memory) >= 2:
+            agent.move_module.train(
+                random.sample(
+                    agent.move_module.memory, 
+                    min(32, len(agent.move_module.memory))
+                )
             )
-        )
 
     logger.debug(
         f"Agent {id(agent)} moved from {initial_position} to {new_position}. "
