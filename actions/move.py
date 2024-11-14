@@ -43,12 +43,43 @@ Dependencies:
     - collections.deque: For experience replay buffer management
 """
 
+import logging
 import random
 from collections import deque
+from typing import List, Optional, TYPE_CHECKING
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+
+# Import ModelState only during type checking
+if TYPE_CHECKING:
+    from models.state import ModelState
+
+logger = logging.getLogger(__name__)
+
+
+class MoveConfig:
+    target_update_freq: int = 100
+    memory_size: int = 10000
+    learning_rate: float = 0.001
+    gamma: float = 0.99
+    epsilon_start: float = 1.0
+    epsilon_min: float = 0.01
+    epsilon_decay: float = 0.995
+    dqn_hidden_size: int = 64
+    batch_size: int = 32
+
+
+DEFAULT_MOVE_CONFIG = MoveConfig()
+
+
+class MoveActionSpace:
+    RIGHT = 0
+    LEFT = 1
+    UP = 2
+    DOWN = 3
 
 
 class MoveQNetwork(nn.Module):
@@ -117,7 +148,7 @@ class MoveModule:
         steps (int): Total steps taken for target network updates
     """
 
-    def __init__(self, config):
+    def __init__(self, config: MoveConfig = DEFAULT_MOVE_CONFIG):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.q_network = MoveQNetwork(input_dim=4).to(self.device)
         self.target_network = MoveQNetwork(input_dim=4).to(self.device)
@@ -139,10 +170,10 @@ class MoveModule:
 
         # Action space mapping
         self.action_space = {
-            0: (1, 0),  # Right
-            1: (-1, 0),  # Left
-            2: (0, 1),  # Up
-            3: (0, -1),  # Down
+            MoveActionSpace.RIGHT: (1, 0),
+            MoveActionSpace.LEFT: (-1, 0),
+            MoveActionSpace.UP: (0, 1),
+            MoveActionSpace.DOWN: (0, -1),
         }
 
     def select_action(self, state, epsilon=None):
@@ -157,10 +188,10 @@ class MoveModule:
 
         Returns:
             int: Selected action index:
-                0: Move Right
-                1: Move Left
-                2: Move Up
-                3: Move Down
+                MoveActionSpace.RIGHT: Move Right
+                MoveActionSpace.LEFT: Move Left
+                MoveActionSpace.UP: Move Up
+                MoveActionSpace.DOWN: Move Down
         """
         if epsilon is None:
             epsilon = self.epsilon
@@ -177,7 +208,7 @@ class MoveModule:
             q_values = self.q_network(state_tensor)
             return q_values.cpu().argmax().item()
 
-    def train(self, batch):
+    def train(self, batch) -> Optional[float]:
         """Train Q-network using a batch of experiences.
 
         Implements one step of DQN training:
@@ -190,23 +221,55 @@ class MoveModule:
 
         Args:
             batch (List[Tuple]): List of (state, action, reward, next_state, done) tuples
-                - state: Current state observation
+                - state: Current state observation (AgentState or ndarray)
                 - action: Action taken
                 - reward: Reward received
-                - next_state: Resulting state
+                - next_state: Resulting state (AgentState or ndarray)
                 - done: Whether episode ended
 
         Returns:
             float: Training loss value, or None if batch size < 2
+
+        Note:
+            Handles both AgentState objects and numpy arrays for backwards compatibility
+            during the transition to the new state system.
         """
         if len(batch) < 2:  # Minimum batch size check
             return None
 
-        # Convert batch elements to tensors, ensuring they're on CPU first
-        states = torch.FloatTensor([x[0] for x in batch]).to(self.device)
+        def state_to_tensor(state) -> np.ndarray:
+            """Convert state to tensor format, handling multiple input types.
+            
+            Args:
+                state: Either AgentState object or numpy array
+                
+            Returns:
+                np.ndarray: Normalized state values as numpy array
+                
+            Raises:
+                TypeError: If state is neither AgentState nor ndarray
+            """
+            if hasattr(state, 'to_tensor'):
+                return state.to_tensor(self.device).cpu().numpy()
+            elif isinstance(state, np.ndarray):
+                return state
+            else:
+                raise TypeError(f"Unexpected state type: {type(state)}")
+
+        # Convert states ensuring proper format
+        states = torch.FloatTensor([
+            state_to_tensor(state) for state, _, _, _, _ in batch
+        ]).to(self.device)
+        
         actions = torch.LongTensor([[x[1]] for x in batch]).to(self.device)
         rewards = torch.FloatTensor([x[2] for x in batch]).to(self.device)
-        next_states = torch.FloatTensor([x[3] for x in batch]).to(self.device)
+        
+        next_states = torch.FloatTensor([
+            state_to_tensor(next_state) if next_state is not None 
+            else np.zeros(4)  # Match state dimensions
+            for _, _, _, next_state, _ in batch
+        ]).to(self.device)
+        
         dones = torch.FloatTensor([x[4] for x in batch]).to(self.device)
 
         # Get current Q values
@@ -270,23 +333,143 @@ class MoveModule:
 
         return (new_x, new_y)
 
-    def store_experience(self, state, action, reward, next_state, done=False):
-        """Store a transition in experience replay memory.
+    def store_experience(self, state, action: int, reward: float, next_state, done: bool) -> None:
+        """Store a transition in the replay memory.
 
-        Handles conversion between tensor and numpy formats before storing.
-        Manages memory buffer size automatically.
+        Handles both AgentState objects and numpy arrays, converting numpy arrays
+        to AgentState objects for consistent state representation.
 
         Args:
-            state (Union[np.ndarray, torch.Tensor]): State observation at t
-            action (int): Action taken at t
-            reward (float): Reward received at t+1
-            next_state (Union[np.ndarray, torch.Tensor]): State observation at t+1
-            done (bool, optional): Whether episode ended. Defaults to False.
+            state (Union[AgentState, np.ndarray]): Current state
+            action (int): Action taken
+            reward (float): Reward received
+            next_state (Union[AgentState, np.ndarray, None]): Next state or None if terminal
+            done (bool): Whether this transition ended the episode
+
+        Note:
+            When numpy arrays are provided, they are assumed to be normalized and
+            contain values in the order: [distance, angle, resource_level, target_amount]
         """
-        # Convert any tensors to numpy arrays before storing
-        if isinstance(state, torch.Tensor):
-            state = state.cpu().numpy()
-        if isinstance(next_state, torch.Tensor):
-            next_state = next_state.cpu().numpy()
+        # Ensure states are in correct format before storing
+        if isinstance(state, np.ndarray):
+            from models.state import AgentState
+            state = AgentState.from_raw_values(
+                distance=state[0],
+                angle=state[1],
+                resource_level=state[2],
+                target_amount=state[3],
+                env_diagonal=1.0  # Already normalized
+            )
+        
+        if isinstance(next_state, np.ndarray) and next_state is not None:
+            from models.state import AgentState
+            next_state = AgentState.from_raw_values(
+                distance=next_state[0],
+                angle=next_state[1],
+                resource_level=next_state[2],
+                target_amount=next_state[3],
+                env_diagonal=1.0  # Already normalized
+            )
 
         self.memory.append((state, action, reward, next_state, done))
+
+    def get_state(self) -> "ModelState":
+        """Get current state of the move module.
+        
+        Returns:
+            ModelState: Current state including learning parameters and metrics
+        
+        Example:
+            >>> state = move_module.get_state()
+            >>> print(f"Current epsilon: {state.epsilon}")
+        """
+        from models.state import ModelState  # Import locally to avoid circle
+        return ModelState.from_move_module(self)
+
+
+def move_action(agent):
+    """
+    Execute movement using Deep Q-Learning based policy.
+
+    Implements intelligent movement behavior:
+    1. Converts agent state to appropriate format
+    2. Gets next position from move module
+    3. Calculates movement-based reward
+    4. Updates experience memory and trains network
+
+    Args:
+        agent: Agent performing the movement
+            Required attributes:
+                - position: Current (x,y) coordinates
+                - move_module: DQN module for movement
+                - environment: Contains resources and boundaries
+
+    Effects:
+        - Updates agent position
+        - Trains movement policy
+        - Logs movement details and rewards
+
+    Rewards:
+        - Base cost: -0.1
+        - Moving closer to resources: +0.3
+        - Moving away from resources: -0.2
+    """
+    # Convert state to numpy array and ensure it's on CPU
+    state = agent.get_state()
+    if isinstance(state, torch.Tensor):
+        state = state.cpu().numpy()
+    state = np.array(state).flatten()
+    initial_position = agent.position
+
+    # Get new position from move module
+    new_position = agent.move_module.get_movement(agent, state)
+    agent.position = new_position
+
+    # Calculate movement distance for reward
+    distance_moved = np.sqrt(
+        (new_position[0] - initial_position[0]) ** 2
+        + (new_position[1] - initial_position[1]) ** 2
+    )
+
+    # Simple reward based on movement and resource proximity
+    reward = -0.1  # Base cost for moving
+    if distance_moved > 0:
+        # Add reward for moving closer to resources
+        closest_resource = min(
+            [r for r in agent.environment.resources if not r.is_depleted()],
+            key=lambda r: np.sqrt(
+                (r.position[0] - new_position[0]) ** 2
+                + (r.position[1] - new_position[1]) ** 2
+            ),
+            default=None,
+        )
+        if closest_resource:
+            old_distance = np.sqrt(
+                (closest_resource.position[0] - initial_position[0]) ** 2
+                + (closest_resource.position[1] - initial_position[1]) ** 2
+            )
+            new_distance = np.sqrt(
+                (closest_resource.position[0] - new_position[0]) ** 2
+                + (closest_resource.position[1] - new_position[1]) ** 2
+            )
+            reward += 0.3 if new_distance < old_distance else -0.2
+
+    # Store experience and train
+    if agent.move_module.last_state is not None:
+        agent.move_module.store_experience(
+            agent.move_module.last_state,
+            agent.move_module.last_action,
+            reward,
+            state,
+            False,
+        )
+        agent.move_module.train(
+            random.sample(
+                agent.move_module.memory, min(32, len(agent.move_module.memory))
+            )
+        )
+
+    logger.debug(
+        f"Agent {id(agent)} moved from {initial_position} to {new_position}. "
+        f"Reward: {reward:.3f}, Epsilon: {agent.move_module.epsilon:.3f}"
+    )

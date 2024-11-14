@@ -1,10 +1,12 @@
+from typing import Optional, TYPE_CHECKING
 import numpy as np
 
-from action import Action, attack_action, gather_action, move_action, share_action
+# Use relative import for base_agent
 from .base_agent import BaseAgent
 
 
 class SystemAgent(BaseAgent):
+    """System-oriented agent implementation."""
     def __init__(self, agent_id, position, resource_level, environment):
         super().__init__(agent_id, position, resource_level, environment)
 

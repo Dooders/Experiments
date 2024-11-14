@@ -10,6 +10,7 @@ import torch.optim as optim
 
 from action import *
 from actions.move import MoveModule
+from models.state import AgentState
 
 if TYPE_CHECKING:
     from environment import Environment
@@ -68,28 +69,6 @@ class AgentModel(nn.Module):
         return loss.item()
 
 
-class AgentState:
-    def __init__(self, distance, angle, resource_level, target_resource_amount):
-        self.normalized_distance = distance  # Distance to nearest resource (normalized by diagonal of environment)
-        self.normalized_angle = angle  # Angle to nearest resource (normalized by π)
-        self.normalized_resource_level = (
-            resource_level  # Agent's current resources (normalized by 20)
-        )
-        self.normalized_target_amount = (
-            target_resource_amount  # Target resource amount (normalized by 20)
-        )
-
-    def to_tensor(self, device):
-        return torch.FloatTensor(
-            [
-                self.normalized_distance,
-                self.normalized_angle,
-                self.normalized_resource_level,
-                self.normalized_target_amount,
-            ]
-        ).to(device)
-
-
 BASE_ACTION_SET = [
     Action("move", 0.4, move_action),
     Action("gather", 0.3, gather_action),
@@ -124,11 +103,11 @@ class BaseAgent:
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = AgentModel(
-            input_dim=len(self.get_state()),
+            input_dim=AgentState.DIMENSIONS,
             output_dim=len(self.actions),
             config=self.config,
         )
-        self.last_state = None
+        self.last_state: AgentState | None = None
         self.last_action = None
         self.max_movement = self.config.max_movement
         self.total_reward = 0
@@ -153,7 +132,15 @@ class BaseAgent:
         # Add move module
         self.move_module = MoveModule(self.config)
 
-    def get_state(self):
+    def get_state(self) -> AgentState:
+        """Get the current normalized state of the agent.
+        
+        Calculates the agent's state relative to nearest resource and current
+        resource levels. Returns None if no resources are available.
+        
+        Returns:
+            AgentState: Normalized state representation
+        """
         # Get closest resource position
         closest_resource = None
         min_distance = float("inf")
@@ -168,39 +155,49 @@ class BaseAgent:
                     closest_resource = resource
 
         if closest_resource is None:
-            return torch.zeros(4, device=self.device)
+            # Return zero state if no resources available
+            return AgentState(
+                normalized_distance=1.0,  # Maximum distance
+                normalized_angle=0.5,     # Neutral angle
+                normalized_resource_level=0.0,
+                normalized_target_amount=0.0
+            )
 
-        # Calculate normalized values
+        # Calculate raw values
         dx = closest_resource.position[0] - self.position[0]
         dy = closest_resource.position[1] - self.position[1]
         angle = np.arctan2(dy, dx)
-
-        normalized_distance = min_distance / np.sqrt(
+        
+        # Calculate environment diagonal for distance normalization
+        env_diagonal = np.sqrt(
             self.environment.width**2 + self.environment.height**2
         )
-        normalized_angle = angle / np.pi
-        normalized_resource_level = self.resource_level / 20
-        normalized_target_amount = closest_resource.amount / 20
 
-        state = AgentState(
-            distance=normalized_distance,
-            angle=normalized_angle,
-            resource_level=normalized_resource_level,
-            target_resource_amount=normalized_target_amount,
+        # Create normalized state using factory method
+        return AgentState.from_raw_values(
+            distance=min_distance,
+            angle=angle,
+            resource_level=self.resource_level,
+            target_amount=closest_resource.amount,
+            env_diagonal=env_diagonal
         )
 
-        return state.to_tensor(self.device)
-
-    def learn(self, reward):
+    def learn(self, reward: float) -> None:
+        """Update agent's learning based on received reward.
+        
+        Args:
+            reward (float): Reward value from last action
+        """
         if self.last_state is None:
             return
 
         self.total_reward += reward
         self.episode_rewards.append(reward)
 
-        # Store experience
+        # Store experience with proper state objects
+        current_state = self.get_state()
         self.model.memory.append(
-            (self.last_state, self.last_action, reward, self.get_state())
+            (self.last_state, self.last_action, reward, current_state)
         )
 
         # Only train on larger batches less frequently
@@ -208,7 +205,6 @@ class BaseAgent:
             len(self.model.memory) >= self.config.batch_size * 4
             and len(self.model.memory) % (self.config.training_frequency * 4) == 0
         ):
-
             batch = random.sample(self.model.memory, self.config.batch_size * 4)
             loss = self.model.learn(batch)
             if loss is not None:
@@ -314,11 +310,11 @@ class BaseAgent:
         return adjusted_probs
 
     def act(self):
-        # First check if agent should die
+        """Execute an action based on current state."""
         if not self.alive:
             return
+            
         initial_resources = self.resource_level
-        # Base resource consumption
         self.resource_level -= self.config.base_consumption_rate
 
         if self.resource_level <= 0:
@@ -329,11 +325,18 @@ class BaseAgent:
         else:
             self.starvation_threshold = 0
 
-        # Select and execute an action
+        # Get current state before action
+        current_state = self.get_state()
+        
+        # Select and execute action
         action = self.select_action()
         action.execute(self)
 
-        # Calculate reward based on resource change
+        # Store state for learning
+        self.last_state = current_state
+        self.last_action = action
+
+        # Calculate reward and learn
         reward = self.resource_level - initial_resources
         self.learn(reward)
 

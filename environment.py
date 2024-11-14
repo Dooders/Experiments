@@ -1,11 +1,13 @@
 import os
 import random
+from typing import List
 
 import numpy as np
 
 from agents import IndependentAgent, SystemAgent
 from database import SimulationDatabase
 from resources import Resource
+from models.state import EnvironmentState
 
 
 class Environment:
@@ -24,8 +26,8 @@ class Environment:
 
         self.width = width
         self.height = height
-        self.agents = []
-        self.resources = []
+        self.agents: List["SystemAgent" | "IndependentAgent"] = []
+        self.resources: List[Resource] = []
         self.time = 0
         self.db = SimulationDatabase(db_path)
         self.next_agent_id = 0
@@ -88,6 +90,8 @@ class Environment:
 
     def _calculate_metrics(self):
         """Calculate various metrics for the current simulation state."""
+        from agents import IndependentAgent, SystemAgent  # Local import
+        
         alive_agents = [agent for agent in self.agents if agent.alive]
         system_agents = [a for a in alive_agents if isinstance(a, SystemAgent)]
         independent_agents = [a for a in alive_agents if isinstance(a, IndependentAgent)]
@@ -108,3 +112,7 @@ class Environment:
         agent_id = self.next_agent_id
         self.next_agent_id += 1
         return agent_id
+
+    def get_state(self) -> EnvironmentState:
+        """Get current environment state."""
+        return EnvironmentState.from_environment(self)

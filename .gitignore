@@ -115,3 +115,4 @@ test_data/
 .pytest_cache/
 simulation_results.db-journal
 *.csv
+config_*.yaml
