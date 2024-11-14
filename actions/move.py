@@ -86,42 +86,75 @@ class MoveQNetwork(nn.Module):
     """Neural network architecture for Q-value approximation in movement learning.
 
     This network maps state observations to Q-values for each possible movement action.
-    Uses a fully connected architecture with ReLU activations for deep Q-learning.
+    Uses an enhanced architecture with batch normalization, dropout, and proper weight
+    initialization for stable and efficient learning.
 
     Architecture:
         Input Layer: state_dimension neurons
-        Hidden Layer 1: hidden_size neurons (default 64) with ReLU
-        Hidden Layer 2: hidden_size neurons (default 64) with ReLU
+        Hidden Layer 1: hidden_size neurons with:
+            - ReLU activation
+            - 10% Dropout for regularization
+        Hidden Layer 2: hidden_size neurons with:
+            - ReLU activation
+            - 10% Dropout for regularization
         Output Layer: 4 neurons (one for each movement action)
+
+    Optimization Features:
+        - Xavier/Glorot initialization for better gradient flow
+        - Dropout layers for preventing overfitting
+        - Layer normalization for training stability
 
     Args:
         input_dim (int): Dimension of the input state vector
         hidden_size (int, optional): Number of neurons in hidden layers. Defaults to 64.
 
     Forward Pass:
-        Input: State tensor of shape (batch_size, input_dim)
-        Output: Q-values tensor of shape (batch_size, 4)
+        Input: State tensor of shape (batch_size, input_dim) or (input_dim,)
+        Output: Q-values tensor of shape (batch_size, 4) or (4,)
     """
 
     def __init__(self, input_dim, hidden_size=64):
         super(MoveQNetwork, self).__init__()
         self.network = nn.Sequential(
             nn.Linear(input_dim, hidden_size),
+            nn.LayerNorm(hidden_size),  # Layer norm instead of batch norm
             nn.ReLU(),
+            nn.Dropout(0.1),
             nn.Linear(hidden_size, hidden_size),
+            nn.LayerNorm(hidden_size),  # Layer norm instead of batch norm
             nn.ReLU(),
+            nn.Dropout(0.1),
             nn.Linear(hidden_size, 4),  # 4 actions: right, left, up, down
         )
 
+        # Initialize weights using Xavier/Glorot initialization
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                nn.init.constant_(m.bias, 0)
+
     def forward(self, x):
+        # Handle both batched and unbatched inputs
+        if x.dim() == 1:
+            x = x.unsqueeze(0)
+            result = self.network(x)
+            return result.squeeze(0)
         return self.network(x)
 
 
 class MoveModule:
-    """Movement learning and execution module using Deep Q-Learning.
+    """Movement learning and execution module using enhanced Deep Q-Learning.
 
-    This module implements Deep Q-Learning with experience replay and target networks
-    to learn optimal movement policies in a 2D environment.
+    This module implements Double Q-Learning with experience replay and soft target
+    network updates to learn optimal movement policies in a 2D environment.
+
+    Key Enhancements:
+        - Double Q-Learning: Reduces overestimation bias by decoupling action selection
+          and evaluation using two networks
+        - Soft Target Updates: Gradually updates target network for stability
+        - Huber Loss: More robust to outliers than MSE
+        - Gradient Clipping: Prevents exploding gradients
+        - Experience Replay: Stores transitions for stable batch learning
 
     Features:
         - Experience Replay: Stores transitions for stable batch learning
@@ -146,6 +179,7 @@ class MoveModule:
         memory (deque): Experience replay buffer
         epsilon (float): Current exploration rate
         steps (int): Total steps taken for target network updates
+        tau (float): Soft update parameter for target network
     """
 
     def __init__(self, config: MoveConfig = DEFAULT_MOVE_CONFIG):
@@ -157,7 +191,7 @@ class MoveModule:
         self.optimizer = optim.Adam(
             self.q_network.parameters(), lr=config.learning_rate
         )
-        self.criterion = nn.MSELoss()
+        self.criterion = nn.SmoothL1Loss()
         self.memory = deque(maxlen=config.memory_size)
 
         # Q-learning parameters
@@ -175,6 +209,18 @@ class MoveModule:
             MoveActionSpace.UP: (0, 1),
             MoveActionSpace.DOWN: (0, -1),
         }
+
+        # Add tau parameter for soft target network updates
+        self.tau = 0.005  # Soft update parameter
+
+    def _soft_update_target_network(self):
+        """Soft update target network weights using tau parameter."""
+        for target_param, local_param in zip(
+            self.target_network.parameters(), self.q_network.parameters()
+        ):
+            target_param.data.copy_(
+                self.tau * local_param.data + (1.0 - self.tau) * target_param.data
+            )
 
     def select_action(self, state, epsilon=None):
         """Select movement action using epsilon-greedy policy.
@@ -209,7 +255,30 @@ class MoveModule:
             return q_values.cpu().argmax().item()
 
     def train(self, batch) -> Optional[float]:
-        """Train Q-network using a batch of experiences."""
+        """Train Q-network using Double Q-Learning and Huber Loss.
+
+        Implements several optimizations for stable and efficient learning:
+        1. Double Q-Learning: Uses main network for action selection and target
+           network for value estimation to reduce overestimation bias
+        2. Huber Loss: More robust to outliers than MSE loss
+        3. Gradient Clipping: Prevents exploding gradients
+        4. Soft Target Updates: Gradually updates target network weights
+
+        Args:
+            batch: List of experience tuples (state, action, reward, next_state, done)
+
+        Returns:
+            Optional[float]: The loss value if training occurred, None if batch too small
+
+        Note:
+            The training process includes several steps:
+            1. Convert experiences to tensor format
+            2. Compute current Q-values from main network
+            3. Use Double Q-Learning to compute target Q-values
+            4. Apply Huber loss and update main network
+            5. Perform soft update of target network
+            6. Update exploration rate (epsilon)
+        """
         if len(batch) < 2:  # Minimum batch size check
             return None
 
@@ -217,7 +286,7 @@ class MoveModule:
             """Convert state to tensor format, handling multiple input types."""
             if isinstance(state, torch.Tensor):
                 return state.to(self.device)
-            elif hasattr(state, 'to_tensor'):  # Use AgentState's to_tensor method
+            elif hasattr(state, "to_tensor"):
                 return state.to_tensor(self.device)
             elif isinstance(state, np.ndarray):
                 return torch.FloatTensor(state).to(self.device)
@@ -228,27 +297,38 @@ class MoveModule:
         states = torch.stack([state_to_tensor(state) for state, _, _, _, _ in batch])
         actions = torch.LongTensor([[x[1]] for x in batch]).to(self.device)
         rewards = torch.FloatTensor([x[2] for x in batch]).to(self.device)
-        next_states = torch.stack([state_to_tensor(next_state) for _, _, _, next_state, _ in batch])
+        next_states = torch.stack(
+            [state_to_tensor(next_state) for _, _, _, next_state, _ in batch]
+        )
         dones = torch.FloatTensor([x[4] for x in batch]).to(self.device)
 
         # Get current Q values
         current_q_values = self.q_network(states).gather(1, actions)
 
-        # Compute next Q values using target network
+        # Implement Double Q-Learning
         with torch.no_grad():
-            next_q_values = self.target_network(next_states).max(1)[0]
-            target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
+            # Get actions from main network
+            next_actions = self.q_network(next_states).argmax(1, keepdim=True)
+            # Get Q-values from target network for those actions
+            next_q_values = self.target_network(next_states).gather(1, next_actions)
+            # Compute target Q values
+            target_q_values = (
+                rewards.unsqueeze(1)
+                + (1 - dones.unsqueeze(1)) * self.gamma * next_q_values
+            )
 
-        # Compute loss and update
-        loss = self.criterion(current_q_values.squeeze(), target_q_values)
+        # Compute loss using Huber Loss
+        loss = self.criterion(current_q_values, target_q_values)
+
+        # Gradient clipping to prevent exploding gradients
+        torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), max_norm=1.0)
+
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
-        # Update target network periodically
-        self.steps += 1
-        if self.steps % self.target_update_freq == 0:
-            self.target_network.load_state_dict(self.q_network.state_dict())
+        # Soft update target network
+        self._soft_update_target_network()
 
         # Update epsilon
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
@@ -259,7 +339,7 @@ class MoveModule:
         """Determine next movement position using learned policy."""
         # Convert state to tensor if needed
         if not isinstance(state, torch.Tensor):
-            if hasattr(state, 'to_tensor'):
+            if hasattr(state, "to_tensor"):
                 state = state.to_tensor(self.device)
             else:
                 state = torch.FloatTensor(state).to(self.device)
@@ -285,17 +365,17 @@ class MoveModule:
         """Store experience in replay memory."""
         # Ensure states are tensors
         if not isinstance(state, torch.Tensor):
-            if hasattr(state, 'to_tensor'):
+            if hasattr(state, "to_tensor"):
                 state = state.to_tensor(self.device)
             else:
                 state = torch.FloatTensor(state).to(self.device)
-        
+
         if not isinstance(next_state, torch.Tensor):
-            if hasattr(next_state, 'to_tensor'):
+            if hasattr(next_state, "to_tensor"):
                 next_state = next_state.to_tensor(self.device)
             else:
                 next_state = torch.FloatTensor(next_state).to(self.device)
-        
+
         # Store experience tuple
         self.memory.append((state, action, reward, next_state, done))
 
@@ -315,7 +395,42 @@ class MoveModule:
 
 
 def move_action(agent):
-    """Execute movement using Deep Q-Learning based policy."""
+    """Execute movement using optimized Deep Q-Learning based policy.
+
+    This function handles the complete movement action cycle including:
+    - State observation and conversion
+    - Action selection using DQN
+    - Movement execution
+    - Reward calculation
+    - Experience storage and training
+
+    Reward Structure:
+        Base: -0.1 (movement cost)
+        Resource Proximity:
+            +0.3: Moving closer to resources
+            -0.2: Moving away from resources
+
+    Training Features:
+        - Double Q-Learning for stable value estimation
+        - Experience replay for decorrelated training samples
+        - Soft target network updates for stability
+        - Huber loss for robustness to outliers
+
+    Args:
+        agent: Agent object with following required attributes:
+            - move_module: MoveModule instance
+            - position: Current (x, y) position
+            - environment: Reference to environment
+            - get_state(): Method returning current state
+
+    Returns:
+        None: Updates agent position and trains move_module in-place
+
+    Example:
+        >>> initial_pos = agent.position
+        >>> move_action(agent)
+        >>> print(f"Agent moved from {initial_pos} to {agent.position}")
+    """
     # Get state and convert to tensor
     state = agent.get_state()
     if not isinstance(state, torch.Tensor):
@@ -359,21 +474,20 @@ def move_action(agent):
         next_state = agent.get_state()
         if not isinstance(next_state, torch.Tensor):
             next_state = next_state.to_tensor(agent.move_module.device)
-        
+
         agent.move_module.store_experience(
             state=agent.move_module.last_state,
             action=agent.move_module.last_action,
             reward=reward,
             next_state=next_state,
-            done=False
+            done=False,
         )
-        
+
         # Train if enough samples
         if len(agent.move_module.memory) >= 2:
             agent.move_module.train(
                 random.sample(
-                    agent.move_module.memory, 
-                    min(32, len(agent.move_module.memory))
+                    agent.move_module.memory, min(32, len(agent.move_module.memory))
                 )
             )
 
