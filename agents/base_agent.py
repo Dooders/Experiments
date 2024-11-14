@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from action import *
-from actions.move import MoveModule
+from actions.move import MoveModule, move_action
 from models.state import AgentState
 
 if TYPE_CHECKING:

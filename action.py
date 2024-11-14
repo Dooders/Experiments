@@ -73,40 +73,40 @@ class Action:
         self.function(agent, *args, **kwargs)
 
 
-# Default action functions
-def move_action(agent):
-    """Execute movement action for an agent."""
-    # Get current position and state
-    old_pos = agent.position
+# # Default action functions
+# def move_action(agent):
+#     """Execute movement action for an agent."""
+#     # Get current position and state
+#     old_pos = agent.position
 
-    # Get full state using AgentState
-    state = agent.get_state()  # This returns normalized state with all 4 dimensions
+#     # Get full state using AgentState
+#     state = agent.get_state()  # This returns normalized state with all 4 dimensions
 
-    # Select action using move module
-    action = agent.move_module.select_action(state.to_tensor(agent.move_module.device))
+#     # Select action using move module
+#     action = agent.move_module.select_action(state.to_tensor(agent.move_module.device))
 
-    # Calculate new position based on selected action
-    new_pos = agent.calculate_new_position(action)
+#     # Calculate new position based on selected action
+#     new_pos = agent.calculate_new_position(action)
 
-    # Update agent position if valid
-    if agent.environment.is_valid_position(new_pos):
-        agent.position = new_pos
+#     # Update agent position if valid
+#     if agent.environment.is_valid_position(new_pos):
+#         agent.position = new_pos
 
-        # Get next state after movement
-        next_state = agent.get_state()
+#         # Get next state after movement
+#         next_state = agent.get_state()
 
-        # Calculate reward based on resource gain
-        reward = agent.calculate_move_reward(old_pos, new_pos)
+#         # Calculate reward based on resource gain
+#         reward = agent.calculate_move_reward(old_pos, new_pos)
 
-        # Store experience
-        agent.move_module.store_experience(
-            state=state, action=action, reward=reward, next_state=next_state, done=False
-        )
+#         # Store experience
+#         agent.move_module.store_experience(
+#             state=state, action=action, reward=reward, next_state=next_state, done=False
+#         )
 
-        logger.debug(
-            f"Agent {id(agent)} moved from {old_pos} to {new_pos}. "
-            f"Reward: {reward:.3f}, Epsilon: {agent.move_module.epsilon:.3f}"
-        )
+#         logger.debug(
+#             f"Agent {id(agent)} moved from {old_pos} to {new_pos}. "
+#             f"Reward: {reward:.3f}, Epsilon: {agent.move_module.epsilon:.3f}"
+#         )
 
 
 def gather_action(agent):

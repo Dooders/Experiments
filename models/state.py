@@ -265,6 +265,15 @@ class AgentState(BaseState):
             and self.normalized_target_amount == other.normalized_target_amount
         )
 
+    def to_array(self) -> np.ndarray:
+        """Convert agent state to numpy array for neural network input."""
+        return np.array([
+            self.normalized_distance,
+            self.normalized_angle, 
+            self.normalized_resource_level,
+            self.normalized_target_amount
+        ], dtype=np.float32)
+
 
 class EnvironmentState(BaseState):
     """State representation for the simulation environment.

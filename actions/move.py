@@ -209,72 +209,28 @@ class MoveModule:
             return q_values.cpu().argmax().item()
 
     def train(self, batch) -> Optional[float]:
-        """Train Q-network using a batch of experiences.
-
-        Implements one step of DQN training:
-        1. Compute current Q-values for batch states/actions
-        2. Compute target Q-values using target network
-        3. Calculate TD error loss
-        4. Update network weights
-        5. Update target network if needed
-        6. Decay exploration rate
-
-        Args:
-            batch (List[Tuple]): List of (state, action, reward, next_state, done) tuples
-                - state: Current state observation (AgentState or ndarray)
-                - action: Action taken
-                - reward: Reward received
-                - next_state: Resulting state (AgentState or ndarray)
-                - done: Whether episode ended
-
-        Returns:
-            float: Training loss value, or None if batch size < 2
-
-        Note:
-            Handles both AgentState objects and numpy arrays for backwards compatibility
-            during the transition to the new state system.
-        """
+        """Train Q-network using a batch of experiences."""
         if len(batch) < 2:  # Minimum batch size check
             return None
 
         def state_to_tensor(state) -> np.ndarray:
-            """Convert state to tensor format, handling multiple input types.
-
-            Args:
-                state: Either AgentState object or numpy array
-
-            Returns:
-                np.ndarray: Normalized state values as numpy array
-
-            Raises:
-                TypeError: If state is neither AgentState nor ndarray
-            """
-            if hasattr(state, "to_tensor"):
-                return state.to_tensor(self.device).cpu().numpy()
+            """Convert state to tensor format, handling multiple input types."""
+            if isinstance(state, torch.Tensor):
+                return state.to(self.device)  # Already a tensor, just move to correct device
+            elif hasattr(state, 'to_array'):
+                return torch.FloatTensor(state.to_array()).to(self.device)
             elif isinstance(state, np.ndarray):
-                return state
+                return torch.FloatTensor(state).to(self.device)
             else:
                 raise TypeError(f"Unexpected state type: {type(state)}")
 
         # Convert states ensuring proper format
-        states = torch.FloatTensor(
-            [state_to_tensor(state) for state, _, _, _, _ in batch]
-        ).to(self.device)
-
+        states = torch.stack([state_to_tensor(state) for state, _, _, _, _ in batch])
         actions = torch.LongTensor([[x[1]] for x in batch]).to(self.device)
         rewards = torch.FloatTensor([x[2] for x in batch]).to(self.device)
-
-        next_states = torch.FloatTensor(
-            [
-                (
-                    state_to_tensor(next_state)
-                    if next_state is not None
-                    else np.zeros(4)
-                )  # Match state dimensions
-                for _, _, _, next_state, _ in batch
-            ]
-        ).to(self.device)
-
+        next_states = torch.stack(
+            [state_to_tensor(next_state) for _, _, _, next_state, _ in batch]
+        )
         dones = torch.FloatTensor([x[4] for x in batch]).to(self.device)
 
         # Get current Q values
@@ -339,27 +295,15 @@ class MoveModule:
         return (new_x, new_y)
 
     def store_experience(self, state, action, reward, next_state, done):
-        """Store experience in replay memory.
-
-        Parameters
-        ----------
-        state : AgentState
-            Current state
-        action : int
-            Action taken
-        reward : float
-            Reward received
-        next_state : AgentState
-            Next state
-        done : bool
-            Whether episode is done
-        """
-        # Convert states to tensors
-        state_tensor = state.to_tensor(self.device)
-        next_state_tensor = next_state.to_tensor(self.device)
-
+        """Store experience in replay memory."""
+        # Convert numpy arrays to tensors if needed
+        if isinstance(state, np.ndarray):
+            state = torch.FloatTensor(state).to(self.device)
+        if isinstance(next_state, np.ndarray):
+            next_state = torch.FloatTensor(next_state).to(self.device)
+        
         # Store experience tuple
-        self.memory.append((state_tensor, action, reward, next_state_tensor, done))
+        self.memory.append((state, action, reward, next_state, done))
 
     def get_state(self) -> "ModelState":
         """Get current state of the move module.
@@ -377,37 +321,28 @@ class MoveModule:
 
 
 def move_action(agent):
-    """
-    Execute movement using Deep Q-Learning based policy.
-
-    Implements intelligent movement behavior:
-    1. Converts agent state to appropriate format
-    2. Gets next position from move module
-    3. Calculates movement-based reward
-    4. Updates experience memory and trains network
-
-    Args:
-        agent: Agent performing the movement
-            Required attributes:
-                - position: Current (x,y) coordinates
-                - move_module: DQN module for movement
-                - environment: Contains resources and boundaries
-
-    Effects:
-        - Updates agent position
-        - Trains movement policy
-        - Logs movement details and rewards
-
-    Rewards:
-        - Base cost: -0.1
-        - Moving closer to resources: +0.3
-        - Moving away from resources: -0.2
-    """
-    # Convert state to numpy array and ensure it's on CPU
+    """Execute movement using Deep Q-Learning based policy."""
+    # Convert state to numpy array and ensure it's numeric
     state = agent.get_state()
-    if isinstance(state, torch.Tensor):
+    
+    # Handle AgentState object
+    if hasattr(state, 'to_array'):
+        state = state.to_array()  # Convert AgentState to numpy array
+    elif isinstance(state, torch.Tensor):
         state = state.cpu().numpy()
-    state = np.array(state).flatten()
+    
+    # Ensure state is a flat numeric array
+    try:
+        state = np.array(state, dtype=np.float32).flatten()
+    except (ValueError, TypeError):
+        # If conversion fails, try extracting numeric values
+        if hasattr(state, '__array__'):
+            state = np.array([float(x) if isinstance(x, (int, float)) else 0.0 
+                            for x in state.__array__()], dtype=np.float32)
+        else:
+            state = np.zeros(4, dtype=np.float32)  # Fallback to zero state
+            logger.warning(f"Could not convert state to numeric array: {state}")
+
     initial_position = agent.position
 
     # Get new position from move module
@@ -445,12 +380,18 @@ def move_action(agent):
 
     # Store experience and train
     if agent.move_module.last_state is not None:
+        # Get next state and ensure it's properly converted
+        next_state = agent.get_state()
+        if hasattr(next_state, 'to_array'):
+            next_state = next_state.to_array()
+        next_state = np.array(next_state, dtype=np.float32).flatten()
+        
         agent.move_module.store_experience(
-            agent.move_module.last_state,
-            agent.move_module.last_action,
-            reward,
-            state,
-            False,
+            state=state,
+            action=agent.move_module.last_action,
+            reward=reward,
+            next_state=next_state,
+            done=False
         )
         agent.move_module.train(
             random.sample(
