@@ -56,7 +56,7 @@ def main():
                        help='Path for exported data')
     
     # Simulation parameters
-    parser.add_argument('--steps', type=int, default=500,
+    parser.add_argument('--steps', type=int, default=5000,
                        help='Number of simulation steps')
     parser.add_argument('--system-agents', type=int, default=25,
                        help='Initial number of system agents')

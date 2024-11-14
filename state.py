@@ -589,3 +589,158 @@ class ModelState(BaseModel):
             f"memory={self.memory_size}/{self.memory_capacity}, "
             f"steps={self.steps})"
         )
+
+
+class SimulationState(BaseState):
+    """State representation for the overall simulation.
+
+    Captures the current state of the entire simulation including time progression,
+    population metrics, resource metrics, and performance indicators. All values 
+    are normalized to [0,1] for consistency with other state representations.
+
+    Attributes:
+        normalized_time_progress (float): Current simulation progress
+        normalized_population_size (float): Current total population relative to capacity
+        normalized_survival_rate (float): Portion of original agents still alive
+        normalized_resource_efficiency (float): Resource utilization effectiveness
+        normalized_system_performance (float): System agents' performance metric
+        DIMENSIONS (ClassVar[int]): Number of dimensions in state vector
+        MAX_POPULATION (ClassVar[int]): Maximum expected population for normalization
+        
+    Example:
+        >>> state = SimulationState(
+        ...     normalized_time_progress=0.5,
+        ...     normalized_population_size=0.7,
+        ...     normalized_survival_rate=0.8,
+        ...     normalized_resource_efficiency=0.6,
+        ...     normalized_system_performance=0.75
+        ... )
+    """
+
+    normalized_time_progress: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Current simulation step relative to total steps. "
+        "0 = start, 1 = completion"
+    )
+
+    normalized_population_size: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Current population relative to maximum capacity. "
+        "0 = empty, 1 = at capacity"
+    )
+
+    normalized_survival_rate: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Portion of original agents still alive. "
+        "0 = none survived, 1 = all survived"
+    )
+
+    normalized_resource_efficiency: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Resource utilization effectiveness. "
+        "0 = inefficient, 1 = optimal usage"
+    )
+
+    normalized_system_performance: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="System agents' performance metric. "
+        "0 = poor performance, 1 = optimal performance"
+    )
+
+    # Class constants
+    DIMENSIONS: ClassVar[int] = 5
+    MAX_POPULATION: ClassVar[int] = 1000  # Adjust based on simulation needs
+
+    def to_tensor(self, device: torch.device) -> torch.Tensor:
+        """Convert simulation state to tensor format.
+
+        Args:
+            device (torch.device): Device to place tensor on (CPU/GPU)
+
+        Returns:
+            torch.Tensor: 1D tensor of shape (DIMENSIONS,) containing state values
+        """
+        return torch.FloatTensor([
+            self.normalized_time_progress,
+            self.normalized_population_size,
+            self.normalized_survival_rate,
+            self.normalized_resource_efficiency,
+            self.normalized_system_performance
+        ]).to(device)
+
+    def to_dict(self) -> Dict[str, float]:
+        """Convert state to dictionary with descriptive keys.
+
+        Returns:
+            Dict[str, float]: Dictionary containing state values
+
+        Example:
+            >>> state.to_dict()
+            {
+                'time_progress': 0.5,
+                'population_size': 0.7,
+                'survival_rate': 0.8,
+                'resource_efficiency': 0.6,
+                'system_performance': 0.75
+            }
+        """
+        return {
+            'time_progress': self.normalized_time_progress,
+            'population_size': self.normalized_population_size,
+            'survival_rate': self.normalized_survival_rate,
+            'resource_efficiency': self.normalized_resource_efficiency,
+            'system_performance': self.normalized_system_performance
+        }
+
+    @classmethod
+    def from_environment(cls, environment: "Environment", num_steps: int) -> "SimulationState":
+        """Create a SimulationState instance from current environment state.
+
+        Args:
+            environment (Environment): Current simulation environment
+            num_steps (int): Total number of simulation steps
+
+        Returns:
+            SimulationState: Current state of the simulation
+        """
+        # Calculate normalized time progress
+        time_progress = environment.time / num_steps
+
+        # Calculate population metrics
+        current_population = len([a for a in environment.agents if a.alive])
+        initial_population = environment.initial_agent_count
+        max_population = cls.MAX_POPULATION
+
+        # Calculate survival rate (capped at 1.0 to handle reproduction)
+        survival_rate = min(
+            current_population / initial_population if initial_population > 0 else 0.0,
+            1.0
+        )
+
+        # Calculate resource efficiency
+        total_resources = sum(resource.amount for resource in environment.resources)
+        max_resources = environment.config.max_resource_amount * len(environment.resources)
+        resource_efficiency = (
+            total_resources / max_resources if max_resources > 0 else 0.0
+        )
+
+        # Since we're not using system agents yet, set performance to 0
+        system_performance = 0.0
+
+        return cls(
+            normalized_time_progress=time_progress,
+            normalized_population_size=min(current_population / max_population, 1.0),
+            normalized_survival_rate=survival_rate,
+            normalized_resource_efficiency=resource_efficiency,
+            normalized_system_performance=system_performance
+        )

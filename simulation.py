@@ -8,6 +8,7 @@ import yaml
 from agents import IndependentAgent, SystemAgent
 from config import SimulationConfig
 from environment import Environment
+from state import SimulationState
 
 
 def setup_logging(log_dir: str = "logs") -> None:
@@ -147,6 +148,10 @@ def run_simulation(
         start_time = datetime.now()
         for step in range(num_steps):
             logging.info(f"Starting step {step}/{num_steps}")
+
+            # Get simulation state
+            sim_state = SimulationState.from_environment(environment, num_steps)
+            logging.debug(f"Simulation state: {sim_state.to_dict()}")
 
             # Process agents in batches
             alive_agents = [agent for agent in environment.agents if agent.alive]

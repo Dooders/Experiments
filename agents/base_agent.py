@@ -10,7 +10,7 @@ import torch.optim as optim
 
 from action import *
 from actions.move import MoveModule, move_action
-from models.state import AgentState
+from state import AgentState
 
 if TYPE_CHECKING:
     from environment import Environment

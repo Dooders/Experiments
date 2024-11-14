@@ -1,12 +1,12 @@
 import os
 import random
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 
 from agents import IndependentAgent, SystemAgent
 from database import SimulationDatabase
-from models.state import EnvironmentState
+from state import EnvironmentState
 from resources import Resource
 
 
@@ -35,6 +35,7 @@ class Environment:
         self.max_resource = max_resource
         self.config = config  # Store configuration
         self.initialize_resources(resource_distribution)
+        self.initial_agent_count = 0  # Add this line to track initial population
 
     def get_next_resource_id(self):
         resource_id = self.next_resource_id
@@ -59,6 +60,9 @@ class Environment:
 
     def add_agent(self, agent):
         self.agents.append(agent)
+        # Update initial count only during setup (time=0)
+        if self.time == 0:
+            self.initial_agent_count += 1
 
     def update(self):
         """Update environment state with batch processing."""

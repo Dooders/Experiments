@@ -55,7 +55,7 @@ import torch.optim as optim
 
 # Import ModelState only during type checking
 if TYPE_CHECKING:
-    from models.state import ModelState
+    from state import ModelState
 
 logger = logging.getLogger(__name__)
 
@@ -315,7 +315,7 @@ class MoveModule:
             >>> state = move_module.get_state()
             >>> print(f"Current epsilon: {state.epsilon}")
         """
-        from models.state import ModelState  # Import locally to avoid circle
+        from state import ModelState  # Import locally to avoid circle
 
         return ModelState.from_move_module(self)
 
