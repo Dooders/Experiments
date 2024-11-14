@@ -148,21 +148,24 @@ class MoveQNetwork(nn.Module):
 class MoveModule:
     """Movement learning and execution module using enhanced Deep Q-Learning.
 
-    This module implements Double Q-Learning with experience replay and soft target
-    network updates to learn optimal movement policies in a 2D environment.
+    This module implements Double Q-Learning with experience replay, soft target
+    network updates, and adaptive exploration to learn optimal movement policies
+    in a 2D environment.
 
     Key Enhancements:
         - Double Q-Learning: Reduces overestimation bias by decoupling action selection
           and evaluation using two networks
         - Soft Target Updates: Gradually updates target network for stability
+        - Adaptive Exploration: Dynamically adjusts exploration rate based on learning progress
+        - Temperature-based Action Selection: Uses softmax with adaptive temperature for
+          smarter exploration
         - Huber Loss: More robust to outliers than MSE
         - Gradient Clipping: Prevents exploding gradients
-        - Experience Replay: Stores transitions for stable batch learning
 
     Features:
         - Experience Replay: Stores transitions for stable batch learning
         - Target Network: Separate network for stable Q-value targets
-        - Epsilon-greedy Exploration: Balance between exploration and exploitation
+        - Modular Setup: Separated network, training, and action space initialization
         - Automatic Device Selection: Uses GPU if available
 
     Args:
@@ -172,7 +175,7 @@ class MoveModule:
             - gamma (float): Discount factor for future rewards [0,1]
             - epsilon_start (float): Initial exploration rate [0,1]
             - epsilon_min (float): Minimum exploration rate [0,1]
-            - epsilon_decay (float): Rate at which epsilon decreases
+            - epsilon_decay (float): Base rate for epsilon decay
             - target_update_freq (int): Steps between target network updates
 
     Attributes:
@@ -181,33 +184,48 @@ class MoveModule:
         target_network (MoveQNetwork): Target network for stable learning
         memory (deque): Experience replay buffer
         epsilon (float): Current exploration rate
-        steps (int): Total steps taken for target network updates
-        tau (float): Soft update parameter for target network
+        reward_history (deque): Recent reward history for adaptive exploration
+        epsilon_adapt_threshold (float): Minimum improvement threshold for adaptation
+        epsilon_adapt_factor (float): Factor to adjust decay rate
     """
 
     def __init__(
         self, config: MoveConfig = DEFAULT_MOVE_CONFIG, device: torch.device = DEVICE
     ):
         self.device = device
+        self._setup_networks(config)
+        self._setup_training(config)
+        self._setup_action_space()
+
+    def _setup_networks(self, config):
+        """Initialize Q-networks and optimizer."""
         self.q_network = MoveQNetwork(input_dim=4).to(self.device)
         self.target_network = MoveQNetwork(input_dim=4).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
-
         self.optimizer = optim.Adam(
             self.q_network.parameters(), lr=config.learning_rate
         )
         self.criterion = nn.SmoothL1Loss()
-        self.memory = deque(maxlen=config.memory_size)
 
-        # Q-learning parameters
+    def _setup_training(self, config):
+        """Initialize training parameters with adaptive exploration."""
+        self.memory = deque(maxlen=config.memory_size)
         self.gamma = config.gamma
         self.epsilon = config.epsilon_start
         self.epsilon_min = config.epsilon_min
         self.epsilon_decay = config.epsilon_decay
         self.target_update_freq = config.target_update_freq
+        self.tau = 0.005  # Soft update parameter
         self.steps = 0
 
-        # Action space mapping
+        # Adaptive exploration parameters
+        self.reward_history = deque(maxlen=100)  # Track recent rewards
+        self.epsilon_adapt_threshold = 0.1  # Minimum improvement for decay
+        self.epsilon_adapt_factor = 1.5  # Factor to slow decay when learning plateaus
+        self.min_reward_samples = 10  # Minimum samples before adaptation
+
+    def _setup_action_space(self):
+        """Initialize action space mapping."""
         self.action_space = {
             MoveActionSpace.RIGHT: (1, 0),
             MoveActionSpace.LEFT: (-1, 0),
@@ -215,72 +233,54 @@ class MoveModule:
             MoveActionSpace.DOWN: (0, -1),
         }
 
-        # Add tau parameter for soft target network updates
-        self.tau = 0.005  # Soft update parameter
+    def _update_epsilon(self, current_reward: float):
+        """Update epsilon using adaptive decay strategy based on learning progress."""
+        self.reward_history.append(current_reward)
 
-    def _soft_update_target_network(self):
-        """Soft update target network weights using tau parameter."""
-        for target_param, local_param in zip(
-            self.target_network.parameters(), self.q_network.parameters()
-        ):
-            target_param.data.copy_(
-                self.tau * local_param.data + (1.0 - self.tau) * target_param.data
-            )
+        # Only adapt if we have enough reward samples for both recent and older averages
+        if (
+            len(self.reward_history) >= self.min_reward_samples + 10
+        ):  # Need at least min_samples + 10
+            # Calculate rolling averages
+            recent_rewards = list(self.reward_history)[-10:]
+            older_rewards = list(self.reward_history)[:-10]
 
-    def select_action(self, state, epsilon=None):
-        """Select movement action using epsilon-greedy policy.
+            if recent_rewards and older_rewards:  # Extra safety check
+                recent_avg = sum(recent_rewards) / len(recent_rewards)
+                older_avg = sum(older_rewards) / len(older_rewards)
 
-        Chooses between random exploration and learned policy based on epsilon value.
-        Handles both numpy arrays and torch tensors as input states.
+                # Calculate improvement
+                improvement = recent_avg - older_avg
 
-        Args:
-            state (Union[np.ndarray, torch.Tensor]): Current state observation
-            epsilon (float, optional): Override default epsilon value. Defaults to None.
+                # Adjust epsilon decay based on improvement
+                if improvement < self.epsilon_adapt_threshold:
+                    # Slow down decay if learning has plateaued
+                    effective_decay = self.epsilon_decay ** (
+                        1.0 / self.epsilon_adapt_factor
+                    )
+                else:
+                    # Use normal decay if improving well
+                    effective_decay = self.epsilon_decay
+            else:
+                effective_decay = self.epsilon_decay
+        else:
+            # Use default decay until we have enough samples
+            effective_decay = self.epsilon_decay
 
-        Returns:
-            int: Selected action index:
-                MoveActionSpace.RIGHT: Move Right
-                MoveActionSpace.LEFT: Move Left
-                MoveActionSpace.UP: Move Up
-                MoveActionSpace.DOWN: Move Down
-        """
-        if epsilon is None:
-            epsilon = self.epsilon
+        # Update epsilon with bounds
+        self.epsilon = max(
+            self.epsilon_min,
+            min(
+                self.epsilon * effective_decay,
+                self.epsilon,  # Ensure we don't increase above current value
+            ),
+        )
 
-        if random.random() < epsilon:
-            return random.randint(0, 3)
-
-        with torch.no_grad():
-            # State is already a tensor on correct device from store_experience
-            q_values = self.q_network(state)
-            return q_values.cpu().argmax().item()
+        return self.epsilon
 
     def train(self, batch) -> Optional[float]:
-        """Train Q-network using Double Q-Learning and Huber Loss.
-
-        Implements several optimizations for stable and efficient learning:
-        1. Double Q-Learning: Uses main network for action selection and target
-           network for value estimation to reduce overestimation bias
-        2. Huber Loss: More robust to outliers than MSE loss
-        3. Gradient Clipping: Prevents exploding gradients
-        4. Soft Target Updates: Gradually updates target network weights
-
-        Args:
-            batch: List of experience tuples (state, action, reward, next_state, done)
-
-        Returns:
-            Optional[float]: The loss value if training occurred, None if batch too small
-
-        Note:
-            The training process includes several steps:
-            1. Convert experiences to tensor format
-            2. Compute current Q-values from main network
-            3. Use Double Q-Learning to compute target Q-values
-            4. Apply Huber loss and update main network
-            5. Perform soft update of target network
-            6. Update exploration rate (epsilon)
-        """
-        if len(batch) < 2:  # Minimum batch size check
+        """Train Q-network using Double Q-Learning and adaptive exploration."""
+        if len(batch) < 2:
             return None
 
         # States are already tensors from memory, just stack them
@@ -318,10 +318,20 @@ class MoveModule:
         # Soft update target network
         self._soft_update_target_network()
 
-        # Update epsilon
-        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+        # Use mean reward from batch for epsilon adaptation
+        mean_reward = rewards.mean().item()
+        self._update_epsilon(mean_reward)
 
         return loss.cpu().item()
+
+    def _soft_update_target_network(self):
+        """Soft update target network weights using tau parameter."""
+        for target_param, local_param in zip(
+            self.target_network.parameters(), self.q_network.parameters()
+        ):
+            target_param.data.copy_(
+                self.tau * local_param.data + (1.0 - self.tau) * target_param.data
+            )
 
     def get_movement(self, agent, state):
         """Determine next movement position using learned policy."""
@@ -382,87 +392,118 @@ class MoveModule:
 
         return ModelState.from_move_module(self)
 
+    def select_action(
+        self, state_tensor: torch.Tensor, epsilon: Optional[float] = None
+    ) -> int:
+        """Select action using epsilon-greedy with adaptive temperature.
+
+        Uses a temperature-based exploration strategy where the temperature is derived
+        from the current epsilon value. This creates smoother exploration behavior
+        compared to uniform random selection.
+
+        Args:
+            state_tensor (torch.Tensor): Current state observation
+            epsilon (Optional[float]): Override default epsilon value
+
+        Returns:
+            int: Selected action index from MoveActionSpace
+
+        Notes:
+            - During exploration, uses softmax with temperature for weighted random selection
+            - Temperature scales with epsilon for adaptive exploration behavior
+            - During exploitation, selects action with highest Q-value
+        """
+        if epsilon is None:
+            epsilon = self.epsilon
+
+        if random.random() < epsilon:
+            # Temperature-based random action selection
+            q_values = self.q_network(state_tensor)
+            temperature = max(0.1, epsilon)  # Use epsilon as temperature
+
+            # Apply softmax with temperature
+            probabilities = torch.softmax(q_values / temperature, dim=0)
+
+            # Convert to numpy for random choice
+            action_probs = probabilities.detach().cpu().numpy()
+            return np.random.choice(len(action_probs), p=action_probs)
+
+        with torch.no_grad():
+            return self.q_network(state_tensor).argmax().item()
+
 
 def move_action(agent):
-    """Execute movement using optimized Deep Q-Learning based policy.
+    """Execute movement using optimized Deep Q-Learning based policy."""
+    # Get state and ensure it's a tensor
+    state = _ensure_tensor(agent.get_state(), agent.move_module.device)
 
-    This function handles the complete movement action cycle including:
-    - State observation and conversion
-    - Action selection using DQN
-    - Movement execution
-    - Reward calculation
-    - Experience storage and training
-
-    Reward Structure:
-        Base: -0.1 (movement cost)
-        Resource Proximity:
-            +0.3: Moving closer to resources
-            -0.2: Moving away from resources
-
-    Training Features:
-        - Double Q-Learning for stable value estimation
-        - Experience replay for decorrelated training samples
-        - Soft target network updates for stability
-        - Huber loss for robustness to outliers
-
-    Args:
-        agent: Agent object with following required attributes:
-            - move_module: MoveModule instance
-            - position: Current (x, y) position
-            - environment: Reference to environment
-            - get_state(): Method returning current state
-
-    Returns:
-        None: Updates agent position and trains move_module in-place
-
-    Example:
-        >>> initial_pos = agent.position
-        >>> move_action(agent)
-        >>> print(f"Agent moved from {initial_pos} to {agent.position}")
-    """
-    # Get state and convert to tensor
-    state = agent.get_state()
-    if not isinstance(state, torch.Tensor):
-        state = state.to_tensor(agent.move_module.device)
-
+    # Get movement and update position
     initial_position = agent.position
     new_position = agent.move_module.get_movement(agent, state)
     agent.position = new_position
 
-    # Calculate movement distance for reward
+    # Calculate reward and store experience
+    reward = _calculate_movement_reward(agent, initial_position, new_position)
+    _store_and_train(agent, state, reward)
+
+    logger.debug(
+        f"Agent {id(agent)} moved from {initial_position} to {new_position}. "
+        f"Reward: {reward:.3f}, Epsilon: {agent.move_module.epsilon:.3f}"
+    )
+
+
+def _calculate_movement_reward(agent, initial_position, new_position):
+    """Calculate reward for movement based on resource proximity."""
+    # Base cost for moving
+    reward = -0.1
+
+    # Calculate movement distance
     distance_moved = np.sqrt(
         (new_position[0] - initial_position[0]) ** 2
         + (new_position[1] - initial_position[1]) ** 2
     )
 
-    # Simple reward based on movement and resource proximity
-    reward = -0.1  # Base cost for moving
     if distance_moved > 0:
-        # Add reward for moving closer to resources
-        closest_resource = min(
-            [r for r in agent.environment.resources if not r.is_depleted()],
-            key=lambda r: np.sqrt(
-                (r.position[0] - new_position[0]) ** 2
-                + (r.position[1] - new_position[1]) ** 2
-            ),
-            default=None,
-        )
+        closest_resource = _find_closest_resource(agent.environment, new_position)
         if closest_resource:
-            old_distance = np.sqrt(
-                (closest_resource.position[0] - initial_position[0]) ** 2
-                + (closest_resource.position[1] - initial_position[1]) ** 2
+            old_distance = _calculate_distance(
+                closest_resource.position, initial_position
             )
-            new_distance = np.sqrt(
-                (closest_resource.position[0] - new_position[0]) ** 2
-                + (closest_resource.position[1] - new_position[1]) ** 2
-            )
+            new_distance = _calculate_distance(closest_resource.position, new_position)
             reward += 0.3 if new_distance < old_distance else -0.2
 
-    # Store experience and train
+    return reward
+
+
+def _find_closest_resource(environment, position):
+    """Find the closest non-depleted resource."""
+    active_resources = [r for r in environment.resources if not r.is_depleted()]
+    if not active_resources:
+        return None
+
+    return min(
+        active_resources, key=lambda r: _calculate_distance(r.position, position)
+    )
+
+
+def _calculate_distance(pos1, pos2):
+    """Calculate Euclidean distance between two positions."""
+    return np.sqrt((pos1[0] - pos2[0]) ** 2 + (pos1[1] - pos2[1]) ** 2)
+
+
+def _ensure_tensor(state, device) -> torch.Tensor:
+    """Ensure state is a tensor on the correct device."""
+    if isinstance(state, torch.Tensor):
+        return state.to(device)
+    if hasattr(state, "to_tensor"):
+        return state.to_tensor(device)
+    return torch.FloatTensor(state).to(device)
+
+
+def _store_and_train(agent, state, reward):
+    """Store experience and perform training if possible."""
     if agent.move_module.last_state is not None:
-        next_state = agent.get_state()
-        if not isinstance(next_state, torch.Tensor):
-            next_state = next_state.to_tensor(agent.move_module.device)
+        next_state = _ensure_tensor(agent.get_state(), agent.move_module.device)
 
         agent.move_module.store_experience(
             state=agent.move_module.last_state,
@@ -472,15 +513,6 @@ def move_action(agent):
             done=False,
         )
 
-        # Train if enough samples
         if len(agent.move_module.memory) >= 2:
-            agent.move_module.train(
-                random.sample(
-                    agent.move_module.memory, min(32, len(agent.move_module.memory))
-                )
-            )
-
-    logger.debug(
-        f"Agent {id(agent)} moved from {initial_position} to {new_position}. "
-        f"Reward: {reward:.3f}, Epsilon: {agent.move_module.epsilon:.3f}"
-    )
+            batch_size = min(32, len(agent.move_module.memory))
+            agent.move_module.train(random.sample(agent.move_module.memory, batch_size))
