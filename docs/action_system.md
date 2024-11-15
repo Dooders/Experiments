@@ -5,13 +5,13 @@
   - [Table of Contents](#table-of-contents)
   - [Overview](#overview)
   - [Core Components](#core-components)
-    - [Action Class](#action-class)
-      - [Action Class Example](#action-class-example)
+    - [Base DQN System](#base-dqn-system)
+      - [BaseDQNConfig](#base-dqn-config)
+      - [BaseQNetwork](#base-q-network)
+      - [BaseDQNModule](#base-d-qn-module)
     - [Action Types](#action-types)
       - [1. Movement (`move_action`)](#1-movement-move_action)
-      - [2. Resource Gathering (`gather_action`)](#2-resource-gathering-gather_action)
-      - [3. Resource Sharing (`share_action`)](#3-resource-sharing-share_action)
-      - [4. Combat (`attack_action`)](#4-combat-attack_action)
+      - [2. Combat (`attack_action`)](#2-combat-attack_action)
   - [Action Selection Mechanism](#action-selection-mechanism)
     - [Overview](#overview-1)
     - [Base Action Weights](#base-action-weights)
@@ -41,54 +41,31 @@ The action system provides a flexible framework for agent behaviors in a multi-a
 
 ## Core Components
 
-### Action Class
-
-The `Action` class serves as the base for all agent behaviors, encapsulating the following:
-
-- **Named actions**: Each action has a unique identifier, making it easy to reference.
-- **Weighted selection probabilities**: Actions have weights that influence their likelihood of selection.
-- **Flexible execution functions**: Supports any function passed to it, enabling custom behaviors.
-  
-#### Action Class Example
-```python
-move = Action("move", 0.4, move_action)
-gather = Action("gather", 0.3, gather_action)
-share = Action("share", 0.2, share_action)
-attack = Action("attack", 0.1, attack_action)
-```
+### Base DQN System
+The action system now uses a modular DQN architecture with:
+- **BaseDQNConfig**: Common configuration parameters
+- **BaseQNetwork**: Base neural network architecture
+- **BaseDQNModule**: Core DQN functionality
 
 ### Action Types
+Each action type extends the base DQN system:
 
 #### 1. Movement (`move_action`)
-- **Description**: Uses Deep Q-Learning to enable agents to navigate intelligently based on environmental features.
-- **Reward Structure**:
+- Inherits from BaseDQNModule
+- Input dimension: 4
+- Output dimension: 4 (directions)
+- Custom reward structure:
   - Base movement cost: -0.1
-  - Moving towards resources: +0.3
-  - Moving away from resources: -0.2
-- **Implementation Notes**: Includes automatic state conversion between numpy arrays and torch tensors for compatibility.
+  - Resource approach reward: +0.3
+  - Resource retreat penalty: -0.2
 
-#### 2. Resource Gathering (`gather_action`)
-- **Description**: Allows agents to collect resources within a configurable range.
-- **Parameters**:
-  - Gathering range: Defined in configuration.
-  - Maximum gather amount: Limits resources gathered per action.
-- **Performance**: Uses vectorized distance calculations for efficiency.
-
-#### 3. Resource Sharing (`share_action`)
-- **Description**: Enables cooperative behavior for resource distribution among nearby agents.
-- **Requirements**:
-  - Interaction range: 30 units.
-  - Sharer must have more than 1 resource.
-  - At least one valid recipient within range.
-- **Effect**: Transfers 1 resource unit from the sharer to the recipient.
-
-#### 4. Combat (`attack_action`)
-- **Description**: Allows agents to engage in combat and potentially acquire resources from others.
-- **Requirements**:
-  - Attack range: 20 units.
-  - Attacker must have more than 2 resources.
-  - Target within range.
-- **Effect**: Costs 1 resource to attack; deals 1-2 damage to the target.
+#### 2. Combat (`attack_action`)
+- Inherits from BaseDQNModule
+- Input dimension: 6
+- Output dimension: 5 (4 directions + defend)
+- Custom features:
+  - Health-based defense boost
+  - Adaptive combat rewards
 
 ---
 
