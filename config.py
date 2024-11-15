@@ -91,6 +91,11 @@ class SimulationConfig:
     move_epsilon_decay: float = 0.995
     move_dqn_hidden_size: int = 64
     move_batch_size: int = 32
+    move_reward_history_size: int = 100
+    move_epsilon_adapt_threshold: float = 0.1
+    move_epsilon_adapt_factor: float = 1.5
+    move_min_reward_samples: int = 10
+    move_tau: float = 0.005
 
     # Visualization settings (separate config)
     visualization: VisualizationConfig = field(default_factory=VisualizationConfig)

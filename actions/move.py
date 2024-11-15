@@ -73,6 +73,11 @@ class MoveConfig:
     epsilon_decay: float = 0.995
     dqn_hidden_size: int = 64
     batch_size: int = 32
+    reward_history_size: int = 100
+    epsilon_adapt_threshold: float = 0.1
+    epsilon_adapt_factor: float = 1.5
+    min_reward_samples: int = 10
+    tau: float = 0.005  # Soft update parameter
 
 
 DEFAULT_MOVE_CONFIG = MoveConfig()
@@ -209,20 +214,20 @@ class MoveModule:
 
     def _setup_training(self, config):
         """Initialize training parameters with adaptive exploration."""
-        self.memory = deque(maxlen=config.memory_size)
-        self.gamma = config.gamma
-        self.epsilon = config.epsilon_start
-        self.epsilon_min = config.epsilon_min
-        self.epsilon_decay = config.epsilon_decay
-        self.target_update_freq = config.target_update_freq
-        self.tau = 0.005  # Soft update parameter
+        self.memory = deque(maxlen=config.move_memory_size)
+        self.gamma = config.move_gamma
+        self.epsilon = config.move_epsilon_start
+        self.epsilon_min = config.move_epsilon_min
+        self.epsilon_decay = config.move_epsilon_decay
+        self.target_update_freq = config.move_target_update_freq
+        self.tau = config.move_tau
         self.steps = 0
 
-        # Adaptive exploration parameters
-        self.reward_history = deque(maxlen=100)  # Track recent rewards
-        self.epsilon_adapt_threshold = 0.1  # Minimum improvement for decay
-        self.epsilon_adapt_factor = 1.5  # Factor to slow decay when learning plateaus
-        self.min_reward_samples = 10  # Minimum samples before adaptation
+        # Adaptive exploration parameters from config
+        self.reward_history = deque(maxlen=config.move_reward_history_size)
+        self.epsilon_adapt_threshold = config.move_epsilon_adapt_threshold
+        self.epsilon_adapt_factor = config.move_epsilon_adapt_factor
+        self.min_reward_samples = config.move_min_reward_samples
 
     def _setup_action_space(self):
         """Initialize action space mapping."""
