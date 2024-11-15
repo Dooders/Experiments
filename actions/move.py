@@ -11,7 +11,7 @@ Key Components:
     - Target Network: Separate network for computing stable Q-value targets
 
 Technical Details:
-    - State Space: 4-dimensional vector representing agent's current state
+    - State Space: N-dimensional vector representing agent's current state
     - Action Space: 4 discrete actions (right, left, up, down)
     - Learning Algorithm: Deep Q-Learning with experience replay
     - Exploration: Epsilon-greedy strategy with decay
@@ -46,14 +46,13 @@ Dependencies:
 import logging
 import random
 from collections import deque
-from typing import TYPE_CHECKING, Deque, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Deque, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 
-# Import ModelState only during type checking
 if TYPE_CHECKING:
     from resource import Resource
 
@@ -63,35 +62,44 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Move device check outside class for single evaluation
+
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class MoveConfig:
-    move_target_update_freq: int = 100
-    move_memory_size: int = 10000
-    move_learning_rate: float = 0.001
-    move_gamma: float = 0.99
-    move_epsilon_start: float = 1.0
-    move_epsilon_min: float = 0.01
-    move_epsilon_decay: float = 0.995
-    move_dqn_hidden_size: int = 64
-    move_batch_size: int = 32
-    move_reward_history_size: int = 100
-    move_epsilon_adapt_threshold: float = 0.1
-    move_epsilon_adapt_factor: float = 1.5
-    move_min_reward_samples: int = 10
+    move_target_update_freq: int = 100  # Steps between target network updates
+    move_memory_size: int = 10000  # Maximum size of experience replay buffer
+    move_learning_rate: float = 0.001  # Learning rate for Adam optimizer
+    move_gamma: float = 0.99  # Discount factor for future rewards [0,1]
+    move_epsilon_start: float = 1.0  # Initial exploration rate [0,1]
+    move_epsilon_min: float = 0.01  # Minimum exploration rate [0,1]
+    move_epsilon_decay: float = 0.995  # Base rate for epsilon decay
+    move_dqn_hidden_size: int = 64  # Number of neurons in hidden layers
+    move_batch_size: int = 32  # Batch size for training
+    move_reward_history_size: int = (
+        100  # Size of reward history for adaptive exploration
+    )
+    move_epsilon_adapt_threshold: float = (
+        0.1  # Minimum improvement threshold for adaptation
+    )
+    move_epsilon_adapt_factor: float = 1.5  # Factor to adjust decay rate
+    move_min_reward_samples: int = 10  # Minimum samples for reward history
     move_tau: float = 0.005  # Soft update parameter
+    move_base_cost: float = -0.1  # Base cost for any movement
+    move_resource_approach_reward: float = 0.3  # Reward for moving closer to resources
+    move_resource_retreat_penalty: float = (
+        -0.2
+    )  # Penalty for moving away from resources
 
 
 DEFAULT_MOVE_CONFIG = MoveConfig()
 
 
 class MoveActionSpace:
-    RIGHT = 0
-    LEFT = 1
-    UP = 2
-    DOWN = 3
+    RIGHT: int = 0
+    LEFT: int = 1
+    UP: int = 2
+    DOWN: int = 3
 
 
 class MoveQNetwork(nn.Module):
@@ -125,15 +133,15 @@ class MoveQNetwork(nn.Module):
         Output: Q-values tensor of shape (batch_size, 4) or (4,)
     """
 
-    def __init__(self, input_dim, hidden_size=64):
+    def __init__(self, input_dim: int, hidden_size: int = 64) -> None:
         super(MoveQNetwork, self).__init__()
         self.network = nn.Sequential(
             nn.Linear(input_dim, hidden_size),
-            nn.LayerNorm(hidden_size),  # Layer norm instead of batch norm
+            nn.LayerNorm(hidden_size),
             nn.ReLU(),
             nn.Dropout(0.1),
             nn.Linear(hidden_size, hidden_size),
-            nn.LayerNorm(hidden_size),  # Layer norm instead of batch norm
+            nn.LayerNorm(hidden_size),
             nn.ReLU(),
             nn.Dropout(0.1),
             nn.Linear(hidden_size, 4),  # 4 actions: right, left, up, down
@@ -145,7 +153,8 @@ class MoveQNetwork(nn.Module):
                 nn.init.xavier_uniform_(m.weight)
                 nn.init.constant_(m.bias, 0)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass for the neural network."""
         # Handle both batched and unbatched inputs
         if x.dim() == 1:
             x = x.unsqueeze(0)
@@ -202,11 +211,12 @@ class MoveModule:
         self, config: MoveConfig = DEFAULT_MOVE_CONFIG, device: torch.device = DEVICE
     ) -> None:
         self.device: torch.device = device
+        self.config = config
         self._setup_networks(config)
         self._setup_training(config)
         self._setup_action_space()
 
-    def _setup_networks(self, config):
+    def _setup_networks(self, config: MoveConfig) -> None:
         """Initialize Q-networks and optimizer."""
         self.q_network = MoveQNetwork(input_dim=4).to(self.device)
         self.target_network = MoveQNetwork(input_dim=4).to(self.device)
@@ -216,7 +226,7 @@ class MoveModule:
         )
         self.criterion = nn.SmoothL1Loss()
 
-    def _setup_training(self, config):
+    def _setup_training(self, config: MoveConfig) -> None:
         """Initialize training parameters with adaptive exploration."""
         self.memory: Deque = deque(maxlen=config.move_memory_size)
         self.gamma = config.move_gamma
@@ -227,7 +237,7 @@ class MoveModule:
         self.tau = config.move_tau
         self.steps = 0
 
-        # Adaptive exploration parameters from config
+        # Adaptive exploration parameters
         self.reward_history = deque(maxlen=config.move_reward_history_size)
         self.epsilon_adapt_threshold = config.move_epsilon_adapt_threshold
         self.epsilon_adapt_factor = config.move_epsilon_adapt_factor
@@ -287,7 +297,9 @@ class MoveModule:
 
         return self.epsilon
 
-    def train(self, batch) -> Optional[float]:
+    def train(
+        self, batch: List[Tuple[torch.Tensor, int, float, torch.Tensor, bool]]
+    ) -> Optional[float]:
         """Train Q-network using Double Q-Learning and adaptive exploration."""
         if len(batch) < 2:
             return None
@@ -333,7 +345,7 @@ class MoveModule:
 
         return loss.cpu().item()
 
-    def _soft_update_target_network(self):
+    def _soft_update_target_network(self) -> None:
         """Soft update target network weights using tau parameter."""
         for target_param, local_param in zip(
             self.target_network.parameters(), self.q_network.parameters()
@@ -450,8 +462,35 @@ class MoveModule:
             return self.q_network(state_tensor).argmax().item()
 
 
-def move_action(agent):
-    """Execute movement using optimized Deep Q-Learning based policy."""
+def move_action(agent: "BaseAgent") -> None:
+    """Execute movement using optimized Deep Q-Learning based policy.
+
+    This function handles the complete movement cycle for an agent:
+    1. Gets and processes the current state
+    2. Determines the next movement using DQN
+    3. Updates the agent's position
+    4. Calculates rewards based on movement and resource proximity
+    5. Stores experience and performs training
+
+    Args:
+        agent (BaseAgent): The agent performing the movement. Must have:
+            - move_module: DQN module for movement decisions
+            - position: Current (x, y) coordinates
+            - get_state(): Method returning current state representation
+
+    Notes:
+        - Movement is bounded by the environment dimensions
+        - Rewards consider:
+            * Base movement cost
+            * Resource approach/retreat behavior
+            * Distance moved
+        - Experience is stored in replay memory for batch training
+        - Training occurs if sufficient experiences are available
+
+    Example:
+        >>> agent = BaseAgent(environment)
+        >>> move_action(agent)  # Updates agent's position and trains DQN
+    """
     # Get state and ensure it's a tensor
     state = _ensure_tensor(agent.get_state(), agent.move_module.device)
 
@@ -477,7 +516,7 @@ def _calculate_movement_reward(
 ) -> float:
     """Calculate reward for movement based on resource proximity."""
     # Base cost for moving
-    reward = -0.1
+    reward = DEFAULT_MOVE_CONFIG.move_base_cost
 
     # Calculate movement distance
     distance_moved = np.sqrt(
@@ -492,7 +531,11 @@ def _calculate_movement_reward(
                 closest_resource.position, initial_position
             )
             new_distance = _calculate_distance(closest_resource.position, new_position)
-            reward += 0.3 if new_distance < old_distance else -0.2
+            reward += (
+                DEFAULT_MOVE_CONFIG.move_resource_approach_reward
+                if new_distance < old_distance
+                else DEFAULT_MOVE_CONFIG.move_resource_retreat_penalty
+            )
 
     return reward
 
@@ -515,7 +558,7 @@ def _calculate_distance(pos1: Tuple[float, float], pos2: Tuple[float, float]) ->
     return np.sqrt((pos1[0] - pos2[0]) ** 2 + (pos1[1] - pos2[1]) ** 2)
 
 
-def _ensure_tensor(state, device) -> torch.Tensor:
+def _ensure_tensor(state: Any, device: torch.device) -> torch.Tensor:
     """Ensure state is a tensor on the correct device."""
     if isinstance(state, torch.Tensor):
         return state.to(device)
@@ -524,7 +567,7 @@ def _ensure_tensor(state, device) -> torch.Tensor:
     return torch.FloatTensor(state).to(device)
 
 
-def _store_and_train(agent, state, reward):
+def _store_and_train(agent: "BaseAgent", state: Any, reward: float) -> None:
     """Store experience and perform training if possible."""
     if agent.move_module.last_state is not None:
         next_state = _ensure_tensor(agent.get_state(), agent.move_module.device)

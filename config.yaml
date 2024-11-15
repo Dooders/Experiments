@@ -52,6 +52,9 @@ move_epsilon_adapt_threshold: 0.1
 move_epsilon_adapt_factor: 1.5
 move_min_reward_samples: 10
 move_tau: 0.005
+move_base_cost: -0.1
+move_resource_approach_reward: 0.3
+move_resource_retreat_penalty: -0.2
 
 # Visualization settings
 visualization:
