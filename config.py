@@ -1,4 +1,5 @@
-from dataclasses import dataclass, field
+import copy
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Tuple
 
 import yaml
@@ -66,21 +67,56 @@ class SimulationConfig:
     max_movement: int = 8
     gathering_range: int = 20
     max_gather_amount: int = 3
-    territory_range: int = 30  # Range for considering nearby agents
+    territory_range: int = 30
 
-    # Learning parameters
+    # Learning and Movement Module Parameters
+    target_update_freq: int = 100
+    memory_size: int = 10000
     learning_rate: float = 0.001
-    gamma: float = 0.95
+    gamma: float = 0.99
     epsilon_start: float = 1.0
     epsilon_min: float = 0.01
     epsilon_decay: float = 0.995
-    memory_size: int = 2000
+    dqn_hidden_size: int = 64
     batch_size: int = 32
-    training_frequency: int = 4
-    dqn_hidden_size: int = 24
+    training_frequency: int = 50
+
+    # Movement Module Parameters
+    move_target_update_freq: int = 100
+    move_memory_size: int = 10000
+    move_learning_rate: float = 0.001
+    move_gamma: float = 0.99
+    move_epsilon_start: float = 1.0
+    move_epsilon_min: float = 0.01
+    move_epsilon_decay: float = 0.995
+    move_dqn_hidden_size: int = 64
+    move_batch_size: int = 32
+    move_reward_history_size: int = 100
+    move_epsilon_adapt_threshold: float = 0.1
+    move_epsilon_adapt_factor: float = 1.5
+    move_min_reward_samples: int = 10
+    move_tau: float = 0.005
 
     # Visualization settings (separate config)
     visualization: VisualizationConfig = field(default_factory=VisualizationConfig)
+
+    # Action probability adjustment parameters
+    social_range = 30  # Range for social interactions (share/attack)
+    
+    # Movement multipliers
+    move_mult_no_resources = 1.5  # Multiplier when no resources nearby
+    
+    # Gathering multipliers
+    gather_mult_low_resources = 1.5  # Multiplier when resources needed
+    
+    # Sharing multipliers
+    share_mult_wealthy = 1.3  # Multiplier when agent has excess resources
+    share_mult_poor = 0.5    # Multiplier when agent needs resources
+    
+    # Attack multipliers
+    attack_starvation_threshold = 0.5  # Starvation risk threshold for desperate behavior
+    attack_mult_desperate = 1.4  # Multiplier when desperate for resources
+    attack_mult_stable = 0.6   # Multiplier when resource stable
 
     @classmethod
     def from_yaml(cls, file_path: str) -> "SimulationConfig":
@@ -108,3 +144,7 @@ class SimulationConfig:
         config_dict = self.__dict__.copy()
         config_dict["visualization"] = self.visualization.__dict__
         return config_dict
+
+    def copy(self):
+        """Create a deep copy of the configuration."""
+        return copy.deepcopy(self)

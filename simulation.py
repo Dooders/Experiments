@@ -3,10 +3,12 @@ import os
 import random
 from datetime import datetime
 from typing import List, Optional, Tuple
+import yaml
 
 from agents import IndependentAgent, SystemAgent
 from config import SimulationConfig
 from environment import Environment
+from state import SimulationState
 
 
 def setup_logging(log_dir: str = "logs") -> None:
@@ -95,7 +97,8 @@ def create_initial_agents(
 
 
 def run_simulation(
-    num_steps: int, config: SimulationConfig, db_path: Optional[str] = None
+    num_steps: int, config: SimulationConfig, db_path: Optional[str] = None,
+    save_config: bool = False
 ) -> Environment:
     """
     Run the main simulation loop.
@@ -108,16 +111,21 @@ def run_simulation(
         Configuration object containing simulation parameters
     db_path : Optional[str]
         Path to database file for storing results
-
-    Returns
-    -------
-    Environment
-        The simulation environment after completion
+    save_config : bool
+        If True, saves the configuration to a timestamped YAML file
     """
     # Setup logging
     setup_logging()
     logging.info("Starting simulation")
     logging.info(f"Configuration: {config}")
+
+    # Save configuration if requested
+    if save_config:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        config_file = f"config_{timestamp}.yaml"
+        with open(config_file, 'w') as f:
+            yaml.dump(config.to_dict(), f)
+        logging.info(f"Configuration saved to {config_file}")
 
     # Create environment
     environment = Environment(
@@ -141,6 +149,10 @@ def run_simulation(
         for step in range(num_steps):
             logging.info(f"Starting step {step}/{num_steps}")
 
+            # Get simulation state
+            sim_state = SimulationState.from_environment(environment, num_steps)
+            logging.debug(f"Simulation state: {sim_state.to_dict()}")
+
             # Process agents in batches
             alive_agents = [agent for agent in environment.agents if agent.alive]
             batch_size = 32  # Adjust based on your needs
@@ -148,11 +160,6 @@ def run_simulation(
             for i in range(0, len(alive_agents), batch_size):
                 batch = alive_agents[i : i + batch_size]
 
-                # Process movements in parallel
-                for agent in batch:
-                    agent.move()
-
-                # Process actions in parallel
                 for agent in batch:
                     agent.act()
 
@@ -165,7 +172,7 @@ def run_simulation(
 
         # Ensure final state is saved
         environment.update()
-        
+
         # Force final flush of database buffers
         if environment.db:
             environment.db.flush_all_buffers()
@@ -190,7 +197,11 @@ def main():
     config = SimulationConfig.from_yaml("config.yaml")
 
     # Run simulation
-    run_simulation(num_steps=500, config=config)  # Default number of steps
+    run_simulation(
+        num_steps=1000,
+        config=config,
+        save_config=True
+    )
 
 
 if __name__ == "__main__":

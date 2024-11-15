@@ -465,8 +465,8 @@ class SimulationVisualizer:
                 self._update_visualization(data)
 
                 # Show message when agents die out, but continue playback
-                if not data["agent_states"] and self.playing:
-                    print(f"Agent states empty at step {step_number}")
+                # if not data["agent_states"] and self.playing:
+                #     print(f"Agent states empty at step {step_number}")
         except Exception as e:
             messagebox.showerror(
                 "Database Error", f"Failed to load step {step_number}: {str(e)}"

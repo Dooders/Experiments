@@ -1,10 +1,12 @@
 import os
 import random
+from typing import List, Optional
 
 import numpy as np
 
 from agents import IndependentAgent, SystemAgent
 from database import SimulationDatabase
+from state import EnvironmentState
 from resources import Resource
 
 
@@ -24,8 +26,8 @@ class Environment:
 
         self.width = width
         self.height = height
-        self.agents = []
-        self.resources = []
+        self.agents: List["SystemAgent" | "IndependentAgent"] = []
+        self.resources: List[Resource] = []
         self.time = 0
         self.db = SimulationDatabase(db_path)
         self.next_agent_id = 0
@@ -33,6 +35,7 @@ class Environment:
         self.max_resource = max_resource
         self.config = config  # Store configuration
         self.initialize_resources(resource_distribution)
+        self.initial_agent_count = 0  # Add this line to track initial population
 
     def get_next_resource_id(self):
         resource_id = self.next_resource_id
@@ -57,6 +60,9 @@ class Environment:
 
     def add_agent(self, agent):
         self.agents.append(agent)
+        # Update initial count only during setup (time=0)
+        if self.time == 0:
+            self.initial_agent_count += 1
 
     def update(self):
         """Update environment state with batch processing."""
@@ -88,9 +94,13 @@ class Environment:
 
     def _calculate_metrics(self):
         """Calculate various metrics for the current simulation state."""
+        from agents import IndependentAgent, SystemAgent  # Local import
+
         alive_agents = [agent for agent in self.agents if agent.alive]
         system_agents = [a for a in alive_agents if isinstance(a, SystemAgent)]
-        independent_agents = [a for a in alive_agents if isinstance(a, IndependentAgent)]
+        independent_agents = [
+            a for a in alive_agents if isinstance(a, IndependentAgent)
+        ]
 
         return {
             "total_agents": len(alive_agents),
@@ -108,3 +118,23 @@ class Environment:
         agent_id = self.next_agent_id
         self.next_agent_id += 1
         return agent_id
+
+    def get_state(self) -> EnvironmentState:
+        """Get current environment state."""
+        return EnvironmentState.from_environment(self)
+
+    def is_valid_position(self, position):
+        """Check if a position is valid within the environment bounds.
+
+        Parameters
+        ----------
+        position : tuple
+            (x, y) coordinates to check
+
+        Returns
+        -------
+        bool
+            True if position is within bounds, False otherwise
+        """
+        x, y = position
+        return (0 <= x <= self.width) and (0 <= y <= self.height)

@@ -3,9 +3,9 @@ width: 100
 height: 100
 
 # Agent settings
-system_agents: 0
-independent_agents: 50
-initial_resource_level: 12
+system_agents: 10
+independent_agents: 0
+initial_resource_level: 5
 max_population: 300
 starvation_threshold: 0
 max_starvation_time: 15
@@ -14,7 +14,7 @@ min_reproduction_resources: 10
 offspring_initial_resources: 5
 
 # Resource settings
-initial_resources: 60
+initial_resources: 20
 resource_regen_rate: 0.1
 resource_regen_amount: 2
 max_resource_amount: 30
@@ -26,16 +26,32 @@ gathering_range: 20
 max_gather_amount: 3
 territory_range: 30
 
-# Learning parameters
+# General Learning parameters
 learning_rate: 0.001
 gamma: 0.95
 epsilon_start: 1.0
 epsilon_min: 0.01
 epsilon_decay: 0.995
-memory_size: 32
+memory_size: 2000
 batch_size: 32
 training_frequency: 4
 dqn_hidden_size: 24
+
+# Movement Module Parameters
+move_target_update_freq: 100
+move_memory_size: 10000
+move_learning_rate: 0.001
+move_gamma: 0.99
+move_epsilon_start: 1.0
+move_epsilon_min: 0.01
+move_epsilon_decay: 0.995
+move_dqn_hidden_size: 64
+move_batch_size: 32
+move_reward_history_size: 100
+move_epsilon_adapt_threshold: 0.1
+move_epsilon_adapt_factor: 1.5
+move_min_reward_samples: 10
+move_tau: 0.005
 
 # Visualization settings
 visualization:
