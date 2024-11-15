@@ -46,7 +46,7 @@ Dependencies:
 import logging
 import random
 from collections import deque
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Deque, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -55,6 +55,10 @@ import torch.optim as optim
 
 # Import ModelState only during type checking
 if TYPE_CHECKING:
+    from resource import Resource
+
+    from agents.base_agent import BaseAgent
+    from environment import Environment
     from state import ModelState
 
 logger = logging.getLogger(__name__)
@@ -196,8 +200,8 @@ class MoveModule:
 
     def __init__(
         self, config: MoveConfig = DEFAULT_MOVE_CONFIG, device: torch.device = DEVICE
-    ):
-        self.device = device
+    ) -> None:
+        self.device: torch.device = device
         self._setup_networks(config)
         self._setup_training(config)
         self._setup_action_space()
@@ -214,31 +218,31 @@ class MoveModule:
 
     def _setup_training(self, config):
         """Initialize training parameters with adaptive exploration."""
-        self.memory = deque(maxlen=config.move_memory_size)
-        self.gamma = config.move_gamma
-        self.epsilon = config.move_epsilon_start
-        self.epsilon_min = config.move_epsilon_min
-        self.epsilon_decay = config.move_epsilon_decay
-        self.target_update_freq = config.move_target_update_freq
-        self.tau = config.move_tau
+        self.memory: Deque = deque(maxlen=config.memory_size)
+        self.gamma = config.gamma
+        self.epsilon = config.epsilon_start
+        self.epsilon_min = config.epsilon_min
+        self.epsilon_decay = config.epsilon_decay
+        self.target_update_freq = config.target_update_freq
+        self.tau = config.tau
         self.steps = 0
 
         # Adaptive exploration parameters from config
-        self.reward_history = deque(maxlen=config.move_reward_history_size)
-        self.epsilon_adapt_threshold = config.move_epsilon_adapt_threshold
-        self.epsilon_adapt_factor = config.move_epsilon_adapt_factor
-        self.min_reward_samples = config.move_min_reward_samples
+        self.reward_history = deque(maxlen=config.reward_history_size)
+        self.epsilon_adapt_threshold = config.epsilon_adapt_threshold
+        self.epsilon_adapt_factor = config.epsilon_adapt_factor
+        self.min_reward_samples = config.min_reward_samples
 
-    def _setup_action_space(self):
+    def _setup_action_space(self) -> None:
         """Initialize action space mapping."""
-        self.action_space = {
+        self.action_space: Dict[int, Tuple[int, int]] = {
             MoveActionSpace.RIGHT: (1, 0),
             MoveActionSpace.LEFT: (-1, 0),
             MoveActionSpace.UP: (0, 1),
             MoveActionSpace.DOWN: (0, -1),
         }
 
-    def _update_epsilon(self, current_reward: float):
+    def _update_epsilon(self, current_reward: float) -> float:
         """Update epsilon using adaptive decay strategy based on learning progress."""
         self.reward_history.append(current_reward)
 
@@ -338,7 +342,9 @@ class MoveModule:
                 self.tau * local_param.data + (1.0 - self.tau) * target_param.data
             )
 
-    def get_movement(self, agent, state):
+    def get_movement(
+        self, agent: "BaseAgent", state: torch.Tensor
+    ) -> Tuple[float, float]:
         """Determine next movement position using learned policy."""
         # Convert state to tensor if needed and store for later use
         if not isinstance(state, torch.Tensor):
@@ -364,7 +370,14 @@ class MoveModule:
 
         return (new_x, new_y)
 
-    def store_experience(self, state, action, reward, next_state, done):
+    def store_experience(
+        self,
+        state: torch.Tensor,
+        action: int,
+        reward: float,
+        next_state: torch.Tensor,
+        done: bool,
+    ) -> None:
         """Store experience in replay memory with efficient tensor conversion."""
 
         # Convert states to tensors only once when storing
@@ -457,7 +470,11 @@ def move_action(agent):
     )
 
 
-def _calculate_movement_reward(agent, initial_position, new_position):
+def _calculate_movement_reward(
+    agent: "BaseAgent",
+    initial_position: Tuple[float, float],
+    new_position: Tuple[float, float],
+) -> float:
     """Calculate reward for movement based on resource proximity."""
     # Base cost for moving
     reward = -0.1
@@ -480,7 +497,9 @@ def _calculate_movement_reward(agent, initial_position, new_position):
     return reward
 
 
-def _find_closest_resource(environment, position):
+def _find_closest_resource(
+    environment: "Environment", position: Tuple[float, float]
+) -> Optional["Resource"]:
     """Find the closest non-depleted resource."""
     active_resources = [r for r in environment.resources if not r.is_depleted()]
     if not active_resources:
@@ -491,7 +510,7 @@ def _find_closest_resource(environment, position):
     )
 
 
-def _calculate_distance(pos1, pos2):
+def _calculate_distance(pos1: Tuple[float, float], pos2: Tuple[float, float]) -> float:
     """Calculate Euclidean distance between two positions."""
     return np.sqrt((pos1[0] - pos2[0]) ** 2 + (pos1[1] - pos2[1]) ** 2)
 
