@@ -1,15 +1,18 @@
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
+
 import numpy as np
 
-from action import Action, gather_action, share_action
-from actions.move import move_action
+from action import Action, gather_action
 from actions.attack import attack_action
+from actions.move import move_action
+from actions.share import share_action
 
 from .base_agent import BaseAgent
 
 
 class SystemAgent(BaseAgent):
     """System-oriented agent implementation focused on cooperation."""
+
     def __init__(self, agent_id, position, resource_level, environment):
         super().__init__(agent_id, position, resource_level, environment)
 

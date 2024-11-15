@@ -11,6 +11,7 @@ import torch.optim as optim
 from action import *
 from actions.attack import AttackActionSpace, AttackModule, attack_action
 from actions.move import MoveModule, move_action
+from actions.share import ShareModule, share_action, DEFAULT_SHARE_CONFIG
 from state import AgentState
 
 if TYPE_CHECKING:
@@ -136,6 +137,9 @@ class BaseAgent:
 
         # Add attack module alongside move module
         self.attack_module = AttackModule(self.config)
+
+        # Add share module with ShareConfig instead of SimulationConfig
+        self.share_module = ShareModule(config=DEFAULT_SHARE_CONFIG)
 
         # Add health tracking for combat
         self.max_health = self.config.max_health

@@ -104,56 +104,6 @@ def gather_action(agent):
         )
 
 
-def share_action(agent):
-    """Share resources with nearby agents.
-
-    Implements cooperative behavior allowing resource distribution:
-    1. Identifies agents within 30-unit radius
-    2. Randomly selects one recipient
-    3. Transfers 1 resource unit if conditions met
-
-    Args:
-        agent: Agent performing the sharing
-            Required attributes:
-                - environment: Contains all agents
-                - position: Current (x,y) coordinates
-                - resource_level: Current resource amount
-                - alive: Active status flag
-
-    Requirements:
-        - Sharing agent must have > 1 resource
-        - At least one valid recipient within range
-        - Range limit: 30 distance units
-
-    Effects:
-        - Decreases sharer's resources by 1
-        - Increases recipient's resources by 1
-        - Logs sharing activity
-    """
-    nearby_agents = [
-        a
-        for a in agent.environment.agents
-        if a != agent
-        and a.alive
-        and np.sqrt(((np.array(a.position) - np.array(agent.position)) ** 2).sum()) < 30
-    ]
-
-    if nearby_agents and agent.resource_level > 1:
-        target = np.random.choice(nearby_agents)
-        agent.resource_level -= 1
-        target.resource_level += 1
-        logger.info(
-            f"Agent {id(agent)} shared 1 resource with Agent {id(target)} at position {agent.position}. "
-            f"Sharer resources: {agent.resource_level + 1} -> {agent.resource_level}, "
-            f"Target resources: {target.resource_level - 1} -> {target.resource_level}"
-        )
-    else:
-        logger.debug(
-            f"Agent {id(agent)} attempted to share but conditions not met. "
-            f"Nearby agents: {len(nearby_agents)}, Resources: {agent.resource_level}"
-        )
-
-
 def gather_resources(agent):
     """Core resource gathering implementation.
 

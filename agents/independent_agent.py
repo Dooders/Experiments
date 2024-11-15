@@ -1,8 +1,9 @@
 import numpy as np
 
-from action import Action, gather_action, share_action
-from actions.move import move_action
+from action import Action, gather_action
 from actions.attack import attack_action
+from actions.move import move_action
+from actions.share import share_action
 
 from .base_agent import BaseAgent
 
