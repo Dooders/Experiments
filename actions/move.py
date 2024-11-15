@@ -68,20 +68,20 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class MoveConfig:
-    target_update_freq: int = 100
-    memory_size: int = 10000
-    learning_rate: float = 0.001
-    gamma: float = 0.99
-    epsilon_start: float = 1.0
-    epsilon_min: float = 0.01
-    epsilon_decay: float = 0.995
-    dqn_hidden_size: int = 64
-    batch_size: int = 32
-    reward_history_size: int = 100
-    epsilon_adapt_threshold: float = 0.1
-    epsilon_adapt_factor: float = 1.5
-    min_reward_samples: int = 10
-    tau: float = 0.005  # Soft update parameter
+    move_target_update_freq: int = 100
+    move_memory_size: int = 10000
+    move_learning_rate: float = 0.001
+    move_gamma: float = 0.99
+    move_epsilon_start: float = 1.0
+    move_epsilon_min: float = 0.01
+    move_epsilon_decay: float = 0.995
+    move_dqn_hidden_size: int = 64
+    move_batch_size: int = 32
+    move_reward_history_size: int = 100
+    move_epsilon_adapt_threshold: float = 0.1
+    move_epsilon_adapt_factor: float = 1.5
+    move_min_reward_samples: int = 10
+    move_tau: float = 0.005  # Soft update parameter
 
 
 DEFAULT_MOVE_CONFIG = MoveConfig()
@@ -218,20 +218,20 @@ class MoveModule:
 
     def _setup_training(self, config):
         """Initialize training parameters with adaptive exploration."""
-        self.memory: Deque = deque(maxlen=config.memory_size)
-        self.gamma = config.gamma
-        self.epsilon = config.epsilon_start
-        self.epsilon_min = config.epsilon_min
-        self.epsilon_decay = config.epsilon_decay
-        self.target_update_freq = config.target_update_freq
-        self.tau = config.tau
+        self.memory: Deque = deque(maxlen=config.move_memory_size)
+        self.gamma = config.move_gamma
+        self.epsilon = config.move_epsilon_start
+        self.epsilon_min = config.move_epsilon_min
+        self.epsilon_decay = config.move_epsilon_decay
+        self.target_update_freq = config.move_target_update_freq
+        self.tau = config.move_tau
         self.steps = 0
 
         # Adaptive exploration parameters from config
-        self.reward_history = deque(maxlen=config.reward_history_size)
-        self.epsilon_adapt_threshold = config.epsilon_adapt_threshold
-        self.epsilon_adapt_factor = config.epsilon_adapt_factor
-        self.min_reward_samples = config.min_reward_samples
+        self.reward_history = deque(maxlen=config.move_reward_history_size)
+        self.epsilon_adapt_threshold = config.move_epsilon_adapt_threshold
+        self.epsilon_adapt_factor = config.move_epsilon_adapt_factor
+        self.min_reward_samples = config.move_min_reward_samples
 
     def _setup_action_space(self) -> None:
         """Initialize action space mapping."""
