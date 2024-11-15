@@ -80,6 +80,7 @@ class SimulationConfig:
     dqn_hidden_size: int = 64
     batch_size: int = 32
     training_frequency: int = 50
+    tau: float = 0.005
 
     # Movement Module Parameters
     move_target_update_freq: int = 100

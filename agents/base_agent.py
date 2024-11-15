@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from action import *
-from actions.attack import AttackModule, attack_action
+from actions.attack import AttackActionSpace, AttackModule, attack_action
 from actions.move import MoveModule, move_action
 from state import AgentState
 
@@ -572,20 +572,40 @@ class BaseAgent:
     def calculate_attack_reward(
         self, target: "BaseAgent", damage_dealt: float, action: int
     ) -> float:
-        """Calculate reward for attack action."""
-        # Base cost for attacking
+        """Calculate reward for an attack action.
+
+        Args:
+            target: The agent that was attacked
+            damage_dealt: Amount of damage successfully dealt
+            action: The attack action that was taken
+
+        Returns:
+            float: The calculated reward value
+        """
+        # Base reward starts with the attack cost
         reward = self.config.attack_base_cost
 
-        # Reward for successful attack
+        # Defensive action reward
+        if action == AttackActionSpace.DEFEND:
+            if (
+                self.current_health
+                < self.max_health * self.config.attack_defense_threshold
+            ):
+                reward += (
+                    self.config.attack_success_reward
+                )  # Good decision to defend when health is low
+            else:
+                reward += self.config.attack_failure_penalty  # Unnecessary defense
+            return reward
+
+        # Attack success reward
         if damage_dealt > 0:
-            reward += self.config.attack_success_reward * damage_dealt
-
-        # Extra reward if target died
-        if not target.alive:
-            reward += self.config.attack_kill_reward
-
-        # Reduced cost for defending
-        if action == self.attack_module.DEFEND:
-            reward *= 0.5
+            reward += self.config.attack_success_reward * (
+                damage_dealt / self.config.attack_base_damage
+            )
+            if not target.alive:
+                reward += self.config.attack_kill_reward
+        else:
+            reward += self.config.attack_failure_penalty
 
         return reward
