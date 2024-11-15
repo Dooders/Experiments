@@ -102,6 +102,34 @@ class SimulationConfig:
         -0.2
     )  # Penalty for moving away from resources
 
+    # Attack Module Parameters
+    attack_target_update_freq: int = 100
+    attack_memory_size: int = 10000
+    attack_learning_rate: float = 0.001
+    attack_gamma: float = 0.99
+    attack_epsilon_start: float = 1.0
+    attack_epsilon_min: float = 0.01
+    attack_epsilon_decay: float = 0.995
+    attack_dqn_hidden_size: int = 64
+    attack_batch_size: int = 32
+    attack_tau: float = 0.005
+    attack_base_cost: float = -0.2
+    attack_success_reward: float = 1.0
+    attack_failure_penalty: float = -0.3
+    attack_defense_threshold: float = 0.3
+    attack_defense_boost: float = 2.0
+
+    # Combat Parameters
+    max_health: float = 100.0
+    attack_range: float = 20.0
+    attack_base_damage: float = 10.0
+    attack_kill_reward: float = 5.0
+
+    # Action Multipliers (existing ones remain unchanged)
+    attack_mult_desperate: float = 1.4
+    attack_mult_stable: float = 0.6
+    attack_starvation_threshold: float = 0.5
+
     # Visualization settings (separate config)
     visualization: VisualizationConfig = field(default_factory=VisualizationConfig)
 

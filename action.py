@@ -1,8 +1,6 @@
 import logging
-import random
 
 import numpy as np
-import torch
 
 logger = logging.getLogger(__name__)
 
@@ -71,42 +69,6 @@ class Action:
             **kwargs: Variable keyword arguments for the action function
         """
         self.function(agent, *args, **kwargs)
-
-
-# # Default action functions
-# def move_action(agent):
-#     """Execute movement action for an agent."""
-#     # Get current position and state
-#     old_pos = agent.position
-
-#     # Get full state using AgentState
-#     state = agent.get_state()  # This returns normalized state with all 4 dimensions
-
-#     # Select action using move module
-#     action = agent.move_module.select_action(state.to_tensor(agent.move_module.device))
-
-#     # Calculate new position based on selected action
-#     new_pos = agent.calculate_new_position(action)
-
-#     # Update agent position if valid
-#     if agent.environment.is_valid_position(new_pos):
-#         agent.position = new_pos
-
-#         # Get next state after movement
-#         next_state = agent.get_state()
-
-#         # Calculate reward based on resource gain
-#         reward = agent.calculate_move_reward(old_pos, new_pos)
-
-#         # Store experience
-#         agent.move_module.store_experience(
-#             state=state, action=action, reward=reward, next_state=next_state, done=False
-#         )
-
-#         logger.debug(
-#             f"Agent {id(agent)} moved from {old_pos} to {new_pos}. "
-#             f"Reward: {reward:.3f}, Epsilon: {agent.move_module.epsilon:.3f}"
-#         )
 
 
 def gather_action(agent):
@@ -188,60 +150,6 @@ def share_action(agent):
     else:
         logger.debug(
             f"Agent {id(agent)} attempted to share but conditions not met. "
-            f"Nearby agents: {len(nearby_agents)}, Resources: {agent.resource_level}"
-        )
-
-
-def attack_action(agent):
-    """Attack and steal resources from nearby agents.
-
-    Implements competitive behavior:
-    1. Identifies agents within 20-unit radius
-    2. Randomly selects one target
-    3. Deals 1-2 damage if conditions met
-
-    Args:
-        agent: Agent performing the attack
-            Required attributes:
-                - environment: Contains all agents
-                - position: Current (x,y) coordinates
-                - resource_level: Current resource amount
-                - alive: Active status flag
-
-    Requirements:
-        - Attacking agent must have > 2 resources
-        - At least one valid target within range
-        - Range limit: 20 distance units
-
-    Effects:
-        - Costs 1 resource to attack
-        - Deals 1-2 damage to target's resources
-        - Logs combat activity
-    """
-    nearby_agents = [
-        a
-        for a in agent.environment.agents
-        if a != agent
-        and a.alive
-        and np.sqrt(((np.array(a.position) - np.array(agent.position)) ** 2).sum()) < 20
-    ]
-
-    if nearby_agents and agent.resource_level > 2:
-        target = np.random.choice(nearby_agents)
-        damage = min(2, agent.resource_level - 1)
-        initial_target_resources = target.resource_level
-        target.resource_level = max(0, target.resource_level - damage)
-        agent.resource_level -= 1  # Cost of attacking
-
-        logger.info(
-            f"Agent {id(agent)} attacked Agent {id(target)} at position {agent.position}. "
-            f"Damage dealt: {damage}, Attack cost: 1. "
-            f"Attacker resources: {agent.resource_level + 1} -> {agent.resource_level}, "
-            f"Target resources: {initial_target_resources} -> {target.resource_level}"
-        )
-    else:
-        logger.debug(
-            f"Agent {id(agent)} attempted to attack but conditions not met. "
             f"Nearby agents: {len(nearby_agents)}, Resources: {agent.resource_level}"
         )
 
