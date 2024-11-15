@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from action import *
+from actions.attack import AttackModule, attack_action
 from actions.move import MoveModule, move_action
 from state import AgentState
 
@@ -132,6 +133,14 @@ class BaseAgent:
 
         # Add move module
         self.move_module = MoveModule(self.config)
+
+        # Add attack module alongside move module
+        self.attack_module = AttackModule(self.config)
+
+        # Add health tracking for combat
+        self.max_health = self.config.max_health
+        self.current_health = self.max_health
+        self.is_defending = False
 
     def get_state(self) -> AgentState:
         """Get the current normalized state of the agent.
@@ -324,6 +333,20 @@ class BaseAgent:
             # Decrease attack probability if stable
             adjusted_probs[attack_idx] *= self.config.attack_mult_stable
 
+        # Get health ratio for combat decisions
+        health_ratio = self.current_health / self.max_health
+
+        # Adjust attack probability based on health
+        if health_ratio < self.config.attack_defense_threshold:
+            # Reduce attack probability when health is low
+            adjusted_probs[attack_idx] *= 0.5
+        elif (
+            health_ratio > 0.8
+            and self.resource_level > self.config.min_reproduction_resources
+        ):
+            # Increase attack probability when healthy and wealthy
+            adjusted_probs[attack_idx] *= 1.5
+
         # Renormalize probabilities
         total = sum(adjusted_probs)
         adjusted_probs = [p / total for p in adjusted_probs]
@@ -334,6 +357,9 @@ class BaseAgent:
         """Execute an action based on current state."""
         if not self.alive:
             return
+
+        # Reset defense status at start of turn
+        self.is_defending = False
 
         initial_resources = self.resource_level
         self.resource_level -= self.config.base_consumption_rate
@@ -495,5 +521,71 @@ class BaseAgent:
 
                 # Reward for moving closer to resources, penalty for moving away
                 reward += 0.3 if new_distance < old_distance else -0.2
+
+        return reward
+
+    def calculate_attack_position(self, action: int) -> tuple[float, float]:
+        """Calculate target position for attack based on action.
+
+        Args:
+            action (int): Attack action index from AttackActionSpace
+
+        Returns:
+            tuple[float, float]: Target (x,y) coordinates for attack
+        """
+        # Get attack direction vector
+        dx, dy = self.attack_module.action_space[action]
+
+        # Scale by attack range
+        dx *= self.config.attack_range
+        dy *= self.config.attack_range
+
+        # Calculate target position
+        target_x = self.position[0] + dx
+        target_y = self.position[1] + dy
+
+        return (target_x, target_y)
+
+    def handle_combat(self, attacker: "BaseAgent", damage: float) -> float:
+        """Handle incoming attack and calculate actual damage taken.
+
+        Args:
+            attacker (BaseAgent): Agent performing the attack
+            damage (float): Base damage amount
+
+        Returns:
+            float: Actual damage dealt after defense
+        """
+        # Reduce damage if defending
+        if self.is_defending:
+            damage *= 0.5  # 50% damage reduction when defending
+
+        # Apply damage
+        self.current_health = max(0, self.current_health - damage)
+
+        # Check for death
+        if self.current_health <= 0:
+            self.die()
+
+        return damage
+
+    def calculate_attack_reward(
+        self, target: "BaseAgent", damage_dealt: float, action: int
+    ) -> float:
+        """Calculate reward for attack action."""
+        # Base cost for attacking
+        reward = self.config.attack_base_cost
+
+        # Reward for successful attack
+        if damage_dealt > 0:
+            reward += self.config.attack_success_reward * damage_dealt
+
+        # Extra reward if target died
+        if not target.alive:
+            reward += self.config.attack_kill_reward
+
+        # Reduced cost for defending
+        if action == self.attack_module.DEFEND:
+            reward *= 0.5
 
         return reward

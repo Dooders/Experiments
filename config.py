@@ -96,27 +96,62 @@ class SimulationConfig:
     move_epsilon_adapt_factor: float = 1.5
     move_min_reward_samples: int = 10
     move_tau: float = 0.005
+    move_base_cost: float = -0.1  # Base cost for any movement
+    move_resource_approach_reward: float = 0.3  # Reward for moving closer to resources
+    move_resource_retreat_penalty: float = (
+        -0.2
+    )  # Penalty for moving away from resources
+
+    # Attack Module Parameters
+    attack_target_update_freq: int = 100
+    attack_memory_size: int = 10000
+    attack_learning_rate: float = 0.001
+    attack_gamma: float = 0.99
+    attack_epsilon_start: float = 1.0
+    attack_epsilon_min: float = 0.01
+    attack_epsilon_decay: float = 0.995
+    attack_dqn_hidden_size: int = 64
+    attack_batch_size: int = 32
+    attack_tau: float = 0.005
+    attack_base_cost: float = -0.2
+    attack_success_reward: float = 1.0
+    attack_failure_penalty: float = -0.3
+    attack_defense_threshold: float = 0.3
+    attack_defense_boost: float = 2.0
+
+    # Combat Parameters
+    max_health: float = 100.0
+    attack_range: float = 20.0
+    attack_base_damage: float = 10.0
+    attack_kill_reward: float = 5.0
+
+    # Action Multipliers (existing ones remain unchanged)
+    attack_mult_desperate: float = 1.4
+    attack_mult_stable: float = 0.6
+    attack_starvation_threshold: float = 0.5
 
     # Visualization settings (separate config)
     visualization: VisualizationConfig = field(default_factory=VisualizationConfig)
 
     # Action probability adjustment parameters
     social_range = 30  # Range for social interactions (share/attack)
-    
+
     # Movement multipliers
     move_mult_no_resources = 1.5  # Multiplier when no resources nearby
-    
+
     # Gathering multipliers
     gather_mult_low_resources = 1.5  # Multiplier when resources needed
-    
+
     # Sharing multipliers
     share_mult_wealthy = 1.3  # Multiplier when agent has excess resources
-    share_mult_poor = 0.5    # Multiplier when agent needs resources
-    
+    share_mult_poor = 0.5  # Multiplier when agent needs resources
+
     # Attack multipliers
-    attack_starvation_threshold = 0.5  # Starvation risk threshold for desperate behavior
+    attack_starvation_threshold = (
+        0.5  # Starvation risk threshold for desperate behavior
+    )
     attack_mult_desperate = 1.4  # Multiplier when desperate for resources
-    attack_mult_stable = 0.6   # Multiplier when resource stable
+    attack_mult_stable = 0.6  # Multiplier when resource stable
 
     @classmethod
     def from_yaml(cls, file_path: str) -> "SimulationConfig":

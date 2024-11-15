@@ -1,7 +1,6 @@
 import logging
 import os
 import tkinter as tk
-from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
 from matplotlib import pyplot as plt

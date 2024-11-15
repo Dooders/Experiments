@@ -52,6 +52,37 @@ move_epsilon_adapt_threshold: 0.1
 move_epsilon_adapt_factor: 1.5
 move_min_reward_samples: 10
 move_tau: 0.005
+move_base_cost: -0.1
+move_resource_approach_reward: 0.3
+move_resource_retreat_penalty: -0.2
+
+# Attack Module Parameters
+attack_target_update_freq: 100
+attack_memory_size: 10000
+attack_learning_rate: 0.001
+attack_gamma: 0.99
+attack_epsilon_start: 1.0
+attack_epsilon_min: 0.01
+attack_epsilon_decay: 0.995
+attack_dqn_hidden_size: 64
+attack_batch_size: 32
+attack_tau: 0.005
+attack_base_cost: -0.2
+attack_success_reward: 1.0
+attack_failure_penalty: -0.3
+attack_defense_threshold: 0.3
+attack_defense_boost: 2.0
+
+# Combat Parameters
+max_health: 100.0
+attack_range: 20.0
+attack_base_damage: 10.0
+attack_kill_reward: 5.0
+
+# Action Multipliers
+attack_mult_desperate: 1.4
+attack_mult_stable: 0.6
+attack_starvation_threshold: 0.5
 
 # Visualization settings
 visualization:

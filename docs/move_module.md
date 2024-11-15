@@ -63,11 +63,14 @@ A separate neural network (`target_network`) used to compute stable Q-value targ
 
 ## Technical Details
 
-- **State Space**: A 4-dimensional vector representing the agent's current state.
+- **State Space**: A 4-dimensional vector representing the agent's current state (the exact state representation is defined by the agent's `get_state()` method and converted to a tensor).
 - **Action Space**: 4 discrete actions corresponding to moving right, left, up, or down.
 - **Learning Algorithm**: Enhanced Deep Q-Learning with Double Q-Learning and adaptive exploration.
 - **Exploration Strategy**: Epsilon-greedy strategy with decay and adaptive adjustment based on reward improvement.
 - **Soft Update Parameter (`tau`)**: Controls the rate of the soft update for the target network.
+- **`move_base_cost`**: Base cost for any movement (default: `-0.1`).
+- **`move_resource_approach_reward`**: Reward for moving closer to resources (default: `0.3`).
+- **`move_resource_retreat_penalty`**: Penalty for moving away from resources (default: `-0.2`).
 
 ---
 
