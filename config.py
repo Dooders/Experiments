@@ -1,6 +1,6 @@
 import copy
 from dataclasses import dataclass, field, replace
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import yaml
 
@@ -46,9 +46,10 @@ class SimulationConfig:
     height: int = 100
 
     # Agent settings
-    system_agents: int = 25
-    independent_agents: int = 25
-    initial_resource_level: int = 12
+    system_agents: int = 10
+    independent_agents: int = 10
+    control_agents: int = 10
+    initial_resource_level: int = 5
     max_population: int = 300
     starvation_threshold: int = 0
     max_starvation_time: int = 15
@@ -56,8 +57,17 @@ class SimulationConfig:
     min_reproduction_resources: int = 10
     offspring_initial_resources: int = 5
 
+    # Agent type ratios
+    agent_type_ratios: Dict[str, float] = field(
+        default_factory=lambda: {
+            "SystemAgent": 0.33,
+            "IndependentAgent": 0.33,
+            "ControlAgent": 0.34,
+        }
+    )
+
     # Resource settings
-    initial_resources: int = 60
+    initial_resources: int = 20
     resource_regen_rate: float = 0.1
     resource_regen_amount: int = 2
     max_resource_amount: int = 30
@@ -69,56 +79,17 @@ class SimulationConfig:
     max_gather_amount: int = 3
     territory_range: int = 30
 
-    # Learning and Movement Module Parameters
-    target_update_freq: int = 100
-    memory_size: int = 10000
+    # Learning parameters
     learning_rate: float = 0.001
-    gamma: float = 0.99
+    gamma: float = 0.95
     epsilon_start: float = 1.0
     epsilon_min: float = 0.01
     epsilon_decay: float = 0.995
-    dqn_hidden_size: int = 64
+    memory_size: int = 2000
     batch_size: int = 32
-    training_frequency: int = 50
+    training_frequency: int = 4
+    dqn_hidden_size: int = 24
     tau: float = 0.005
-
-    # Movement Module Parameters
-    move_target_update_freq: int = 100
-    move_memory_size: int = 10000
-    move_learning_rate: float = 0.001
-    move_gamma: float = 0.99
-    move_epsilon_start: float = 1.0
-    move_epsilon_min: float = 0.01
-    move_epsilon_decay: float = 0.995
-    move_dqn_hidden_size: int = 64
-    move_batch_size: int = 32
-    move_reward_history_size: int = 100
-    move_epsilon_adapt_threshold: float = 0.1
-    move_epsilon_adapt_factor: float = 1.5
-    move_min_reward_samples: int = 10
-    move_tau: float = 0.005
-    move_base_cost: float = -0.1  # Base cost for any movement
-    move_resource_approach_reward: float = 0.3  # Reward for moving closer to resources
-    move_resource_retreat_penalty: float = (
-        -0.2
-    )  # Penalty for moving away from resources
-
-    # Attack Module Parameters
-    attack_target_update_freq: int = 100
-    attack_memory_size: int = 10000
-    attack_learning_rate: float = 0.001
-    attack_gamma: float = 0.99
-    attack_epsilon_start: float = 1.0
-    attack_epsilon_min: float = 0.01
-    attack_epsilon_decay: float = 0.995
-    attack_dqn_hidden_size: int = 64
-    attack_batch_size: int = 32
-    attack_tau: float = 0.005
-    attack_base_cost: float = -0.2
-    attack_success_reward: float = 1.0
-    attack_failure_penalty: float = -0.3
-    attack_defense_threshold: float = 0.3
-    attack_defense_boost: float = 2.0
 
     # Combat Parameters
     max_health: float = 100.0
@@ -126,33 +97,55 @@ class SimulationConfig:
     attack_base_damage: float = 10.0
     attack_kill_reward: float = 5.0
 
-    # Action Multipliers (existing ones remain unchanged)
-    attack_mult_desperate: float = 1.4
-    attack_mult_stable: float = 0.6
-    attack_starvation_threshold: float = 0.5
+    # Agent-specific parameters
+    agent_parameters: Dict[str, Dict[str, float]] = field(
+        default_factory=lambda: {
+            "SystemAgent": {
+                "gather_efficiency_multiplier": 0.4,
+                "gather_cost_multiplier": 0.4,
+                "min_resource_threshold": 0.2,
+                "share_weight": 0.3,
+                "attack_weight": 0.05,
+            },
+            "IndependentAgent": {
+                "gather_efficiency_multiplier": 0.7,
+                "gather_cost_multiplier": 0.2,
+                "min_resource_threshold": 0.05,
+                "share_weight": 0.05,
+                "attack_weight": 0.25,
+            },
+            "ControlAgent": {
+                "gather_efficiency_multiplier": 0.55,
+                "gather_cost_multiplier": 0.3,
+                "min_resource_threshold": 0.125,
+                "share_weight": 0.15,
+                "attack_weight": 0.15,
+            },
+        }
+    )
 
     # Visualization settings (separate config)
     visualization: VisualizationConfig = field(default_factory=VisualizationConfig)
 
     # Action probability adjustment parameters
-    social_range = 30  # Range for social interactions (share/attack)
+    social_range: int = 30  # Range for social interactions (share/attack)
 
     # Movement multipliers
-    move_mult_no_resources = 1.5  # Multiplier when no resources nearby
+    move_mult_no_resources: float = 1.5  # Multiplier when no resources nearby
 
     # Gathering multipliers
-    gather_mult_low_resources = 1.5  # Multiplier when resources needed
+    gather_mult_low_resources: float = 1.5  # Multiplier when resources needed
 
     # Sharing multipliers
-    share_mult_wealthy = 1.3  # Multiplier when agent has excess resources
-    share_mult_poor = 0.5  # Multiplier when agent needs resources
+    share_mult_wealthy: float = 1.3  # Multiplier when agent has excess resources
+    share_mult_poor: float = 0.5  # Multiplier when agent needs resources
 
     # Attack multipliers
-    attack_starvation_threshold = (
+    attack_starvation_threshold: float = (
         0.5  # Starvation risk threshold for desperate behavior
     )
-    attack_mult_desperate = 1.4  # Multiplier when desperate for resources
-    attack_mult_stable = 0.6  # Multiplier when resource stable
+    attack_mult_desperate: float = 1.4  # Multiplier when desperate for resources
+    attack_mult_stable: float = 0.6  # Multiplier when resource stable
 
     # Add to the main configuration section, before visualization settings
     max_wait_steps: int = 10  # Maximum steps to wait between gathering attempts
@@ -200,6 +193,45 @@ class SimulationConfig:
     cooperation_score_threshold: float = (
         0.5  # Threshold for considering an agent cooperative
     )
+
+    # Movement Module Parameters
+    move_target_update_freq: int = 100
+    move_memory_size: int = 10000
+    move_learning_rate: float = 0.001
+    move_gamma: float = 0.99
+    move_epsilon_start: float = 1.0
+    move_epsilon_min: float = 0.01
+    move_epsilon_decay: float = 0.995
+    move_dqn_hidden_size: int = 64
+    move_batch_size: int = 32
+    move_reward_history_size: int = 100
+    move_epsilon_adapt_threshold: float = 0.1
+    move_epsilon_adapt_factor: float = 1.5
+    move_min_reward_samples: int = 10
+    move_tau: float = 0.005
+    move_base_cost: float = -0.1
+    move_resource_approach_reward: float = 0.3
+    move_resource_retreat_penalty: float = -0.2
+
+    # Attack Module Parameters
+    attack_target_update_freq: int = 100
+    attack_memory_size: int = 10000
+    attack_learning_rate: float = 0.001
+    attack_gamma: float = 0.99
+    attack_epsilon_start: float = 1.0
+    attack_epsilon_min: float = 0.01
+    attack_epsilon_decay: float = 0.995
+    attack_dqn_hidden_size: int = 64
+    attack_batch_size: int = 32
+    attack_tau: float = 0.005
+    attack_base_cost: float = -0.2
+    attack_success_reward: float = 1.0
+    attack_failure_penalty: float = -0.3
+    attack_defense_threshold: float = 0.3
+    attack_defense_boost: float = 2.0
+    attack_kill_reward: float = 5.0
+    attack_range: float = 20.0
+    attack_base_damage: float = 10.0
 
     @classmethod
     def from_yaml(cls, file_path: str) -> "SimulationConfig":

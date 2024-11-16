@@ -61,7 +61,7 @@ class BaseAgent:
         self.max_starvation = self.config.max_starvation_time
         self.birth_time = environment.time
         logger.info(
-            f"Agent {self.agent_id} created at {self.position} during step {environment.time}"
+            f"Agent {self.agent_id} created at {self.position} during step {environment.time} of type {self.__class__.__name__}"
         )
 
         # Log agent creation to database

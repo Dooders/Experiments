@@ -426,38 +426,61 @@ class SimulationGUI:
         )
 
     def _generate_report(self) -> None:
-        """
-        Generate HTML analysis report of simulation results.
-
-        Opens file dialog for save location, then uses SimulationAnalyzer
-        to generate a comprehensive report including:
-        - Survival rates
-        - Resource efficiency
-        - Population dynamics
-        - Other key metrics
-
-        Raises:
-            Warning if no simulation data exists
-            Error if report generation fails
-        """
-        if not self.current_db_path:
-            messagebox.showwarning("Warning", "No simulation data to analyze.")
-            return
-
+        """Generate detailed analysis report."""
         try:
-            filepath = filedialog.asksaveasfilename(
-                title="Save Report",
-                defaultextension=".html",
-                filetypes=[("HTML files", "*.html"), ("All files", "*.*")],
+            if not self.current_db_path:
+                messagebox.showwarning(
+                    "No Data", "Please run or load a simulation first"
+                )
+                return
+
+            analyzer = SimulationAnalyzer(self.current_db_path)
+
+            # Create report window
+            report_window = tk.Toplevel(self.root)
+            report_window.title("Simulation Analysis Report")
+            report_window.geometry("800x600")
+
+            notebook = ttk.Notebook(report_window)
+            notebook.pack(fill=tk.BOTH, expand=True)
+
+            # Survival Analysis
+            survival_frame = ttk.Frame(notebook)
+            notebook.add(survival_frame, text="Survival Analysis")
+            self._create_survival_plot(
+                survival_frame, analyzer.calculate_survival_rates()
             )
 
-            if filepath:
-                analyzer = SimulationAnalyzer(self.current_db_path)
-                analyzer.generate_report(filepath)
-                self.log_message("Report generated successfully!")
+            # Resource Distribution
+            resource_frame = ttk.Frame(notebook)
+            notebook.add(resource_frame, text="Resource Distribution")
+            self._create_resource_plot(
+                resource_frame, analyzer.analyze_resource_distribution()
+            )
+
+            # Agent Comparison
+            comparison_frame = ttk.Frame(notebook)
+            notebook.add(comparison_frame, text="Agent Comparison")
+
+            # Add Control Agent comparisons
+            comparisons = {
+                "System Agents": analyzer.get_system_agent_stats(),
+                "Independent Agents": analyzer.get_independent_agent_stats(),
+                "Control Agents": analyzer.get_control_agent_stats(),  # Add Control stats
+                "Population Balance": analyzer.analyze_population_balance(),
+            }
+
+            for title, data in comparisons.items():
+                frame = ttk.LabelFrame(comparison_frame, text=title)
+                frame.pack(fill=tk.X, padx=5, pady=5)
+
+                text = tk.Text(frame, height=4, wrap=tk.WORD)
+                text.pack(fill=tk.X, padx=5, pady=5)
+                text.insert(tk.END, data)
+                text.config(state=tk.DISABLED)
 
         except Exception as e:
-            self._simulation_error(f"Failed to generate report: {str(e)}")
+            messagebox.showerror("Report Error", f"Failed to generate report: {str(e)}")
 
     def _view_statistics(self) -> None:
         """Display window showing key simulation statistics."""
@@ -503,6 +526,7 @@ class SimulationGUI:
         fig, ax = plt.subplots(figsize=(8, 4))
         ax.plot(data["step"], data["system_alive"], label="System Agents")
         ax.plot(data["step"], data["independent_alive"], label="Independent Agents")
+        ax.plot(data["step"], data["control_alive"], label="Control Agents")
         ax.set_xlabel("Simulation Step")
         ax.set_ylabel("Surviving Agents")
         ax.set_title("Agent Survival Over Time")

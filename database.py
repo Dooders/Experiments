@@ -1,106 +1,57 @@
+import logging
 import sqlite3
-from typing import Any, Dict, List, Tuple
+from typing import Dict, List, Tuple
 
 import pandas as pd
 
+logger = logging.getLogger(__name__)
+
 
 class SimulationDatabase:
-    def __init__(
-        self, db_path: str = "simulation_results.db", table_names: Dict[str, str] = None
-    ) -> None:
-        """
-        Initialize database connection and setup tables.
-
-        Parameters
-        ----------
-        db_path : str
-            Path to the SQLite database file
-        table_names : Dict[str, str], optional
-            Custom table names for the database schema
-        """
-        self.db_path = db_path
+    def __init__(self, db_path: str):
+        """Initialize database connection and create tables if they don't exist."""
         self.conn = sqlite3.connect(db_path)
         self.cursor = self.conn.cursor()
+        self._create_tables()
 
-        # Default table names
-        self.tables = {
-            "agents": "Agents",
-            "resources": "Resources",
-            "steps": "SimulationSteps",
-            "agent_states": "AgentStates",
-            "resource_states": "ResourceStates",
-            "metrics": "SimulationMetrics",
-        }
-
-        # Update with custom table names if provided
-        if table_names:
-            self.tables.update(table_names)
-
-        # Add batch processing parameters
-        self.batch_size = 1000
-        self.agent_state_buffer = []
-        self.resource_state_buffer = []
-        self.metric_buffer = []
-
-        self.setup_tables()
-
-    def setup_tables(self):
-        """Create necessary database tables if they don't exist."""
+    def _create_tables(self):
+        """Create database tables if they don't exist."""
         self.cursor.executescript(
-            f"""
-            CREATE TABLE IF NOT EXISTS {self.tables['agents']} (
+            """
+            CREATE TABLE IF NOT EXISTS Agents (
                 agent_id INTEGER PRIMARY KEY,
                 birth_time INTEGER,
                 death_time INTEGER,
                 agent_type TEXT,
-                initial_position_x REAL,
-                initial_position_y REAL,
+                initial_position TEXT,
                 initial_resources REAL
             );
 
-            CREATE TABLE IF NOT EXISTS {self.tables['resources']} (
-                resource_id INTEGER PRIMARY KEY,
-                initial_amount INTEGER,
+            CREATE TABLE IF NOT EXISTS AgentStates (
+                step_number INTEGER,
+                agent_id INTEGER,
+                position_x REAL,
+                position_y REAL,
+                resource_level REAL,
+                FOREIGN KEY(agent_id) REFERENCES Agents(agent_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS ResourceStates (
+                step_number INTEGER,
+                resource_id INTEGER,
+                amount REAL,
                 position_x REAL,
                 position_y REAL
             );
 
-            CREATE TABLE IF NOT EXISTS {self.tables['steps']} (
-                step_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                step_number INTEGER,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE TABLE IF NOT EXISTS {self.tables['agent_states']} (
-                state_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                agent_id INTEGER,
-                step_id INTEGER,
-                position_x REAL,
-                position_y REAL,
-                resource_level REAL,
-                alive BOOLEAN,
-                agent_type TEXT,
-                FOREIGN KEY(agent_id) REFERENCES {self.tables['agents']}(agent_id),
-                FOREIGN KEY(step_id) REFERENCES {self.tables['steps']}(step_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS {self.tables['resource_states']} (
-                state_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                resource_id INTEGER,
-                step_id INTEGER,
-                position_x REAL,
-                position_y REAL,
-                amount INTEGER,
-                FOREIGN KEY(resource_id) REFERENCES {self.tables['resources']}(resource_id),
-                FOREIGN KEY(step_id) REFERENCES {self.tables['steps']}(step_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS {self.tables['metrics']} (
-                metric_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                step_id INTEGER,
-                metric_name TEXT,
-                metric_value REAL,
-                FOREIGN KEY(step_id) REFERENCES {self.tables['steps']}(step_id)
+            CREATE TABLE IF NOT EXISTS SimulationSteps (
+                step_number INTEGER PRIMARY KEY,
+                total_agents INTEGER,
+                system_agents INTEGER,
+                independent_agents INTEGER,
+                control_agents INTEGER,
+                total_resources REAL,
+                average_agent_resources REAL
             );
         """
         )
@@ -113,147 +64,20 @@ class SimulationDatabase:
         agent_type: str,
         position: Tuple[float, float],
         initial_resources: float,
-    ) -> None:
-        """Log a new agent to the database."""
+    ):
+        """Log new agent creation."""
         self.cursor.execute(
             """
-            INSERT INTO Agents (agent_id, birth_time, agent_type, 
-                              initial_position_x, initial_position_y, initial_resources)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO Agents (
+                agent_id, birth_time, agent_type, initial_position, initial_resources
+            ) VALUES (?, ?, ?, ?, ?)
         """,
-            (
-                agent_id,
-                birth_time,
-                agent_type,
-                position[0],
-                position[1],
-                initial_resources,
-            ),
+            (agent_id, birth_time, agent_type, str(position), initial_resources),
         )
         self.conn.commit()
 
-    def log_resource(
-        self, resource_id: int, initial_amount: int, position: Tuple[float, float]
-    ) -> None:
-        """Log a new resource to the database."""
-        self.cursor.execute(
-            """
-            INSERT INTO Resources (resource_id, initial_amount, position_x, position_y)
-            VALUES (?, ?, ?, ?)
-        """,
-            (resource_id, initial_amount, position[0], position[1]),
-        )
-        self.conn.commit()
-
-    def log_simulation_step(
-        self,
-        step_number: int,
-        agents: List[Any],
-        resources: List[Any],
-        metrics: Dict[str, float],
-    ) -> None:
-        """Log the current state of the simulation with batch processing."""
-        try:
-            # Insert step first
-            self.cursor.execute(
-                "INSERT INTO SimulationSteps (step_number) VALUES (?)", (step_number,)
-            )
-            step_id = self.cursor.lastrowid
-
-            # Add metrics to buffer
-            for metric_name, value in metrics.items():
-                self.metric_buffer.append((step_id, metric_name, value))
-
-            # Add agent states to buffer
-            self.agent_state_buffer.extend(
-                [
-                    (
-                        agent.agent_id,
-                        step_id,
-                        agent.position[0],
-                        agent.position[1],
-                        agent.resource_level,
-                        agent.alive,
-                        agent.__class__.__name__,
-                    )
-                    for agent in agents
-                ]
-            )
-
-            # Add resource states to buffer
-            self.resource_state_buffer.extend(
-                [
-                    (
-                        resource.resource_id,
-                        step_id,
-                        resource.position[0],
-                        resource.position[1],
-                        resource.amount,
-                    )
-                    for resource in resources
-                ]
-            )
-
-            # Flush if buffer size exceeds batch_size OR if it's a batch interval
-            should_flush = (
-                len(self.agent_state_buffer) >= self.batch_size
-                or step_number % self.batch_size == 0
-            )
-
-            if should_flush:
-                self._flush_agent_states()
-                self._flush_resource_states()
-                self._flush_metrics()
-
-        except Exception as e:
-            print(f"Error logging simulation step {step_number}: {e}")
-            import traceback
-
-            traceback.print_exc()
-
-    def _flush_agent_states(self) -> None:
-        """Flush agent state buffer to database."""
-        if self.agent_state_buffer:
-            self.cursor.executemany(
-                """
-                INSERT INTO AgentStates 
-                (agent_id, step_id, position_x, position_y, resource_level, alive, agent_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                self.agent_state_buffer,
-            )
-            self.agent_state_buffer = []
-            self.conn.commit()
-
-    def _flush_resource_states(self) -> None:
-        """Flush resource state buffer to database."""
-        if self.resource_state_buffer:
-            self.cursor.executemany(
-                """
-                INSERT INTO ResourceStates 
-                (resource_id, step_id, position_x, position_y, amount)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                self.resource_state_buffer,
-            )
-            self.resource_state_buffer = []
-            self.conn.commit()
-
-    def _flush_metrics(self) -> None:
-        """Flush metrics buffer to database."""
-        if self.metric_buffer:
-            self.cursor.executemany(
-                """
-                INSERT INTO SimulationMetrics (step_id, metric_name, metric_value)
-                VALUES (?, ?, ?)
-                """,
-                self.metric_buffer,
-            )
-            self.metric_buffer = []
-            self.conn.commit()
-
-    def update_agent_death(self, agent_id: int, death_time: int) -> None:
-        """Update the death time of an agent."""
+    def update_agent_death(self, agent_id: int, death_time: int):
+        """Record agent death time."""
         self.cursor.execute(
             """
             UPDATE Agents 
@@ -264,17 +88,63 @@ class SimulationDatabase:
         )
         self.conn.commit()
 
-    def get_simulation_data(self, step_number: int) -> Dict[str, Any]:
-        """Retrieve simulation data for a specific step."""
+    def log_step(
+        self,
+        step_number: int,
+        agent_states: List[Tuple],
+        resource_states: List[Tuple],
+        metrics: Dict,
+    ):
+        """Log simulation step data."""
+        # Log agent states
+        self.cursor.executemany(
+            """
+            INSERT INTO AgentStates (
+                step_number, agent_id, position_x, position_y, resource_level
+            ) VALUES (?, ?, ?, ?, ?)
+        """,
+            [(step_number, *state) for state in agent_states],
+        )
+
+        # Log resource states
+        self.cursor.executemany(
+            """
+            INSERT INTO ResourceStates (
+                step_number, resource_id, amount, position_x, position_y
+            ) VALUES (?, ?, ?, ?, ?)
+        """,
+            [(step_number, *state) for state in resource_states],
+        )
+
+        # Log step metrics
+        self.cursor.execute(
+            """
+            INSERT INTO SimulationSteps (
+                step_number, total_agents, system_agents, independent_agents,
+                control_agents, total_resources, average_agent_resources
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+            (
+                step_number,
+                metrics["total_agents"],
+                metrics["system_agents"],
+                metrics["independent_agents"],
+                metrics["control_agents"],
+                metrics["total_resources"],
+                metrics["average_agent_resources"],
+            ),
+        )
+        self.conn.commit()
+
+    def get_simulation_data(self, step_number: int) -> Dict:
+        """Get all data for a specific simulation step."""
         # Get agent states
         self.cursor.execute(
-            f"""
-            SELECT a.agent_id, a.agent_type, s.position_x, s.position_y, 
-                   s.resource_level, s.alive
-            FROM {self.tables['agent_states']} s
-            JOIN {self.tables['agents']} a ON a.agent_id = s.agent_id
-            JOIN {self.tables['steps']} st ON st.step_id = s.step_id
-            WHERE st.step_number = ?
+            """
+            SELECT a.agent_id, ag.agent_type, a.position_x, a.position_y, a.resource_level
+            FROM AgentStates a
+            JOIN Agents ag ON a.agent_id = ag.agent_id
+            WHERE a.step_number = ?
         """,
             (step_number,),
         )
@@ -282,12 +152,10 @@ class SimulationDatabase:
 
         # Get resource states
         self.cursor.execute(
-            f"""
-            SELECT r.resource_id, s.amount, r.position_x, r.position_y
-            FROM {self.tables['resource_states']} s
-            JOIN {self.tables['resources']} r ON r.resource_id = s.resource_id
-            JOIN {self.tables['steps']} st ON st.step_id = s.step_id
-            WHERE st.step_number = ?
+            """
+            SELECT resource_id, amount, position_x, position_y
+            FROM ResourceStates
+            WHERE step_number = ?
         """,
             (step_number,),
         )
@@ -295,15 +163,24 @@ class SimulationDatabase:
 
         # Get metrics
         self.cursor.execute(
-            f"""
-            SELECT metric_name, metric_value
-            FROM {self.tables['metrics']} m
-            JOIN {self.tables['steps']} s ON s.step_id = m.step_id
-            WHERE s.step_number = ?
+            """
+            SELECT total_agents, system_agents, independent_agents, control_agents,
+                   total_resources, average_agent_resources
+            FROM SimulationSteps
+            WHERE step_number = ?
         """,
             (step_number,),
         )
-        metrics = dict(self.cursor.fetchall())
+        metrics_row = self.cursor.fetchone()
+
+        metrics = {
+            "total_agents": metrics_row[0] if metrics_row else 0,
+            "system_agents": metrics_row[1] if metrics_row else 0,
+            "independent_agents": metrics_row[2] if metrics_row else 0,
+            "control_agents": metrics_row[3] if metrics_row else 0,
+            "total_resources": metrics_row[4] if metrics_row else 0,
+            "average_agent_resources": metrics_row[5] if metrics_row else 0,
+        }
 
         return {
             "agent_states": agent_states,
@@ -311,160 +188,126 @@ class SimulationDatabase:
             "metrics": metrics,
         }
 
-    def close(self):
-        """Close the database connection after flushing all buffers."""
-        try:
-            self.flush_all_buffers()
-        finally:
-            self.conn.close()
-
-    def get_historical_data(self):
-        """
-        Fetch historical data for all metrics up to the current step.
-        Returns a dictionary with steps and metrics.
-        """
-        try:
-            # Get all metrics grouped by step
-            self.cursor.execute(
-                """
-                SELECT s.step_number,
-                       m.metric_name,
-                       m.metric_value
-                FROM SimulationSteps s
-                JOIN SimulationMetrics m ON m.step_id = s.step_id
-                ORDER BY s.step_number ASC
-            """
-            )
-
-            rows = self.cursor.fetchall()
-
-            if not rows:
-                return {
-                    "steps": [],
-                    "metrics": {
-                        "system_agents": [],
-                        "independent_agents": [],
-                        "total_resources": [],
-                    },
-                }
-
-            # Process the data
-            steps = []
-            metrics = {
-                "system_agents": [],
-                "independent_agents": [],
-                "total_resources": [],
-                "average_agent_resources": [],
-            }
-
-            current_step = None
-            step_metrics = {}
-
-            for step, metric_name, metric_value in rows:
-                if step != current_step:
-                    if current_step is not None:
-                        # Store the completed step data
-                        steps.append(current_step)
-                        for metric_key in metrics:
-                            metrics[metric_key].append(step_metrics.get(metric_key, 0))
-                    # Start new step
-                    current_step = step
-                    step_metrics = {}
-
-                step_metrics[metric_name] = metric_value
-
-            # Don't forget to add the last step
-            if current_step is not None:
-                steps.append(current_step)
-                for metric_key in metrics:
-                    metrics[metric_key].append(step_metrics.get(metric_key, 0))
-
-            return {"steps": steps, "metrics": metrics}
-
-        except Exception as e:
-            # Only log critical errors
-            return {
-                "steps": [],
-                "metrics": {
-                    "system_agents": [],
-                    "independent_agents": [],
-                    "total_resources": [],
-                },
-            }
-
-    def export_data(self, output_file: str = "simulation_data.csv") -> None:
-        """Export simulation data to a CSV file."""
-        query = """
-            SELECT s.step_number, m.metric_name, m.metric_value
-            FROM SimulationMetrics m
-            JOIN SimulationSteps s ON s.step_id = m.step_id
-            ORDER BY s.step_number, m.metric_name
-        """
-
-        self.cursor.execute(query)
-        results = self.cursor.fetchall()
-
-        # Convert to DataFrame and pivot
-        df = pd.DataFrame(results, columns=["step", "metric", "value"])
-        df_pivot = df.pivot(index="step", columns="metric", values="value")
-
-        # Export to CSV
-        df_pivot.to_csv(output_file)
-        return df_pivot
-
-    def log_competitive_interaction(
-        self,
-        step_id: int,
-        initiator_id: int,
-        target_id: int,
-        interaction_type: str,
-        outcome: float,
-    ) -> None:
-        """Log a competitive interaction between agents."""
+    def get_historical_data(self) -> Dict:
+        """Get historical data for plotting."""
         self.cursor.execute(
             """
-            INSERT INTO CompetitiveInteractions 
-            (step_id, initiator_id, target_id, interaction_type, outcome)
-            VALUES (?, ?, ?, ?, ?)
+            SELECT step_number, total_agents, system_agents, independent_agents,
+                   control_agents, total_resources, average_agent_resources
+            FROM SimulationSteps
+            ORDER BY step_number
+        """
+        )
+        rows = self.cursor.fetchall()
+
+        return {
+            "steps": [row[0] for row in rows],
+            "metrics": {
+                "total_agents": [row[1] for row in rows],
+                "system_agents": [row[2] for row in rows],
+                "independent_agents": [row[3] for row in rows],
+                "control_agents": [row[4] for row in rows],
+                "total_resources": [row[5] for row in rows],
+                "average_agent_resources": [row[6] for row in rows],
+            },
+        }
+
+    def export_data(self, filepath: str):
+        """Export simulation data to CSV."""
+        # Get all simulation data
+        df = pd.read_sql_query(
+            """
+            SELECT s.step_number, s.total_agents, s.system_agents, s.independent_agents,
+                   s.control_agents, s.total_resources, s.average_agent_resources
+            FROM SimulationSteps s
+            ORDER BY s.step_number
         """,
-            (step_id, initiator_id, target_id, interaction_type, outcome),
+            self.conn,
         )
 
-        if len(self.metric_buffer) >= self.BUFFER_SIZE:
-            self._flush_buffers()
+        df.to_csv(filepath, index=False)
 
-    def _flush_buffers(self):
-        """Flush all data buffers to database."""
-        if self.metric_buffer:
-            self.cursor.executemany(
-                "INSERT INTO Metrics (step_id, metric_name, metric_value) VALUES (?, ?, ?)",
-                self.metric_buffer,
-            )
-            self.metric_buffer.clear()
+    def flush_all_buffers(self):
+        """Flush all database buffers and ensure data is written to disk."""
+        try:
+            self.conn.commit()  # Commit any pending transactions
+            self.cursor.execute(
+                "PRAGMA wal_checkpoint(FULL)"
+            )  # Force write-ahead log checkpoint
+        except Exception as e:
+            logger.error(f"Error flushing database buffers: {e}")
+            raise
 
-        if self.agent_state_buffer:
-            self.cursor.executemany(
-                """INSERT INTO AgentStates 
-                   (agent_id, step_id, x_pos, y_pos, resource_level, alive, agent_type) 
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                self.agent_state_buffer,
-            )
-            self.agent_state_buffer.clear()
+    def close(self):
+        """Close database connection."""
+        try:
+            self.flush_all_buffers()  # Ensure all data is written before closing
+            self.conn.close()
+        except Exception as e:
+            logger.error(f"Error closing database: {e}")
+            raise
 
-        if self.resource_state_buffer:
-            self.cursor.executemany(
-                """INSERT INTO ResourceStates 
-                   (resource_id, step_id, x_pos, y_pos, amount) 
-                   VALUES (?, ?, ?, ?, ?)""",
-                self.resource_state_buffer,
-            )
-            self.resource_state_buffer.clear()
+    def log_resource(
+        self, resource_id: int, initial_amount: float, position: Tuple[float, float]
+    ):
+        """Log new resource creation.
 
+        Parameters
+        ----------
+        resource_id : int
+            Unique identifier for the resource
+        initial_amount : float
+            Starting amount of the resource
+        position : Tuple[float, float]
+            (x, y) coordinates of the resource
+        """
+        self.cursor.execute(
+            """
+            INSERT INTO ResourceStates (
+                step_number, resource_id, amount, position_x, position_y
+            ) VALUES (?, ?, ?, ?, ?)
+        """,
+            (0, resource_id, initial_amount, position[0], position[1]),
+        )
         self.conn.commit()
 
-    def flush_all_buffers(self) -> None:
-        """Flush all data buffers to database."""
-        self._flush_agent_states()
-        self._flush_resource_states()
-        self._flush_metrics()
-        self.conn.commit()
+    def log_simulation_step(
+        self,
+        step_number: int,
+        agents: List,
+        resources: List,
+        metrics: Dict,
+    ):
+        """Log simulation step data.
+
+        Parameters
+        ----------
+        step_number : int
+            Current simulation step number
+        agents : List
+            List of agents in the simulation
+        resources : List
+            List of resources in the simulation
+        metrics : Dict
+            Dictionary of metrics to log
+        """
+        # Convert agents to state tuples
+        agent_states = [
+            (agent.agent_id, agent.position[0], agent.position[1], agent.resource_level)
+            for agent in agents
+            if agent.alive
+        ]
+
+        # Convert resources to state tuples
+        resource_states = [
+            (
+                resource.resource_id,
+                resource.amount,
+                resource.position[0],
+                resource.position[1],
+            )
+            for resource in resources
+        ]
+
+        # Use existing log_step method
+        self.log_step(step_number, agent_states, resource_states, metrics)
