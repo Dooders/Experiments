@@ -1,76 +1,21 @@
 import logging
 import random
-from collections import deque
 from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.optim as optim
 
 from action import *
 from actions.attack import AttackActionSpace, AttackModule, attack_action
-from actions.gather import GatherConfig, GatherModule, gather_action
+from actions.gather import GatherModule, gather_action
 from actions.move import MoveModule, move_action
-from actions.share import DEFAULT_SHARE_CONFIG, ShareModule, share_action
+from actions.share import ShareModule, share_action
 from state import AgentState
 
 if TYPE_CHECKING:
     from environment import Environment
 
 logger = logging.getLogger(__name__)
-
-
-class AgentModel(nn.Module):
-    def __init__(self, input_dim, output_dim, config):
-        super(AgentModel, self).__init__()
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        self.network = nn.Sequential(
-            nn.Linear(input_dim, config.dqn_hidden_size),
-            nn.ReLU(),
-            nn.Linear(config.dqn_hidden_size, config.dqn_hidden_size),
-            nn.ReLU(),
-            nn.Linear(config.dqn_hidden_size, output_dim),
-        ).to(self.device)
-
-        self.optimizer = optim.Adam(self.parameters(), lr=config.learning_rate)
-        self.criterion = nn.MSELoss()
-        self.memory = deque(maxlen=config.memory_size)
-        self.gamma = config.gamma
-        self.epsilon = config.epsilon_start
-        self.epsilon_min = config.epsilon_min
-        self.epsilon_decay = config.epsilon_decay
-        self.config = config
-
-    def forward(self, x):
-        return self.network(x)
-
-    def learn(self, batch):
-        if len(batch) < self.config.batch_size:
-            return None
-
-        # States are already tensors from memory
-        states = torch.stack([x[0] for x in batch])
-        actions = torch.tensor([x[1] for x in batch], device=self.device)
-        rewards = torch.tensor(
-            [x[2] for x in batch], dtype=torch.float32, device=self.device
-        )
-        next_states = torch.stack([x[3] for x in batch])
-
-        with torch.no_grad():
-            next_q_values = self(next_states).max(1)[0]
-            target_q_values = rewards + (self.gamma * next_q_values)
-
-        current_q_values = self(states).gather(1, actions.unsqueeze(1))
-        loss = self.criterion(current_q_values.squeeze(), target_q_values)
-
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-
-        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
-        return loss.item()
 
 
 BASE_ACTION_SET = [
@@ -106,11 +51,6 @@ class BaseAgent:
         self.config = environment.config
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = AgentModel(
-            input_dim=AgentState.DIMENSIONS,
-            output_dim=len(self.actions),
-            config=self.config,
-        )
         self.last_state: AgentState | None = None
         self.last_action = None
         self.max_movement = self.config.max_movement
@@ -136,22 +76,8 @@ class BaseAgent:
         # Initialize modules with their specific configs
         self.move_module = MoveModule(self.config)
         self.attack_module = AttackModule(self.config)
-        self.share_module = ShareModule(config=DEFAULT_SHARE_CONFIG)
-
-        # Create a GatherConfig instance with DQN parameters from simulation config
-        gather_config = GatherConfig()
-        gather_config.learning_rate = self.config.learning_rate
-        gather_config.memory_size = self.config.memory_size
-        gather_config.gamma = self.config.gamma
-        gather_config.epsilon_start = self.config.epsilon_start
-        gather_config.epsilon_min = self.config.epsilon_min
-        gather_config.epsilon_decay = self.config.epsilon_decay
-        gather_config.dqn_hidden_size = self.config.dqn_hidden_size
-        gather_config.batch_size = self.config.batch_size
-        gather_config.tau = self.config.tau
-
-        # Initialize gather module with the configured GatherConfig
-        self.gather_module = GatherModule(config=gather_config)
+        self.share_module = ShareModule(self.config)
+        self.gather_module = GatherModule(self.config)
 
         # Add health tracking for combat
         self.max_health = self.config.max_health
@@ -209,42 +135,6 @@ class BaseAgent:
             env_diagonal=env_diagonal,
         )
 
-    def learn(self, reward: float) -> None:
-        """Update agent's learning based on received reward.
-
-        Args:
-            reward (float): Reward value from last action
-        """
-        if self.last_state is None:
-            return
-
-        self.total_reward += reward
-        self.episode_rewards.append(reward)
-
-        # Store experience with proper state objects
-        current_state = self.get_state()
-
-        # Convert states to tensors before storing in memory
-        last_state_tensor = self.last_state.to_tensor(self.device)
-        current_state_tensor = current_state.to_tensor(self.device)
-
-        # Get action index instead of storing Action object
-        action_idx = self.actions.index(self.last_action)
-
-        self.model.memory.append(
-            (last_state_tensor, action_idx, reward, current_state_tensor)
-        )
-
-        # Only train on larger batches less frequently
-        if (
-            len(self.model.memory) >= self.config.batch_size * 4
-            and len(self.model.memory) % (self.config.training_frequency * 4) == 0
-        ):
-            batch = random.sample(self.model.memory, self.config.batch_size * 4)
-            loss = self.model.learn(batch)
-            if loss is not None:
-                self.losses.append(loss)
-
     def select_action(self):
         """Select an action using a combination of weighted probabilities and state awareness.
 
@@ -268,7 +158,7 @@ class BaseAgent:
         adjusted_probs = self._adjust_probabilities(base_probs)
 
         # Epsilon-greedy exploration
-        if random.random() < self.model.epsilon:
+        if random.random() < self.config.epsilon_start:
             # Random exploration
             return random.choice(actions)
         else:
@@ -398,10 +288,6 @@ class BaseAgent:
         # Store state for learning
         self.last_state = current_state
         self.last_action = action
-
-        # Calculate reward and learn
-        reward = self.resource_level - initial_resources
-        self.learn(reward)
 
     def reproduce(self):
         if len(self.environment.agents) >= self.config.max_population:
