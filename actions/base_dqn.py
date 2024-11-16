@@ -169,3 +169,33 @@ class BaseDQNModule:
             target_param.data.copy_(
                 self.tau * local_param.data + (1.0 - self.tau) * target_param.data
             )
+
+    def get_state_dict(self) -> dict[str, Any]:
+        """Get the current state of the DQN module.
+
+        Returns:
+            dict: State dictionary containing network weights and training parameters
+        """
+        return {
+            'q_network_state': self.q_network.state_dict(),
+            'target_network_state': self.target_network.state_dict(),
+            'optimizer_state': self.optimizer.state_dict(),
+            'epsilon': self.epsilon,
+            'steps': self.steps,
+            'losses': self.losses,
+            'episode_rewards': self.episode_rewards,
+        }
+
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
+        """Load a state dictionary into the DQN module.
+
+        Args:
+            state_dict (dict): State dictionary containing network weights and training parameters
+        """
+        self.q_network.load_state_dict(state_dict['q_network_state'])
+        self.target_network.load_state_dict(state_dict['target_network_state'])
+        self.optimizer.load_state_dict(state_dict['optimizer_state'])
+        self.epsilon = state_dict['epsilon']
+        self.steps = state_dict['steps']
+        self.losses = state_dict['losses']
+        self.episode_rewards = state_dict['episode_rewards']

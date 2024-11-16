@@ -413,3 +413,71 @@ class BaseAgent:
             reward += self.config.attack_failure_penalty
 
         return reward
+
+    def to_genome(self) -> dict:
+        """Convert agent's current state and configuration into a genome representation.
+
+        Returns:
+            dict: Genome containing all necessary information to recreate the agent
+        """
+        # Get all attributes that end with '_module'
+        module_states = {
+            name: getattr(self, name).get_state_dict()
+            for name in dir(self)
+            if name.endswith('_module') and hasattr(getattr(self, name), 'get_state_dict')
+        }
+
+        genome = {
+            'action_set': [(action.name, action.weight) for action in self.actions],
+            'module_states': module_states,
+            'agent_type': self.__class__.__name__,
+            'resource_level': self.resource_level,
+            'current_health': self.current_health,
+        }
+        return genome
+
+    @classmethod
+    def from_genome(
+        cls,
+        genome: dict,
+        agent_id: int,
+        position: tuple[int, int],
+        environment: "Environment",
+    ) -> "BaseAgent":
+        """Create a new agent from a genome representation.
+
+        Args:
+            genome (dict): Genome containing agent configuration
+            agent_id (int): ID for the new agent
+            position (tuple[int, int]): Starting position
+            environment (Environment): Environment instance
+
+        Returns:
+            BaseAgent: New agent instance with genome's properties
+        """
+        # Reconstruct action set
+        action_set = [
+            Action(name, weight, globals()[f"{name}_action"])
+            for name, weight in genome['action_set']
+        ]
+
+        # Create new agent
+        agent = cls(
+            agent_id=agent_id,
+            position=position,
+            resource_level=genome['resource_level'],
+            environment=environment,
+            action_set=action_set,
+        )
+
+        # Load all module states
+        for module_name, state_dict in genome['module_states'].items():
+            if hasattr(agent, module_name):
+                module = getattr(agent, module_name)
+                if hasattr(module, 'load_state_dict'):
+                    module.load_state_dict(state_dict)
+        
+        # Set health
+        agent.current_health = genome['current_health']
+
+        return agent
