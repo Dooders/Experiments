@@ -22,7 +22,7 @@ class SimulationVisualizer:
 
     # Resource visualization
     MAX_RESOURCE_AMOUNT = 30
-    RESOURCE_GLOW_RED = 150
+    RESOURCE_GLOW_RED = 50
     RESOURCE_GLOW_GREEN = 255
     RESOURCE_GLOW_BLUE = 50
 
@@ -38,6 +38,7 @@ class SimulationVisualizer:
     # Colors
     SYSTEM_AGENT_COLOR = "blue"
     INDEPENDENT_AGENT_COLOR = "red"
+    CONTROL_AGENT_COLOR = "#DAA520"  # Changed to goldenrod color
     DEATH_MARK_COLOR = (255, 0, 0)  # Red
     BIRTH_MARK_COLOR = (255, 255, 255)  # White
     BACKGROUND_COLOR = "black"
@@ -47,6 +48,7 @@ class SimulationVisualizer:
         "total_agents": "#4a90e2",  # Blue
         "system_agents": "#50c878",  # Emerald green
         "independent_agents": "#e74c3c",  # Red
+        "control_agents": "#DAA520",  # Changed to goldenrod
         "total_resources": "#f39c12",  # Orange
         "average_agent_resources": "#9b59b6",  # Purple
     }
@@ -185,17 +187,23 @@ class SimulationVisualizer:
                 "color": "#e74c3c",  # Red
                 "column": left_column,
             },
+            "control_agents": {
+                "var": tk.StringVar(value="0"),
+                "label": "Control Agents",
+                "color": "#DAA520",  # Changed to goldenrod
+                "column": right_column,
+            },
             "total_resources": {
                 "var": tk.StringVar(value="0"),
                 "label": "Total Resources",
                 "color": "#f39c12",  # Orange
-                "column": right_column,
+                "column": left_column,
             },
             "average_agent_resources": {
                 "var": tk.StringVar(value="0.0"),
                 "label": "Avg Resources/Agent",
                 "color": "#9b59b6",  # Purple
-                "column": left_column,
+                "column": right_column,
             },
         }
 
@@ -258,15 +266,23 @@ class SimulationVisualizer:
         self.ax1 = self.fig.add_subplot(111)
         self.ax2 = self.ax1.twinx()
 
-        # Initialize empty line objects
+        # Initialize empty line objects with updated colors
         self.lines = {
             "system_agents": self.ax1.plot([], [], "b-", label="System Agents")[0],
             "independent_agents": self.ax1.plot(
                 [], [], "r-", label="Independent Agents"
             )[0],
+            "control_agents": self.ax1.plot(
+                [], [], color="#FFD700", label="Control Agents"
+            )[
+                0
+            ],  # Changed to soft yellow
             "resources": self.ax2.plot([], [], "g-", label="Resources")[0],
             "system_agents_future": self.ax1.plot([], [], "b-", alpha=0.3)[0],
             "independent_agents_future": self.ax1.plot([], [], "r-", alpha=0.3)[0],
+            "control_agents_future": self.ax1.plot([], [], color="#FFD700", alpha=0.3)[
+                0
+            ],  # Changed to soft yellow
             "resources_future": self.ax2.plot([], [], "g-", alpha=0.3)[0],
             "current_step": self.ax1.axvline(
                 x=0, color="gray", linestyle="--", alpha=0.5
@@ -275,14 +291,14 @@ class SimulationVisualizer:
 
         # Setup axis labels and colors
         self.ax1.set_xlabel("Step")
-        self.ax1.set_ylabel("Agent Count", color="b")
-        self.ax2.set_ylabel("Resource Count", color="g", rotation=270, labelpad=20)
+        self.ax1.set_ylabel("Agent Count", color="black")
+        self.ax2.set_ylabel("Resource Count", color="green", rotation=270, labelpad=20)
 
         # Configure axis positions and colors
         self.ax2.yaxis.set_label_position("right")
         self.ax2.yaxis.set_ticks_position("right")
-        self.ax1.tick_params(axis="y", labelcolor="b")
-        self.ax2.tick_params(axis="y", labelcolor="g")
+        self.ax1.tick_params(axis="y", labelcolor="black")
+        self.ax2.tick_params(axis="y", labelcolor="green")
 
         # Setup legends
         self.ax1.legend(loc="upper left")
@@ -463,7 +479,6 @@ class SimulationVisualizer:
             if data["agent_states"] or data["resource_states"]:
                 self.current_step = step_number
                 self._update_visualization(data)
-
                 # Show message when agents die out, but continue playback
                 # if not data["agent_states"] and self.playing:
                 #     print(f"Agent states empty at step {step_number}")
@@ -614,11 +629,13 @@ class SimulationVisualizer:
         """Draw agents as colored circles."""
         for agent in agent_states:
             x, y = self._transform_coords(agent[2], agent[3], params)
-            color = (
-                self.SYSTEM_AGENT_COLOR
-                if agent[1] == "SystemAgent"
-                else self.INDEPENDENT_AGENT_COLOR
-            )
+            if agent[1] == "SystemAgent":
+                color = self.SYSTEM_AGENT_COLOR
+            elif agent[1] == "IndependentAgent":
+                color = self.INDEPENDENT_AGENT_COLOR
+            else:  # ControlAgent
+                color = self.CONTROL_AGENT_COLOR
+
             radius = max(1, int(self.AGENT_RADIUS_SCALE * params["scale"]))
             draw.ellipse(
                 [(x - radius, y - radius), (x + radius, y + radius)], fill=color
@@ -702,30 +719,38 @@ class SimulationVisualizer:
             steps = np.array(history["steps"])
             system_agents = np.array(history["metrics"]["system_agents"])
             independent_agents = np.array(history["metrics"]["independent_agents"])
+            control_agents = np.array(history["metrics"]["control_agents"])
             total_resources = np.array(history["metrics"]["total_resources"])
 
             # Update all lines with full data
             self.lines["system_agents"].set_data(steps, system_agents)
             self.lines["independent_agents"].set_data(steps, independent_agents)
+            self.lines["control_agents"].set_data(steps, control_agents)
             self.lines["resources"].set_data(steps, total_resources)
 
             # Update current step line
             self.lines["current_step"].set_xdata([self.current_step, self.current_step])
             max_y = max(
-                max(system_agents), max(independent_agents), max(total_resources)
+                max(system_agents),
+                max(independent_agents),
+                max(control_agents),
+                max(total_resources),
             )
             self.lines["current_step"].set_ydata([0, max_y])
 
             # Update axis limits with padding
             self.ax1.set_xlim(0, max(steps) + 10)
-            self.ax1.set_ylim(0, max(max(system_agents), max(independent_agents)) * 1.1)
+            self.ax1.set_ylim(
+                0,
+                max(max(system_agents), max(independent_agents), max(control_agents))
+                * 1.1,
+            )
             self.ax2.set_ylim(0, max(total_resources) * 1.1)
 
             # Redraw canvas
             self.canvas.draw()
 
         except Exception as e:
-            # Only log critical errors
             messagebox.showerror("Chart Error", f"Failed to update charts: {str(e)}")
 
     def run(self):

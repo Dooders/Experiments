@@ -4,7 +4,7 @@ from typing import List
 
 import numpy as np
 
-from agents import IndependentAgent, SystemAgent
+from agents import ControlAgent, IndependentAgent, SystemAgent
 from database import SimulationDatabase
 from resources import Resource
 from state import EnvironmentState
@@ -26,7 +26,7 @@ class Environment:
 
         self.width = width
         self.height = height
-        self.agents: List["SystemAgent" | "IndependentAgent"] = []
+        self.agents: List["SystemAgent" | "IndependentAgent" | "ControlAgent"] = []
         self.resources: List[Resource] = []
         self.time = 0
         self.db = SimulationDatabase(db_path)
@@ -35,7 +35,8 @@ class Environment:
         self.max_resource = max_resource
         self.config = config  # Store configuration
         self.initialize_resources(resource_distribution)
-        self.initial_agent_count = 0  # Add this line to track initial population
+        self.initial_agent_count = 0  # Add this to track initial agents
+        self._initialize_agents()  # Changed to use config values
 
     def get_next_resource_id(self):
         resource_id = self.next_resource_id
@@ -94,18 +95,22 @@ class Environment:
 
     def _calculate_metrics(self):
         """Calculate various metrics for the current simulation state."""
-        from agents import IndependentAgent, SystemAgent  # Local import
+        from agents import ControlAgent, IndependentAgent, SystemAgent  # Local import
 
         alive_agents = [agent for agent in self.agents if agent.alive]
         system_agents = [a for a in alive_agents if isinstance(a, SystemAgent)]
         independent_agents = [
             a for a in alive_agents if isinstance(a, IndependentAgent)
         ]
+        control_agents = [
+            a for a in alive_agents if isinstance(a, ControlAgent)
+        ]  # Add control agents
 
         return {
             "total_agents": len(alive_agents),
             "system_agents": len(system_agents),
             "independent_agents": len(independent_agents),
+            "control_agents": len(control_agents),  # Add control agents count
             "total_resources": sum(r.amount for r in self.resources),
             "average_agent_resources": (
                 sum(a.resource_level for a in alive_agents) / len(alive_agents)
@@ -155,3 +160,44 @@ class Environment:
                 regeneration_rate=self.config.resource_regen_rate,
             )
             self.resources.append(resource)
+
+    def _initialize_agents(self):
+        """Initialize starting agent populations."""
+        # Create system agents
+        for _ in range(self.config.system_agents):
+            position = self._get_random_position()
+            agent = SystemAgent(
+                agent_id=self.get_next_agent_id(),
+                position=position,
+                resource_level=self.config.initial_resource_level,
+                environment=self,
+            )
+            self.add_agent(agent)
+
+        # Create independent agents
+        for _ in range(self.config.independent_agents):
+            position = self._get_random_position()
+            agent = IndependentAgent(
+                agent_id=self.get_next_agent_id(),
+                position=position,
+                resource_level=self.config.initial_resource_level,
+                environment=self,
+            )
+            self.add_agent(agent)
+
+        # Create control agents
+        for _ in range(self.config.control_agents):
+            position = self._get_random_position()
+            agent = ControlAgent(
+                agent_id=self.get_next_agent_id(),
+                position=position,
+                resource_level=self.config.initial_resource_level,
+                environment=self,
+            )
+            self.add_agent(agent)
+
+    def _get_random_position(self):
+        """Get a random position within the environment bounds."""
+        x = random.uniform(0, self.width)
+        y = random.uniform(0, self.height)
+        return (x, y)
