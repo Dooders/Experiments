@@ -10,8 +10,9 @@ import torch.optim as optim
 
 from action import *
 from actions.attack import AttackActionSpace, AttackModule, attack_action
+from actions.gather import GatherConfig, GatherModule, gather_action
 from actions.move import MoveModule, move_action
-from actions.share import ShareModule, share_action, DEFAULT_SHARE_CONFIG
+from actions.share import DEFAULT_SHARE_CONFIG, ShareModule, share_action
 from state import AgentState
 
 if TYPE_CHECKING:
@@ -132,14 +133,25 @@ class BaseAgent:
             initial_resources=self.resource_level,
         )
 
-        # Add move module
+        # Initialize modules with their specific configs
         self.move_module = MoveModule(self.config)
-
-        # Add attack module alongside move module
         self.attack_module = AttackModule(self.config)
-
-        # Add share module with ShareConfig instead of SimulationConfig
         self.share_module = ShareModule(config=DEFAULT_SHARE_CONFIG)
+
+        # Create a GatherConfig instance with DQN parameters from simulation config
+        gather_config = GatherConfig()
+        gather_config.learning_rate = self.config.learning_rate
+        gather_config.memory_size = self.config.memory_size
+        gather_config.gamma = self.config.gamma
+        gather_config.epsilon_start = self.config.epsilon_start
+        gather_config.epsilon_min = self.config.epsilon_min
+        gather_config.epsilon_decay = self.config.epsilon_decay
+        gather_config.dqn_hidden_size = self.config.dqn_hidden_size
+        gather_config.batch_size = self.config.batch_size
+        gather_config.tau = self.config.tau
+
+        # Initialize gather module with the configured GatherConfig
+        self.gather_module = GatherModule(config=gather_config)
 
         # Add health tracking for combat
         self.max_health = self.config.max_health
