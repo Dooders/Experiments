@@ -3,8 +3,8 @@ width: 100
 height: 100
 
 # Agent settings
-system_agents: 10
-independent_agents: 0
+system_agents: 20
+independent_agents: 10
 initial_resource_level: 5
 max_population: 300
 starvation_threshold: 0
@@ -84,6 +84,25 @@ attack_mult_desperate: 1.4
 attack_mult_stable: 0.6
 attack_starvation_threshold: 0.5
 
+# Gathering Parameters
+gather_success_reward: 0.5
+gather_failure_penalty: -0.1
+gather_base_cost: -0.05
+gather_target_update_freq: 100
+gather_memory_size: 10000
+gather_learning_rate: 0.001
+gather_gamma: 0.99
+gather_epsilon_start: 1.0
+gather_epsilon_min: 0.01
+gather_epsilon_decay: 0.995
+gather_dqn_hidden_size: 64
+gather_batch_size: 32
+gather_tau: 0.005
+gather_distance_penalty_factor: 0.1
+gather_resource_threshold: 0.2
+gather_competition_penalty: -0.2
+gather_efficiency_bonus: 0.3
+
 # Visualization settings
 visualization:
   canvas_size: [400, 400]
@@ -113,4 +132,29 @@ visualization:
     system_agents: "#50c878"
     independent_agents: "#e74c3c"
     total_resources: "#f39c12"
-    average_agent_resources: "#9b59b6" 
+    average_agent_resources: "#9b59b6"
+
+# Sharing Parameters
+share_range: 30.0
+share_target_update_freq: 100
+share_memory_size: 10000
+share_learning_rate: 0.001
+share_gamma: 0.99
+share_epsilon_start: 1.0
+share_epsilon_min: 0.01
+share_epsilon_decay: 0.995
+share_dqn_hidden_size: 64
+share_batch_size: 32
+share_tau: 0.005
+share_success_reward: 0.5
+share_failure_penalty: -0.1
+share_base_cost: -0.05
+min_share_amount: 1
+max_share_amount: 5
+share_threshold: 0.3
+share_cooperation_bonus: 0.2
+share_altruism_factor: 1.2
+cooperation_memory: 100  # Number of past interactions to remember
+cooperation_score_threshold: 0.5  # Threshold for considering an agent cooperative
+
+# ... rest of existing configuration ... 

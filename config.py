@@ -154,6 +154,53 @@ class SimulationConfig:
     attack_mult_desperate = 1.4  # Multiplier when desperate for resources
     attack_mult_stable = 0.6  # Multiplier when resource stable
 
+    # Add to the main configuration section, before visualization settings
+    max_wait_steps: int = 10  # Maximum steps to wait between gathering attempts
+
+    # Gathering Module Parameters
+    gather_target_update_freq: int = 100
+    gather_memory_size: int = 10000
+    gather_learning_rate: float = 0.001
+    gather_gamma: float = 0.99
+    gather_epsilon_start: float = 1.0
+    gather_epsilon_min: float = 0.01
+    gather_epsilon_decay: float = 0.995
+    gather_dqn_hidden_size: int = 64
+    gather_batch_size: int = 32
+    gather_tau: float = 0.005
+    gather_success_reward: float = 0.5
+    gather_failure_penalty: float = -0.1
+    gather_base_cost: float = -0.05
+    gather_distance_penalty_factor: float = 0.1
+    gather_resource_threshold: float = 0.2
+    gather_competition_penalty: float = -0.2
+    gather_efficiency_bonus: float = 0.3
+
+    # Sharing Module Parameters
+    share_range: float = 30.0
+    share_target_update_freq: int = 100
+    share_memory_size: int = 10000
+    share_learning_rate: float = 0.001
+    share_gamma: float = 0.99
+    share_epsilon_start: float = 1.0
+    share_epsilon_min: float = 0.01
+    share_epsilon_decay: float = 0.995
+    share_dqn_hidden_size: int = 64
+    share_batch_size: int = 32
+    share_tau: float = 0.005
+    share_success_reward: float = 0.5
+    share_failure_penalty: float = -0.1
+    share_base_cost: float = -0.05
+    min_share_amount: int = 1
+    max_share_amount: int = 5
+    share_threshold: float = 0.3
+    share_cooperation_bonus: float = 0.2
+    share_altruism_factor: float = 1.2
+    cooperation_memory: int = 100  # Number of past interactions to remember
+    cooperation_score_threshold: float = (
+        0.5  # Threshold for considering an agent cooperative
+    )
+
     @classmethod
     def from_yaml(cls, file_path: str) -> "SimulationConfig":
         """Load configuration from a YAML file."""
