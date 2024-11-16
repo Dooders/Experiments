@@ -1,15 +1,19 @@
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
+
 import numpy as np
 
-from action import Action, gather_action, share_action
-from actions.move import move_action
+from action import Action
 from actions.attack import attack_action
+from actions.gather import gather_action
+from actions.move import move_action
+from actions.share import share_action
 
 from .base_agent import BaseAgent
 
 
 class SystemAgent(BaseAgent):
     """System-oriented agent implementation focused on cooperation."""
+
     def __init__(self, agent_id, position, resource_level, environment):
         super().__init__(agent_id, position, resource_level, environment)
 
@@ -25,3 +29,14 @@ class SystemAgent(BaseAgent):
         total_weight = sum(action.weight for action in self.actions)
         for action in self.actions:
             action.weight /= total_weight
+
+        # Configure gather module for more sustainable resource collection
+        self.gather_module.config.gather_efficiency_multiplier = (
+            0.4  # Lower efficiency reward
+        )
+        self.gather_module.config.gather_cost_multiplier = (
+            0.4  # Higher movement penalty
+        )
+        self.gather_module.config.min_resource_threshold = (
+            0.2  # Higher threshold for gathering
+        )

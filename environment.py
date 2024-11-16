@@ -1,13 +1,13 @@
 import os
 import random
-from typing import List, Optional
+from typing import List
 
 import numpy as np
 
 from agents import IndependentAgent, SystemAgent
 from database import SimulationDatabase
-from state import EnvironmentState
 from resources import Resource
+from state import EnvironmentState
 
 
 class Environment:
@@ -138,3 +138,20 @@ class Environment:
         """
         x, y = position
         return (0 <= x <= self.width) and (0 <= y <= self.height)
+
+    def _initialize_resources(self):
+        """Initialize resources in the environment."""
+        for i in range(self.config.initial_resources):
+            # Random position
+            x = random.uniform(0, self.width)
+            y = random.uniform(0, self.height)
+
+            # Create resource with regeneration parameters
+            resource = Resource(
+                resource_id=i,
+                position=(x, y),
+                amount=self.config.max_resource_amount,
+                max_amount=self.config.max_resource_amount,
+                regeneration_rate=self.config.resource_regen_rate,
+            )
+            self.resources.append(resource)
