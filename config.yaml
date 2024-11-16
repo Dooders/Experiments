@@ -29,9 +29,9 @@ territory_range: 30
 
 # Agent type ratios (must sum to 1.0)
 agent_type_ratios:
-  SystemAgent: 0.33333333
-  IndependentAgent: 0.33333333
-  ControlAgent: 0.33333334
+  SystemAgent: 1.0
+  IndependentAgent: 0.0
+  ControlAgent: 0.0
 
 # General Learning parameters
 learning_rate: 0.001

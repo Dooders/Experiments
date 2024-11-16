@@ -10,6 +10,7 @@ from actions.gather import GatherModule, gather_action
 from actions.move import MoveModule, move_action
 from actions.select import SelectConfig, SelectModule, create_selection_state
 from actions.share import ShareModule, share_action
+from genome import Genome
 from state import AgentState
 
 if TYPE_CHECKING:
@@ -413,3 +414,32 @@ class BaseAgent:
             reward += self.config.attack_failure_penalty
 
         return reward
+
+    def to_genome(self) -> "Genome":
+        """Convert agent's current state and configuration into a genome representation.
+
+        Returns:
+            Genome: Genome containing all necessary information to recreate the agent
+        """
+        return Genome.from_agent(self)
+
+    @classmethod
+    def from_genome(
+        cls,
+        genome: "Genome",
+        agent_id: int,
+        position: tuple[int, int],
+        environment: "Environment",
+    ) -> "BaseAgent":
+        """Create a new agent from a genome representation.
+
+        Args:
+            genome (Genome): Genome containing agent configuration
+            agent_id (int): ID for the new agent
+            position (tuple[int, int]): Starting position
+            environment (Environment): Environment instance
+
+        Returns:
+            BaseAgent: New agent instance with genome's properties
+        """
+        return Genome.to_agent(genome, agent_id, position, environment)
