@@ -10,6 +10,7 @@ from actions.gather import GatherModule, gather_action
 from actions.move import MoveModule, move_action
 from actions.select import SelectConfig, SelectModule, create_selection_state
 from actions.share import ShareModule, share_action
+from genome import Genome
 from state import AgentState
 
 if TYPE_CHECKING:
@@ -414,32 +415,18 @@ class BaseAgent:
 
         return reward
 
-    def to_genome(self) -> dict:
+    def to_genome(self) -> "Genome":
         """Convert agent's current state and configuration into a genome representation.
 
         Returns:
-            dict: Genome containing all necessary information to recreate the agent
+            Genome: Genome containing all necessary information to recreate the agent
         """
-        # Get all attributes that end with '_module'
-        module_states = {
-            name: getattr(self, name).get_state_dict()
-            for name in dir(self)
-            if name.endswith('_module') and hasattr(getattr(self, name), 'get_state_dict')
-        }
-
-        genome = {
-            'action_set': [(action.name, action.weight) for action in self.actions],
-            'module_states': module_states,
-            'agent_type': self.__class__.__name__,
-            'resource_level': self.resource_level,
-            'current_health': self.current_health,
-        }
-        return genome
+        return Genome.from_agent(self)
 
     @classmethod
     def from_genome(
         cls,
-        genome: dict,
+        genome: "Genome",
         agent_id: int,
         position: tuple[int, int],
         environment: "Environment",
@@ -447,7 +434,7 @@ class BaseAgent:
         """Create a new agent from a genome representation.
 
         Args:
-            genome (dict): Genome containing agent configuration
+            genome (Genome): Genome containing agent configuration
             agent_id (int): ID for the new agent
             position (tuple[int, int]): Starting position
             environment (Environment): Environment instance
@@ -455,29 +442,4 @@ class BaseAgent:
         Returns:
             BaseAgent: New agent instance with genome's properties
         """
-        # Reconstruct action set
-        action_set = [
-            Action(name, weight, globals()[f"{name}_action"])
-            for name, weight in genome['action_set']
-        ]
-
-        # Create new agent
-        agent = cls(
-            agent_id=agent_id,
-            position=position,
-            resource_level=genome['resource_level'],
-            environment=environment,
-            action_set=action_set,
-        )
-
-        # Load all module states
-        for module_name, state_dict in genome['module_states'].items():
-            if hasattr(agent, module_name):
-                module = getattr(agent, module_name)
-                if hasattr(module, 'load_state_dict'):
-                    module.load_state_dict(state_dict)
-        
-        # Set health
-        agent.current_health = genome['current_health']
-
-        return agent
+        return Genome.to_agent(genome, agent_id, position, environment)
