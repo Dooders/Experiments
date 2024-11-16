@@ -1,6 +1,6 @@
 import json
-from typing import TYPE_CHECKING
 import random
+from typing import TYPE_CHECKING, Union
 
 from action import Action
 
@@ -17,37 +17,12 @@ class Genome:
     serializable genome representation, as well as methods for genetic operations
     and persistence.
 
-    This enables:
-    - Saving and loading agent states
-    - Transferring agent configurations between environments
-    - Creating new agents based on existing configurations
-    - Supporting evolutionary algorithms through genome manipulation
-    - Breeding agents through crossover operations
-    - Creating mutated variants of existing agents
-
     A genome is represented as a dictionary containing:
     - action_set: List of (action_name, weight) tuples defining available actions
     - module_states: Dictionary of serialized states for each agent module
     - agent_type: String identifier of the agent class
     - resource_level: Current resource level value
     - current_health: Current health value
-
-    Example:
-        # Save an agent's genome
-        genome = Genome.from_agent(existing_agent)
-        Genome.save(genome, "agent_backup.json")
-
-        # Create a new agent from a genome
-        loaded_genome = Genome.load("agent_backup.json")
-        new_agent = Genome.to_agent(loaded_genome, agent_id=1, position=(0, 0), environment=env)
-
-        # Perform evolutionary operations
-        mutated_genome = Genome.mutate(genome, mutation_rate=0.1)
-        child1, child2 = Genome.crossover(genome1, genome2)
-        clone = Genome.clone(genome)
-
-    The class supports both basic agent serialization and advanced genetic operations
-    for implementing evolutionary algorithms and agent breeding mechanics.
     """
 
     @staticmethod
@@ -144,33 +119,42 @@ class Genome:
         return agent
 
     @staticmethod
-    def save(genome: dict, path: str) -> None:
-        """Save genome to a file in JSON format.
+    def save(genome: "Genome", path: str = None) -> None:
+        """Save genome to a file in JSON format or return JSON string.
 
         Args:
             genome (dict): Genome dictionary to serialize and save
-            path (str): File path where the genome should be saved.
-                       Will overwrite if file exists.
+            path (str, optional): File path where the genome should be saved.
+                       If None, returns JSON string. Defaults to None.
+
+        Returns:
+            str: JSON string representation if path is None
         """
+        if path is None:
+            return json.dumps(genome)
+
         with open(path, "w") as f:
             json.dump(genome, f)
 
     @staticmethod
-    def load(path: str) -> dict:
-        """Load genome from a JSON file.
+    def load(path: Union[str, "Genome"]) -> "Genome":
+        """Load genome from a JSON file or string.
 
         Args:
-            path (str): File path from which to load the genome.
-                       File must exist and contain valid JSON.
+            path (Union[str, "Genome"]): File path or JSON string from which to load the genome.
+                       File must exist and contain valid JSON if path is a filepath.
 
         Returns:
             dict: Loaded genome dictionary containing agent configuration
         """
+        if path is None:
+            return json.loads(path)
+
         with open(path, "r") as f:
             return json.load(f)
 
     @staticmethod
-    def mutate(genome: dict, mutation_rate: float = 0.1) -> dict:
+    def mutate(genome: "Genome", mutation_rate: float = 0.1) -> "Genome":
         """Mutate a genome by randomly adjusting action weights.
 
         This method creates a modified copy of the input genome with potentially
@@ -210,48 +194,51 @@ class Genome:
         return mutated
 
     @staticmethod
-    def crossover(genome1: dict, genome2: dict) -> tuple[dict, dict]:
-        """Create two child genomes by crossing over two parent genomes.
+    def crossover(
+        genome1: "Genome", genome2: "Genome", mutation_rate: float = 0.0
+    ) -> "Genome":
+        """Create a child genome by crossing over two parent genomes.
 
         This method performs uniform crossover on the action weights of two parent
-        genomes. For each action, there's a 50% chance that the children will swap
-        their inherited weights. Other genome properties are copied from the respective
-        parents. Weights are renormalized after crossover.
+        genomes. For each action, there's a 50% chance that the child will inherit
+        the weight from either parent. Optionally applies mutation after crossover.
+        Other genome properties are copied from the first parent.
 
         Args:
             genome1 (dict): First parent genome. Must contain 'action_set' key with
                            list of (action_name, weight) tuples.
             genome2 (dict): Second parent genome. Must contain compatible action_set.
+            mutation_rate (float, optional): Probability of mutating each weight after
+                                           crossover. Defaults to 0.0 (no mutation).
 
         Returns:
-            tuple[dict, dict]: Two new child genomes with mixed properties from both
-                              parents. Original genomes remain unchanged.
-
-        Example:
-            parent1 = Genome.from_agent(agent1)
-            parent2 = Genome.from_agent(agent2)
-            child1, child2 = Genome.crossover(parent1, parent2)
+            dict: New child genome with mixed properties from both parents.
+                  Original genomes remain unchanged.
         """
-        child1 = genome1.copy()
-        child2 = genome2.copy()
+        child = genome1.copy()
 
         # Crossover action weights
         actions1 = dict(genome1["action_set"])
         actions2 = dict(genome2["action_set"])
+        child_actions = {}
 
         for action in actions1.keys():
-            if random.random() < 0.5:
-                # Swap weights between children
-                actions1[action], actions2[action] = actions2[action], actions1[action]
+            # 50% chance to inherit from either parent
+            child_actions[action] = (
+                actions2[action] if random.random() < 0.5 else actions1[action]
+            )
 
-        # Normalize weights for both children
-        child1["action_set"] = [(n, w) for n, w in actions1.items()]
-        child2["action_set"] = [(n, w) for n, w in actions2.items()]
+        # Normalize weights
+        child["action_set"] = [(n, w) for n, w in child_actions.items()]
 
-        return child1, child2
+        # Apply mutation if requested
+        if mutation_rate > 0:
+            child = Genome.mutate(child, mutation_rate)
+
+        return child
 
     @staticmethod
-    def clone(genome: dict) -> dict:
+    def clone(genome: "Genome") -> "Genome":
         """Create an exact deep copy of a genome.
 
         This method creates a completely independent copy of the input genome,
@@ -270,4 +257,4 @@ class Genome:
             copy = Genome.clone(original)
             # Modifying copy won't affect original
         """
-        return json.loads(json.dumps(genome))
+        return Genome.load(Genome.save(genome))
