@@ -1,5 +1,4 @@
 import logging
-import random
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -9,6 +8,7 @@ from action import *
 from actions.attack import AttackActionSpace, AttackModule, attack_action
 from actions.gather import GatherModule, gather_action
 from actions.move import MoveModule, move_action
+from actions.select import SelectConfig, SelectModule, create_selection_state
 from actions.share import ShareModule, share_action
 from state import AgentState
 
@@ -84,6 +84,11 @@ class BaseAgent:
         self.current_health = self.max_health
         self.is_defending = False
 
+        # Initialize selection module
+        self.select_module = SelectModule(
+            num_actions=len(self.actions), config=SelectConfig(), device=self.device
+        )
+
     def get_state(self) -> AgentState:
         """Get the current normalized state of the agent.
 
@@ -136,128 +141,25 @@ class BaseAgent:
         )
 
     def select_action(self):
-        """Select an action using a combination of weighted probabilities and state awareness.
+        """Select an action using the SelectModule's intelligent decision making.
 
-        Uses both predefined weights and current state to make intelligent decisions:
-        1. Gets base probabilities from action weights
-        2. Adjusts probabilities based on current state
-        3. Applies epsilon-greedy exploration
+        Uses both predefined weights and learned preferences to choose optimal actions:
+        1. Gets current state representation
+        2. Passes state through SelectModule for decision
+        3. Returns selected action
 
         Returns:
             Action: Selected action object to execute
         """
-        # Get base probabilities from weights
-        actions = [action for action in self.actions]
-        action_weights = [action.weight for action in actions]
+        # Get current state for selection
+        state = create_selection_state(self)
 
-        # Normalize base weights
-        total_weight = sum(action_weights)
-        base_probs = [weight / total_weight for weight in action_weights]
+        # Select action using selection module
+        selected_action = self.select_module.select_action(
+            agent=self, actions=self.actions, state=state
+        )
 
-        # State-based adjustments
-        adjusted_probs = self._adjust_probabilities(base_probs)
-
-        # Epsilon-greedy exploration
-        if random.random() < self.config.epsilon_start:
-            # Random exploration
-            return random.choice(actions)
-        else:
-            # Weighted selection using adjusted probabilities
-            return random.choices(actions, weights=adjusted_probs, k=1)[0]
-
-    def _adjust_probabilities(self, base_probs):
-        """Adjust action probabilities based on agent's current state.
-
-        Uses configurable multipliers to adjust probabilities based on:
-        - Resource levels
-        - Nearby resources
-        - Nearby agents
-        - Current health/starvation
-
-        Args:
-            base_probs (list[float]): Original action probabilities
-
-        Returns:
-            list[float]: Adjusted probability distribution
-        """
-        adjusted_probs = base_probs.copy()
-
-        # Get relevant state information
-        state = self.get_state()
-        resource_level = self.resource_level
-        starvation_risk = self.starvation_threshold / self.max_starvation
-
-        # Find nearby entities
-        nearby_resources = [
-            r
-            for r in self.environment.resources
-            if not r.is_depleted()
-            and np.sqrt(((np.array(r.position) - np.array(self.position)) ** 2).sum())
-            < self.config.gathering_range
-        ]
-
-        nearby_agents = [
-            a
-            for a in self.environment.agents
-            if a != self
-            and a.alive
-            and np.sqrt(((np.array(a.position) - np.array(self.position)) ** 2).sum())
-            < self.config.social_range
-        ]
-
-        # Adjust move probability
-        move_idx = next(i for i, a in enumerate(self.actions) if a.name == "move")
-        if not nearby_resources:
-            # Increase move probability if no resources nearby
-            adjusted_probs[move_idx] *= self.config.move_mult_no_resources
-
-        # Adjust gather probability
-        gather_idx = next(i for i, a in enumerate(self.actions) if a.name == "gather")
-        if nearby_resources and resource_level < self.config.min_reproduction_resources:
-            # Increase gather probability if resources needed
-            adjusted_probs[gather_idx] *= self.config.gather_mult_low_resources
-
-        # Adjust share probability
-        share_idx = next(i for i, a in enumerate(self.actions) if a.name == "share")
-        if resource_level > self.config.min_reproduction_resources and nearby_agents:
-            # Increase share probability if wealthy and agents nearby
-            adjusted_probs[share_idx] *= self.config.share_mult_wealthy
-        else:
-            # Decrease share probability if resources needed
-            adjusted_probs[share_idx] *= self.config.share_mult_poor
-
-        # Adjust attack probability
-        attack_idx = next(i for i, a in enumerate(self.actions) if a.name == "attack")
-        if (
-            starvation_risk > self.config.attack_starvation_threshold
-            and nearby_agents
-            and resource_level > 2
-        ):
-            # Increase attack probability if desperate
-            adjusted_probs[attack_idx] *= self.config.attack_mult_desperate
-        else:
-            # Decrease attack probability if stable
-            adjusted_probs[attack_idx] *= self.config.attack_mult_stable
-
-        # Get health ratio for combat decisions
-        health_ratio = self.current_health / self.max_health
-
-        # Adjust attack probability based on health
-        if health_ratio < self.config.attack_defense_threshold:
-            # Reduce attack probability when health is low
-            adjusted_probs[attack_idx] *= 0.5
-        elif (
-            health_ratio > 0.8
-            and self.resource_level > self.config.min_reproduction_resources
-        ):
-            # Increase attack probability when healthy and wealthy
-            adjusted_probs[attack_idx] *= 1.5
-
-        # Renormalize probabilities
-        total = sum(adjusted_probs)
-        adjusted_probs = [p / total for p in adjusted_probs]
-
-        return adjusted_probs
+        return selected_action
 
     def act(self):
         """Execute an action based on current state."""
