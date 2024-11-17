@@ -8,14 +8,61 @@ logger = logging.getLogger(__name__)
 
 
 class SimulationDatabase:
+    """A database manager for storing and retrieving simulation state data.
+
+    This class provides an interface to an SQLite database for persisting simulation
+    data, including agent states, resource states, and aggregate metrics over time.
+    It handles the creation and management of the database schema, as well as
+    providing methods for logging and retrieving simulation data.
+
+    The database schema consists of four main tables:
+    - Agents: Stores agent metadata and lifecycle information
+    - AgentStates: Tracks agent positions and resources over time
+    - ResourceStates: Tracks resource positions and amounts over time
+    - SimulationSteps: Stores aggregate metrics for each simulation step
+
+    Attributes
+    ----------
+    conn : sqlite3.Connection
+        Connection to the SQLite database
+    cursor : sqlite3.Cursor
+        Cursor for executing SQL commands
+
+    Example
+    -------
+    >>> db = SimulationDatabase("simulation.db")
+    >>> db.log_agent(1, 0, "system", (0.5, 0.5), 100.0)
+    >>> db.log_step(0, agent_states, resource_states, metrics)
+    >>> data = db.get_simulation_data(0)
+    >>> db.close()
+    """
+
     def __init__(self, db_path: str):
-        """Initialize database connection and create tables if they don't exist."""
+        """Initialize a new SimulationDatabase instance.
+
+        Creates a connection to an SQLite database and initializes the required tables
+        if they don't exist. The database will store agent states, resource states,
+        and simulation metrics over time.
+
+        Parameters
+        ----------
+        db_path : str
+            Path to the SQLite database file. If the file doesn't exist,
+            it will be created.
+        """
         self.conn = sqlite3.connect(db_path)
         self.cursor = self.conn.cursor()
         self._create_tables()
 
     def _create_tables(self):
-        """Create database tables if they don't exist."""
+        """Create the required database schema if tables don't exist.
+
+        Creates four main tables:
+        - Agents: Stores agent metadata and lifecycle information
+        - AgentStates: Tracks agent positions and resources over time
+        - ResourceStates: Tracks resource positions and amounts over time
+        - SimulationSteps: Stores aggregate metrics for each simulation step
+        """
         self.cursor.executescript(
             """
             CREATE TABLE IF NOT EXISTS Agents (
@@ -65,7 +112,25 @@ class SimulationDatabase:
         position: Tuple[float, float],
         initial_resources: float,
     ):
-        """Log new agent creation."""
+        """Log the creation of a new agent in the simulation.
+
+        Parameters
+        ----------
+        agent_id : int
+            Unique identifier for the agent
+        birth_time : int
+            Simulation step when the agent was created
+        agent_type : str
+            Type of agent (e.g., 'system', 'independent', 'control')
+        position : Tuple[float, float]
+            Initial (x, y) coordinates of the agent
+        initial_resources : float
+            Starting resource level of the agent
+
+        Example
+        -------
+        >>> db.log_agent(1, 0, 'system', (0.5, 0.5), 100.0)
+        """
         self.cursor.execute(
             """
             INSERT INTO Agents (
@@ -77,7 +142,19 @@ class SimulationDatabase:
         self.conn.commit()
 
     def update_agent_death(self, agent_id: int, death_time: int):
-        """Record agent death time."""
+        """Record the death time of an agent in the simulation.
+
+        Parameters
+        ----------
+        agent_id : int
+            Unique identifier of the agent that died
+        death_time : int
+            Simulation step when the agent died
+
+        Example
+        -------
+        >>> db.update_agent_death(agent_id=1, death_time=150)
+        """
         self.cursor.execute(
             """
             UPDATE Agents 
@@ -95,7 +172,32 @@ class SimulationDatabase:
         resource_states: List[Tuple],
         metrics: Dict,
     ):
-        """Log simulation step data."""
+        """Log comprehensive simulation state data for a single time step.
+
+        Parameters
+        ----------
+        step_number : int
+            Current simulation step number
+        agent_states : List[Tuple]
+            List of agent state tuples, each containing:
+            (agent_id, position_x, position_y, resource_level)
+        resource_states : List[Tuple]
+            List of resource state tuples, each containing:
+            (resource_id, amount, position_x, position_y)
+        metrics : Dict
+            Dictionary containing simulation metrics:
+            - total_agents: int
+            - system_agents: int
+            - independent_agents: int
+            - control_agents: int
+            - total_resources: float
+            - average_agent_resources: float
+
+        Notes
+        -----
+        This method performs a batch insert of all simulation state data
+        for efficiency. It commits the transaction after all data is written.
+        """
         # Log agent states
         self.cursor.executemany(
             """
@@ -137,7 +239,27 @@ class SimulationDatabase:
         self.conn.commit()
 
     def get_simulation_data(self, step_number: int) -> Dict:
-        """Get all data for a specific simulation step."""
+        """Retrieve all simulation data for a specific time step.
+
+        Parameters
+        ----------
+        step_number : int
+            The simulation step to retrieve data for
+
+        Returns
+        -------
+        Dict
+            Dictionary containing:
+            - agent_states: List of tuples (agent_id, type, x, y, resources)
+            - resource_states: List of tuples (resource_id, amount, x, y)
+            - metrics: Dict of aggregate metrics for the step
+
+        Example
+        -------
+        >>> data = db.get_simulation_data(100)
+        >>> print(f"Number of agents: {len(data['agent_states'])}")
+        >>> print(f"Total resources: {data['metrics']['total_resources']}")
+        """
         # Get agent states
         self.cursor.execute(
             """
@@ -189,7 +311,26 @@ class SimulationDatabase:
         }
 
     def get_historical_data(self) -> Dict:
-        """Get historical data for plotting."""
+        """Retrieve historical metrics for the entire simulation.
+
+        Returns
+        -------
+        Dict
+            Dictionary containing:
+            - steps: List of step numbers
+            - metrics: Dict of metric lists including:
+                - total_agents
+                - system_agents
+                - independent_agents
+                - control_agents
+                - total_resources
+                - average_agent_resources
+
+        Notes
+        -----
+        This method is useful for generating time series plots of simulation metrics.
+        The returned lists are ordered by step number.
+        """
         self.cursor.execute(
             """
             SELECT step_number, total_agents, system_agents, independent_agents,
@@ -213,7 +354,28 @@ class SimulationDatabase:
         }
 
     def export_data(self, filepath: str):
-        """Export simulation data to CSV."""
+        """Export simulation metrics data to a CSV file.
+
+        Parameters
+        ----------
+        filepath : str
+            Path where the CSV file should be saved
+
+        Notes
+        -----
+        Exports the following columns:
+        - step_number
+        - total_agents
+        - system_agents
+        - independent_agents
+        - control_agents
+        - total_resources
+        - average_agent_resources
+
+        Example
+        -------
+        >>> db.export_data("simulation_results.csv")
+        """
         # Get all simulation data
         df = pd.read_sql_query(
             """
@@ -228,7 +390,23 @@ class SimulationDatabase:
         df.to_csv(filepath, index=False)
 
     def flush_all_buffers(self):
-        """Flush all database buffers and ensure data is written to disk."""
+        """Flush all database buffers and ensure data is written to disk.
+
+        This method ensures that all pending changes are written to the database file
+        by:
+        1. Committing any pending transactions
+        2. Forcing a write-ahead log checkpoint
+
+        Raises
+        ------
+        Exception
+            If there is an error during the flush operation
+
+        Notes
+        -----
+        This is particularly important to call before closing the database
+        or when ensuring data persistence is critical.
+        """
         try:
             self.conn.commit()  # Commit any pending transactions
             self.cursor.execute(
@@ -239,7 +417,22 @@ class SimulationDatabase:
             raise
 
     def close(self):
-        """Close database connection."""
+        """Close the database connection safely.
+
+        Performs the following cleanup operations:
+        1. Flushes all database buffers
+        2. Closes the database connection
+
+        Raises
+        ------
+        Exception
+            If there is an error during the closing operation
+
+        Notes
+        -----
+        Always call this method when finished with the database to prevent
+        resource leaks and ensure data integrity.
+        """
         try:
             self.flush_all_buffers()  # Ensure all data is written before closing
             self.conn.close()
@@ -250,7 +443,7 @@ class SimulationDatabase:
     def log_resource(
         self, resource_id: int, initial_amount: float, position: Tuple[float, float]
     ):
-        """Log new resource creation.
+        """Log the creation of a new resource in the simulation.
 
         Parameters
         ----------
@@ -259,7 +452,16 @@ class SimulationDatabase:
         initial_amount : float
             Starting amount of the resource
         position : Tuple[float, float]
-            (x, y) coordinates of the resource
+            (x, y) coordinates of the resource location
+
+        Notes
+        -----
+        Resources are logged at step_number=0 to represent their initial state
+        in the simulation.
+
+        Example
+        -------
+        >>> db.log_resource(resource_id=1, initial_amount=1000.0, position=(0.3, 0.7))
         """
         self.cursor.execute(
             """
@@ -278,18 +480,52 @@ class SimulationDatabase:
         resources: List,
         metrics: Dict,
     ):
-        """Log simulation step data.
+        """Log complete simulation state for a single time step.
+
+        This is a high-level method that handles the conversion of agent and
+        resource objects into their database representation before logging.
 
         Parameters
         ----------
         step_number : int
             Current simulation step number
         agents : List
-            List of agents in the simulation
+            List of agent objects, each must have attributes:
+            - agent_id: int
+            - position: Tuple[float, float]
+            - resource_level: float
+            - alive: bool
         resources : List
-            List of resources in the simulation
+            List of resource objects, each must have attributes:
+            - resource_id: int
+            - amount: float
+            - position: Tuple[float, float]
         metrics : Dict
-            Dictionary of metrics to log
+            Dictionary containing simulation metrics:
+            - total_agents: int
+            - system_agents: int
+            - independent_agents: int
+            - control_agents: int
+            - total_resources: float
+            - average_agent_resources: float
+
+        Notes
+        -----
+        This method automatically filters out dead agents and converts
+        complex objects into their database representation before logging.
+
+        Example
+        -------
+        >>> metrics = {
+        ...     "total_agents": 10,
+        ...     "system_agents": 5,
+        ...     "independent_agents": 3,
+        ...     "control_agents": 2,
+        ...     "total_resources": 1000.0,
+        ...     "average_agent_resources": 100.0
+        ... }
+        >>> db.log_simulation_step(step_number=1, agents=agent_list,
+        ...                       resources=resource_list, metrics=metrics)
         """
         # Convert agents to state tuples
         agent_states = [
