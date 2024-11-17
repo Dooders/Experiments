@@ -188,9 +188,34 @@ class BaseAgent:
         action = self.select_action()
         action.execute(self)
 
+        # Log agent action
+        self.environment.db.log_agent_action(
+            step_number=self.environment.time,
+            agent_id=self.agent_id,
+            action_type=action.name,
+            action_target_id=None,  # Update with actual target ID if applicable
+            position_before=self.position,
+            position_after=self.position,  # Update with actual new position if applicable
+            resources_before=initial_resources,
+            resources_after=self.resource_level,
+            reward=0.0,  # Update with actual reward if applicable
+        )
+
         # Store state for learning
         self.last_state = current_state
         self.last_action = action
+
+        # Log learning experience
+        self.environment.db.log_learning_experience(
+            step_number=self.environment.time,
+            agent_id=self.agent_id,
+            module_type="act",
+            state_before=str(current_state),
+            action_taken=action.name,
+            reward=0.0,  # Update with actual reward if applicable
+            state_after=str(self.get_state()),
+            loss=0.0,  # Update with actual loss if applicable
+        )
 
     def reproduce(self):
         if len(self.environment.agents) >= self.config.max_population:

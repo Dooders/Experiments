@@ -76,6 +76,128 @@ class SimulationAnalyzer:
 
         return pd.DataFrame(results, columns=["step", "competitive_interactions"])
 
+    def analyze_agent_actions(self) -> pd.DataFrame:
+        """Analyze individual agent actions and their outcomes."""
+        query = """
+            SELECT step_number,
+                   agent_id,
+                   action_type,
+                   action_target_id,
+                   position_before,
+                   position_after,
+                   resources_before,
+                   resources_after,
+                   reward
+            FROM AgentActions
+            ORDER BY step_number, agent_id
+        """
+        self.db.cursor.execute(query)
+        results = self.db.cursor.fetchall()
+
+        return pd.DataFrame(
+            results,
+            columns=[
+                "step_number",
+                "agent_id",
+                "action_type",
+                "action_target_id",
+                "position_before",
+                "position_after",
+                "resources_before",
+                "resources_after",
+                "reward",
+            ],
+        )
+
+    def analyze_combat_events(self) -> pd.DataFrame:
+        """Analyze combat interactions between agents."""
+        query = """
+            SELECT step_number,
+                   attacker_id,
+                   defender_id,
+                   damage_dealt,
+                   defender_health_before,
+                   defender_health_after,
+                   defender_died
+            FROM CombatEvents
+            ORDER BY step_number, attacker_id
+        """
+        self.db.cursor.execute(query)
+        results = self.db.cursor.fetchall()
+
+        return pd.DataFrame(
+            results,
+            columns=[
+                "step_number",
+                "attacker_id",
+                "defender_id",
+                "damage_dealt",
+                "defender_health_before",
+                "defender_health_after",
+                "defender_died",
+            ],
+        )
+
+    def analyze_sharing_events(self) -> pd.DataFrame:
+        """Analyze resource sharing events between agents."""
+        query = """
+            SELECT step_number,
+                   giver_id,
+                   receiver_id,
+                   amount_shared,
+                   giver_resources_before,
+                   receiver_resources_before,
+                   cooperation_score
+            FROM SharingEvents
+            ORDER BY step_number, giver_id
+        """
+        self.db.cursor.execute(query)
+        results = self.db.cursor.fetchall()
+
+        return pd.DataFrame(
+            results,
+            columns=[
+                "step_number",
+                "giver_id",
+                "receiver_id",
+                "amount_shared",
+                "giver_resources_before",
+                "receiver_resources_before",
+                "cooperation_score",
+            ],
+        )
+
+    def analyze_learning_experiences(self) -> pd.DataFrame:
+        """Analyze learning experiences and rewards."""
+        query = """
+            SELECT step_number,
+                   agent_id,
+                   module_type,
+                   state_before,
+                   action_taken,
+                   reward,
+                   state_after,
+                   loss
+            FROM LearningExperiences
+            ORDER BY step_number, agent_id
+        """
+        self.db.cursor.execute(query)
+        results = self.db.cursor.fetchall()
+
+        return pd.DataFrame(
+            results,
+            columns=[
+                "step_number",
+                "agent_id",
+                "module_type",
+                "state_before",
+                "action_taken",
+                "reward",
+                "state_after",
+                "loss",
+            ],
+        )
+
     def generate_report(self, output_file: str = "simulation_report.html"):
         """Generate an HTML report with analysis results."""
         survival_rates = self.calculate_survival_rates()

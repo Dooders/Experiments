@@ -92,7 +92,7 @@ class AttackModule(BaseDQNModule):
         if torch.rand(1).item() > self.epsilon:
             with torch.no_grad():
                 q_values = self.q_network(state)
-                if health_ratio < self.config.attack_defense_threshold:
+                if (health_ratio < self.config.attack_defense_threshold):
                     q_values[
                         AttackActionSpace.DEFEND
                     ] *= self.config.attack_defense_boost
@@ -185,6 +185,17 @@ def attack_action(agent: "BaseAgent") -> None:
         reward,
         next_state.to_tensor(agent.attack_module.device),
         not target.alive,
+    )
+
+    # Log combat event
+    agent.environment.db.log_combat_event(
+        step_number=agent.environment.time,
+        attacker_id=agent.agent_id,
+        defender_id=target.agent_id,
+        damage_dealt=damage_dealt,
+        defender_health_before=target.current_health + damage_dealt,
+        defender_health_after=target.current_health,
+        defender_died=not target.alive,
     )
 
     logger.info(

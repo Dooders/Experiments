@@ -53,6 +53,59 @@ class SimulationDatabase:
                 total_resources REAL,
                 average_agent_resources REAL
             );
+
+            CREATE TABLE IF NOT EXISTS AgentActions (
+                action_id INTEGER PRIMARY KEY,
+                step_number INTEGER,
+                agent_id INTEGER,
+                action_type TEXT,
+                action_target_id INTEGER,
+                position_before TEXT,
+                position_after TEXT,
+                resources_before REAL,
+                resources_after REAL,
+                reward REAL,
+                FOREIGN KEY(agent_id) REFERENCES Agents(agent_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS CombatEvents (
+                combat_id INTEGER PRIMARY KEY,
+                step_number INTEGER,
+                attacker_id INTEGER,
+                defender_id INTEGER,
+                damage_dealt REAL,
+                defender_health_before REAL,
+                defender_health_after REAL,
+                defender_died BOOLEAN,
+                FOREIGN KEY(attacker_id) REFERENCES Agents(agent_id),
+                FOREIGN KEY(defender_id) REFERENCES Agents(agent_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS SharingEvents (
+                share_id INTEGER PRIMARY KEY,
+                step_number INTEGER,
+                giver_id INTEGER,
+                receiver_id INTEGER,
+                amount_shared REAL,
+                giver_resources_before REAL,
+                receiver_resources_before REAL,
+                cooperation_score REAL,
+                FOREIGN KEY(giver_id) REFERENCES Agents(giver_id),
+                FOREIGN KEY(receiver_id) REFERENCES Agents(receiver_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS LearningExperiences (
+                experience_id INTEGER PRIMARY KEY,
+                step_number INTEGER,
+                agent_id INTEGER,
+                module_type TEXT,
+                state_before TEXT,
+                action_taken INTEGER,
+                reward REAL,
+                state_after TEXT,
+                loss REAL,
+                FOREIGN KEY(agent_id) REFERENCES Agents(agent_id)
+            );
         """
         )
         self.conn.commit()
@@ -311,3 +364,129 @@ class SimulationDatabase:
 
         # Use existing log_step method
         self.log_step(step_number, agent_states, resource_states, metrics)
+
+    def log_agent_action(
+        self,
+        step_number: int,
+        agent_id: int,
+        action_type: str,
+        action_target_id: int,
+        position_before: Tuple[float, float],
+        position_after: Tuple[float, float],
+        resources_before: float,
+        resources_after: float,
+        reward: float,
+    ):
+        """Log individual agent action."""
+        self.cursor.execute(
+            """
+            INSERT INTO AgentActions (
+                step_number, agent_id, action_type, action_target_id, position_before,
+                position_after, resources_before, resources_after, reward
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+            (
+                step_number,
+                agent_id,
+                action_type,
+                action_target_id,
+                str(position_before),
+                str(position_after),
+                resources_before,
+                resources_after,
+                reward,
+            ),
+        )
+        self.conn.commit()
+
+    def log_combat_event(
+        self,
+        step_number: int,
+        attacker_id: int,
+        defender_id: int,
+        damage_dealt: float,
+        defender_health_before: float,
+        defender_health_after: float,
+        defender_died: bool,
+    ):
+        """Log combat event."""
+        self.cursor.execute(
+            """
+            INSERT INTO CombatEvents (
+                step_number, attacker_id, defender_id, damage_dealt, defender_health_before,
+                defender_health_after, defender_died
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+            (
+                step_number,
+                attacker_id,
+                defender_id,
+                damage_dealt,
+                defender_health_before,
+                defender_health_after,
+                defender_died,
+            ),
+        )
+        self.conn.commit()
+
+    def log_sharing_event(
+        self,
+        step_number: int,
+        giver_id: int,
+        receiver_id: int,
+        amount_shared: float,
+        giver_resources_before: float,
+        receiver_resources_before: float,
+        cooperation_score: float,
+    ):
+        """Log resource sharing event."""
+        self.cursor.execute(
+            """
+            INSERT INTO SharingEvents (
+                step_number, giver_id, receiver_id, amount_shared, giver_resources_before,
+                receiver_resources_before, cooperation_score
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+            (
+                step_number,
+                giver_id,
+                receiver_id,
+                amount_shared,
+                giver_resources_before,
+                receiver_resources_before,
+                cooperation_score,
+            ),
+        )
+        self.conn.commit()
+
+    def log_learning_experience(
+        self,
+        step_number: int,
+        agent_id: int,
+        module_type: str,
+        state_before: str,
+        action_taken: int,
+        reward: float,
+        state_after: str,
+        loss: float,
+    ):
+        """Log learning experience."""
+        self.cursor.execute(
+            """
+            INSERT INTO LearningExperiences (
+                step_number, agent_id, module_type, state_before, action_taken, reward,
+                state_after, loss
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+            (
+                step_number,
+                agent_id,
+                module_type,
+                state_before,
+                action_taken,
+                reward,
+                state_after,
+                loss,
+            ),
+        )
+        self.conn.commit()

@@ -252,6 +252,17 @@ def share_action(agent: "BaseAgent") -> None:
             f"Action: {action}, Resources: {agent.resource_level}"
         )
 
+    # Log sharing event
+    agent.environment.db.log_sharing_event(
+        step_number=agent.environment.time,
+        giver_id=agent.agent_id,
+        receiver_id=target.agent_id if target else None,
+        amount_shared=share_amount,
+        giver_resources_before=agent.resource_level + share_amount,
+        receiver_resources_before=target.resource_level - share_amount if target else None,
+        cooperation_score=agent.share_module._get_cooperation_score(target.agent_id) if target else 0.0,
+    )
+
     # Store experience for learning
     next_state = _get_share_state(agent)
     agent.share_module.store_experience(
