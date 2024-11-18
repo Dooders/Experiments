@@ -201,7 +201,7 @@ def move_action(agent: "BaseAgent") -> None:
     initial_position = agent.position
     new_position = agent.move_module.get_movement(agent, state)
 
-    # Collect action instead of direct logging
+    # Collect action for batch processing
     agent.environment.collect_action(
         step_number=agent.environment.time,
         agent_id=agent.agent_id,

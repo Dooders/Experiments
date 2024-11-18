@@ -1,5 +1,8 @@
+import logging
 import os
 import random
+import threading
+import time
 from typing import Dict, List
 
 import numpy as np
@@ -8,6 +11,8 @@ from agents import ControlAgent, IndependentAgent, SystemAgent
 from database import SimulationDatabase
 from resources import Resource
 from state import EnvironmentState
+
+logger = logging.getLogger(__name__)
 
 
 class Environment:
@@ -20,24 +25,42 @@ class Environment:
         max_resource=None,
         config=None,
     ):
+        # Try to clean up any existing database connections first
+        try:
+            import sqlite3
+
+            conn = sqlite3.connect(db_path)
+            conn.close()
+        except Exception:
+            pass
+
         # Delete existing database file if it exists
         if os.path.exists(db_path):
-            os.remove(db_path)
+            try:
+                os.remove(db_path)
+            except OSError as e:
+                logger.warning(f"Failed to remove database {db_path}: {e}")
+                # Generate unique filename if can't delete
+                base, ext = os.path.splitext(db_path)
+                db_path = f"{base}_{int(time.time())}{ext}"
 
+        # Initialize basic attributes
         self.width = width
         self.height = height
-        self.agents: List["SystemAgent" | "IndependentAgent" | "ControlAgent"] = []
-        self.resources: List[Resource] = []
+        self.agents = []
+        self.resources = []
         self.time = 0
         self.db = SimulationDatabase(db_path)
         self.next_agent_id = 0
         self.next_resource_id = 0
         self.max_resource = max_resource
-        self.config = config  # Store configuration
+        self.config = config
+        self.initial_agent_count = 0
+        self.pending_actions = []  # Initialize pending_actions list
+
+        # Initialize environment
         self.initialize_resources(resource_distribution)
-        self.initial_agent_count = 0  # Add this to track initial agents
-        self._initialize_agents()  # Changed to use config values
-        self.pending_actions = []  # Add this line to store pending actions
+        self._initialize_agents()
 
     def get_next_resource_id(self):
         resource_id = self.next_resource_id
@@ -74,38 +97,40 @@ class Environment:
         """Update environment state with batch processing."""
         self.time += 1
 
-        # Process resource regeneration
-        regen_mask = (
-            np.random.random(len(self.resources)) < self.config.resource_regen_rate
-        )
-        for resource, should_regen in zip(self.resources, regen_mask):
-            if should_regen and (
-                self.max_resource is None or resource.amount < self.max_resource
-            ):
-                resource.amount = min(
-                    resource.amount + self.config.resource_regen_amount,
-                    self.max_resource or float("inf"),
-                )
+        # Process all database operations in a single transaction
+        def _process_updates():
+            # Process resource regeneration
+            regen_mask = (
+                np.random.random(len(self.resources)) < self.config.resource_regen_rate
+            )
+            for resource, should_regen in zip(self.resources, regen_mask):
+                if should_regen and (
+                    self.max_resource is None or resource.amount < self.max_resource
+                ):
+                    resource.amount = min(
+                        resource.amount + self.config.resource_regen_amount,
+                        self.max_resource or float("inf"),
+                    )
 
-        # Calculate metrics
-        metrics = self._calculate_metrics()
+            # Calculate metrics
+            metrics = self._calculate_metrics()
 
-        # Batch process all pending actions
-        if self.pending_actions:
-            self.db.batch_log_agent_actions(self.pending_actions)
-            self.pending_actions = []  # Clear pending actions
+            # Batch process all pending actions
+            if self.pending_actions:
+                self.db.batch_log_agent_actions(self.pending_actions)
+                self.pending_actions = []  # Clear pending actions
 
-        # Log simulation state
-        self.db.log_simulation_step(
-            step_number=self.time,
-            agents=self.agents,
-            resources=self.resources,
-            metrics=metrics,
-            environment=self,
-        )
+            # Log simulation state
+            self.db.log_simulation_step(
+                step_number=self.time,
+                agents=self.agents,
+                resources=self.resources,
+                metrics=metrics,
+                environment=self,
+            )
 
-        # Single commit for all database operations
-        self.db.conn.commit()
+        # Execute all updates in a single transaction
+        self.db._execute_in_transaction(_process_updates)
 
     def _calculate_metrics(self):
         """Calculate various metrics for the current simulation state."""
@@ -389,3 +414,76 @@ class Environment:
         """Clean up environment resources."""
         if hasattr(self, "db"):
             self.db.close()
+
+    def batch_add_agents(self, agents):
+        """Add multiple agents at once with efficient database logging."""
+        agent_data = [
+            {
+                "agent_id": agent.agent_id,
+                "birth_time": self.time,
+                "agent_type": agent.__class__.__name__,
+                "position": agent.position,
+                "initial_resources": agent.resource_level,
+                "max_health": agent.max_health,
+                "starvation_threshold": agent.starvation_threshold,
+                "genome_id": getattr(agent, "genome_id", None),
+                "parent_id": getattr(agent, "parent_id", None),
+                "generation": getattr(agent, "generation", 0),
+            }
+            for agent in agents
+        ]
+
+        def _add_agents():
+            # Add to environment
+            for agent in agents:
+                self.agents.append(agent)
+                if self.time == 0:
+                    self.initial_agent_count += 1
+
+            # Batch log to database
+            self.db.batch_log_agents(agent_data)
+
+        self.db._execute_in_transaction(_add_agents)
+
+    def cleanup(self):
+        """Clean up resources before shutdown."""
+        if hasattr(self, "db") and self.db is not None:
+            try:
+                # Get the current thread's connection
+                current_thread = threading.current_thread()
+
+                # Only cleanup if we're in the same thread that created the connection
+                if hasattr(self.db._thread_local, "conn"):
+                    # Flush any pending actions
+                    if self.pending_actions:
+                        self.db.batch_log_agent_actions(self.pending_actions)
+                        self.pending_actions = []
+
+                    # Flush any pending experiences from DQN modules
+                    for agent in self.agents:
+                        for module in [
+                            agent.move_module,
+                            agent.attack_module,
+                            agent.share_module,
+                            agent.gather_module,
+                            agent.reproduce_module,
+                        ]:
+                            if (
+                                hasattr(module, "pending_experiences")
+                                and module.pending_experiences
+                            ):
+                                self.db.batch_log_learning_experiences(
+                                    module.pending_experiences
+                                )
+                                module.pending_experiences = []
+
+                    # Close database connection
+                    self.db.close()
+
+                self.db = None
+            except Exception as e:
+                logger.error(f"Error during environment cleanup: {e}")
+
+    def __del__(self):
+        """Ensure cleanup on deletion."""
+        self.cleanup()

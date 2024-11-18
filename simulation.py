@@ -3,6 +3,7 @@ import os
 import random
 from datetime import datetime
 from typing import List, Optional, Tuple
+
 import yaml
 
 from agents import IndependentAgent, SystemAgent
@@ -75,7 +76,7 @@ def create_initial_agents(
             resource_level=10,  # Initial resource level
             environment=environment,
             parent_id=None,  # Explicitly set no parent for initial agents
-            generation=0  # First generation
+            generation=0,  # First generation
         )
         environment.add_agent(agent)
         positions.append(position)
@@ -92,7 +93,7 @@ def create_initial_agents(
             resource_level=10,  # Initial resource level
             environment=environment,
             parent_id=None,  # Explicitly set no parent for initial agents
-            generation=0  # First generation
+            generation=0,  # First generation
         )
         environment.add_agent(agent)
         positions.append(position)
@@ -101,8 +102,10 @@ def create_initial_agents(
 
 
 def run_simulation(
-    num_steps: int, config: SimulationConfig, db_path: Optional[str] = None,
-    save_config: bool = False
+    num_steps: int,
+    config: SimulationConfig,
+    db_path: Optional[str] = None,
+    save_config: bool = False,
 ) -> Environment:
     """
     Run the main simulation loop.
@@ -127,28 +130,29 @@ def run_simulation(
     if save_config:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         config_file = f"config_{timestamp}.yaml"
-        with open(config_file, 'w') as f:
+        with open(config_file, "w") as f:
             yaml.dump(config.to_dict(), f)
         logging.info(f"Configuration saved to {config_file}")
 
-    # Create environment
-    environment = Environment(
-        width=config.width,
-        height=config.height,
-        resource_distribution={
-            "amount": config.initial_resources,
-            "distribution": "random",
-        },
-        db_path=db_path or "simulations/simulation_results.db",
-        max_resource=config.max_resource_amount,
-        config=config,
-    )
-
-    # Create initial agents
-    create_initial_agents(environment, config.system_agents, config.independent_agents)
-
-    # Main simulation loop
     try:
+        # Create environment
+        environment = Environment(
+            width=config.width,
+            height=config.height,
+            resource_distribution={
+                "type": "random",
+                "amount": config.initial_resources,
+            },
+            db_path=db_path or "simulation_results.db",
+            config=config,
+        )
+
+        # Create initial agents
+        create_initial_agents(
+            environment, config.system_agents, config.independent_agents
+        )
+
+        # Main simulation loop
         start_time = datetime.now()
         for step in range(num_steps):
             logging.info(f"Starting step {step}/{num_steps}")
@@ -185,9 +189,12 @@ def run_simulation(
 
     except Exception as e:
         logging.error(f"Simulation failed: {str(e)}", exc_info=True)
-        if environment.db:
-            environment.db.close()
+        if "environment" in locals():
+            environment.cleanup()
         raise
+    finally:
+        if "environment" in locals():
+            environment.cleanup()
 
     elapsed_time = datetime.now() - start_time
     logging.info(f"Simulation completed in {elapsed_time.total_seconds():.2f} seconds")
@@ -202,11 +209,7 @@ def main():
     config = SimulationConfig.from_yaml("config.yaml")
 
     # Run simulation
-    run_simulation(
-        num_steps=1000,
-        config=config,
-        save_config=True
-    )
+    run_simulation(num_steps=1000, config=config, save_config=True)
 
 
 if __name__ == "__main__":
