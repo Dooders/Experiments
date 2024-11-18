@@ -744,3 +744,22 @@ class SimulationState(BaseState):
             normalized_resource_efficiency=resource_efficiency,
             normalized_system_performance=system_performance
         )
+
+    def get_agent_genealogy(self) -> Dict[str, Any]:
+        """Get genealogical information about the current agent population.
+        
+        Returns
+        -------
+        Dict[str, Any]
+            Dictionary containing:
+            - max_generation: Highest generation number reached
+            - generation_counts: Count of agents per generation
+            - lineage_lengths: Distribution of lineage lengths
+            - survival_rates: Survival rates by generation
+        """
+        return {
+            'normalized_max_generation': self.normalized_time_progress,
+            'generation_distribution': self.normalized_population_size,
+            'lineage_survival': self.normalized_survival_rate,
+            'evolutionary_progress': self.normalized_system_performance
+        }

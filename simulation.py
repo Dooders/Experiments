@@ -63,7 +63,7 @@ def create_initial_agents(
     """
     positions = []
 
-    # Create system agents
+    # Create system agents - initial agents have no parent (parent_id=None)
     for _ in range(num_system_agents):
         position = (
             random.uniform(0, environment.width),
@@ -74,11 +74,13 @@ def create_initial_agents(
             position=position,
             resource_level=10,  # Initial resource level
             environment=environment,
+            parent_id=None,  # Explicitly set no parent for initial agents
+            generation=0  # First generation
         )
         environment.add_agent(agent)
         positions.append(position)
 
-    # Create independent agents
+    # Create independent agents - initial agents have no parent (parent_id=None)
     for _ in range(num_independent_agents):
         position = (
             random.uniform(0, environment.width),
@@ -89,6 +91,8 @@ def create_initial_agents(
             position=position,
             resource_level=10,  # Initial resource level
             environment=environment,
+            parent_id=None,  # Explicitly set no parent for initial agents
+            generation=0  # First generation
         )
         environment.add_agent(agent)
         positions.append(position)

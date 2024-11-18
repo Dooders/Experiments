@@ -231,6 +231,7 @@ def move_action(agent: "BaseAgent") -> None:
 
     # Calculate reward and store experience
     reward = _calculate_movement_reward(agent, initial_position, new_position)
+    agent.total_reward += reward
     _store_and_train(agent, state, reward)
 
     logger.debug(
