@@ -163,6 +163,20 @@ class SimulationDatabase:
                 details TEXT, -- JSON-encoded dictionary for action-specific details
                 FOREIGN KEY(agent_id) REFERENCES Agents(agent_id)
             );
+            
+            -- Track learning experiences
+            CREATE TABLE IF NOT EXISTS LearningExperiences (
+                experience_id INTEGER PRIMARY KEY,
+                step_number INTEGER,
+                agent_id INTEGER,
+                module_type TEXT,
+                state_before TEXT,
+                action_taken INTEGER,
+                reward REAL,
+                state_after TEXT,
+                loss REAL,
+                FOREIGN KEY(agent_id) REFERENCES Agents(agent_id)
+            );
         """
         )
         self.conn.commit()
@@ -836,3 +850,95 @@ class SimulationDatabase:
             """,
             values,
         )
+
+    def log_learning_experience(
+        self,
+        step_number: int,
+        agent_id: int,
+        module_type: str,
+        state_before: str,
+        action_taken: int,
+        reward: float,
+        state_after: str,
+        loss: float,
+    ):
+        """Log a single learning experience during the simulation.
+
+        Parameters
+        ----------
+        step_number : int
+            Current simulation step number
+        agent_id : int
+            ID of the agent that had the learning experience
+        module_type : str
+            Type of learning module (e.g., 'movement', 'combat', etc.)
+        state_before : str
+            String representation of the state before action
+        action_taken : int
+            Integer representing the action chosen
+        reward : float
+            Reward received for the action
+        state_after : str
+            String representation of the state after action
+        loss : float
+            Loss value from the learning update
+        """
+        self.cursor.execute(
+            """
+            INSERT INTO LearningExperiences (
+                step_number, agent_id, module_type, state_before,
+                action_taken, reward, state_after, loss
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                step_number,
+                agent_id,
+                module_type,
+                state_before,
+                action_taken,
+                reward,
+                state_after,
+                loss,
+            ),
+        )
+
+    def batch_log_learning_experiences(self, experiences: List[Dict]):
+        """Batch insert multiple learning experiences at once.
+
+        Parameters
+        ----------
+        experiences : List[Dict]
+            List of experience dictionaries containing:
+            - step_number: int
+            - agent_id: int
+            - module_type: str
+            - state_before: str
+            - action_taken: int
+            - reward: float
+            - state_after: str
+            - loss: float
+        """
+        values = [
+            (
+                exp["step_number"],
+                exp["agent_id"],
+                exp["module_type"],
+                exp["state_before"],
+                exp["action_taken"],
+                exp["reward"],
+                exp["state_after"],
+                exp["loss"],
+            )
+            for exp in experiences
+        ]
+
+        self.cursor.executemany(
+            """
+            INSERT INTO LearningExperiences (
+                step_number, agent_id, module_type, state_before,
+                action_taken, reward, state_after, loss
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            values,
+        )
+        self.conn.commit()
