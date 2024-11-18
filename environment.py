@@ -1,6 +1,6 @@
 import os
 import random
-from typing import List
+from typing import Dict, List
 
 import numpy as np
 
@@ -103,21 +103,99 @@ class Environment:
         independent_agents = [
             a for a in alive_agents if isinstance(a, IndependentAgent)
         ]
-        control_agents = [
-            a for a in alive_agents if isinstance(a, ControlAgent)
-        ]  # Add control agents
+        control_agents = [a for a in alive_agents if isinstance(a, ControlAgent)]
+
+        # Calculate births (agents created this step)
+        births = len([a for a in alive_agents if self.time - a.birth_time == 0])
+
+        # Calculate deaths (difference from previous population)
+        previous_population = getattr(self, "previous_population", len(alive_agents))
+        deaths = max(0, previous_population - len(alive_agents))
+        self.previous_population = len(alive_agents)
+
+        # Calculate generation metrics
+        current_max_generation = (
+            max([a.generation for a in alive_agents]) if alive_agents else 0
+        )
+
+        # Calculate health and age metrics
+        total_agents = len(alive_agents)
+        average_health = (
+            sum(a.current_health for a in alive_agents) / total_agents
+            if total_agents > 0
+            else 0
+        )
+        average_age = (
+            sum(self.time - a.birth_time for a in alive_agents) / total_agents
+            if total_agents > 0
+            else 0
+        )
+        average_reward = (
+            sum(a.total_reward for a in alive_agents) / total_agents
+            if total_agents > 0
+            else 0
+        )
+
+        # Calculate resource metrics
+        total_resources = sum(r.amount for r in self.resources)
+        resource_efficiency = (
+            total_resources / (len(self.resources) * self.config.max_resource_amount)
+            if self.resources
+            else 0
+        )
+
+        # Calculate genetic diversity
+        genome_counts = {}
+        for agent in alive_agents:
+            genome_counts[agent.genome_id] = genome_counts.get(agent.genome_id, 0) + 1
+        genetic_diversity = len(genome_counts) / total_agents if total_agents > 0 else 0
+        dominant_genome_ratio = (
+            max(genome_counts.values()) / total_agents if genome_counts else 0
+        )
+
+        # Get combat and sharing metrics from environment attributes
+        combat_encounters = getattr(self, "combat_encounters", 0)
+        successful_attacks = getattr(self, "successful_attacks", 0)
+        resources_shared = getattr(self, "resources_shared", 0)
+
+        # Calculate resource distribution entropy (simplified)
+        resource_amounts = [r.amount for r in self.resources]
+        if resource_amounts:
+            total = sum(resource_amounts)
+            if total > 0:
+                probabilities = [amt / total for amt in resource_amounts]
+                resource_distribution_entropy = -sum(
+                    p * np.log(p) if p > 0 else 0 for p in probabilities
+                )
+            else:
+                resource_distribution_entropy = 0.0
+        else:
+            resource_distribution_entropy = 0.0
 
         return {
-            "total_agents": len(alive_agents),
+            "total_agents": total_agents,
             "system_agents": len(system_agents),
             "independent_agents": len(independent_agents),
-            "control_agents": len(control_agents),  # Add control agents count
-            "total_resources": sum(r.amount for r in self.resources),
+            "control_agents": len(control_agents),
+            "total_resources": total_resources,
             "average_agent_resources": (
-                sum(a.resource_level for a in alive_agents) / len(alive_agents)
-                if alive_agents
+                sum(a.resource_level for a in alive_agents) / total_agents
+                if total_agents > 0
                 else 0
             ),
+            "births": births,
+            "deaths": deaths,
+            "current_max_generation": current_max_generation,
+            "resource_efficiency": resource_efficiency,
+            "resource_distribution_entropy": resource_distribution_entropy,
+            "average_agent_health": average_health,
+            "average_agent_age": average_age,
+            "average_reward": average_reward,
+            "combat_encounters": combat_encounters,
+            "successful_attacks": successful_attacks,
+            "resources_shared": resources_shared,
+            "genetic_diversity": genetic_diversity,
+            "dominant_genome_ratio": dominant_genome_ratio,
         }
 
     def get_next_agent_id(self):
@@ -202,3 +280,94 @@ class Environment:
         x = random.uniform(0, self.width)
         y = random.uniform(0, self.height)
         return (x, y)
+
+    def get_step_metrics(self) -> Dict:
+        """Calculate comprehensive metrics for the current simulation step."""
+        alive_agents = [a for a in self.agents if a.alive]
+
+        # Calculate basic population metrics
+        total_agents = len(alive_agents)
+        system_agents = len([a for a in alive_agents if isinstance(a, SystemAgent)])
+        independent_agents = len(
+            [a for a in alive_agents if isinstance(a, IndependentAgent)]
+        )
+
+        # Calculate new metrics
+        births = len([a for a in alive_agents if self.time - a.birth_time == 0])
+        deaths = (
+            self.previous_population - total_agents
+            if hasattr(self, "previous_population")
+            else 0
+        )
+        self.previous_population = total_agents
+
+        # Calculate generation metrics
+        current_max_generation = (
+            max([a.generation for a in alive_agents]) if alive_agents else 0
+        )
+
+        # Calculate health and age metrics
+        average_health = (
+            sum(a.current_health for a in alive_agents) / total_agents
+            if total_agents > 0
+            else 0
+        )
+        average_age = (
+            sum(self.time - a.birth_time for a in alive_agents) / total_agents
+            if total_agents > 0
+            else 0
+        )
+        average_reward = (
+            sum(a.total_reward for a in alive_agents) / total_agents
+            if total_agents > 0
+            else 0
+        )
+
+        # Calculate resource metrics
+        total_resources = sum(r.amount for r in self.resources)
+        resource_efficiency = (
+            total_resources / (len(self.resources) * self.config.max_resource_amount)
+            if self.resources
+            else 0
+        )
+
+        # Calculate genetic diversity (example implementation)
+        genome_counts = {}
+        for agent in alive_agents:
+            genome_counts[agent.genome_id] = genome_counts.get(agent.genome_id, 0) + 1
+        genetic_diversity = len(genome_counts) / total_agents if total_agents > 0 else 0
+        dominant_genome_ratio = (
+            max(genome_counts.values()) / total_agents if total_agents > 0 else 0
+        )
+
+        return {
+            "total_agents": total_agents,
+            "system_agents": system_agents,
+            "independent_agents": independent_agents,
+            "control_agents": 0,  # If you're not using control agents
+            "total_resources": total_resources,
+            "average_agent_resources": (
+                sum(a.resource_level for a in alive_agents) / total_agents
+                if total_agents > 0
+                else 0
+            ),
+            "births": births,
+            "deaths": deaths,
+            "current_max_generation": current_max_generation,
+            "resource_efficiency": resource_efficiency,
+            "resource_distribution_entropy": 0.0,  # Implement entropy calculation if needed
+            "average_agent_health": average_health,
+            "average_agent_age": average_age,
+            "average_reward": average_reward,
+            "combat_encounters": (
+                self.combat_encounters if hasattr(self, "combat_encounters") else 0
+            ),
+            "successful_attacks": (
+                self.successful_attacks if hasattr(self, "successful_attacks") else 0
+            ),
+            "resources_shared": (
+                self.resources_shared if hasattr(self, "resources_shared") else 0
+            ),
+            "genetic_diversity": genetic_diversity,
+            "dominant_genome_ratio": dominant_genome_ratio,
+        }

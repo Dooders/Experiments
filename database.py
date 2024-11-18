@@ -22,7 +22,12 @@ class SimulationDatabase:
     - Agents: Stores agent metadata and lifecycle information
     - AgentStates: Tracks agent positions and resources over time
     - ResourceStates: Tracks resource positions and amounts over time
-    - SimulationSteps: Stores aggregate metrics for each simulation step
+    - SimulationSteps: Stores comprehensive simulation metrics over time including:
+        * Population metrics (total agents, births, deaths, etc.)
+        * Resource metrics (efficiency, distribution)
+        * Performance metrics (health, age, rewards)
+        * Combat and cooperation metrics
+        * Evolutionary metrics (genetic diversity)
 
     Attributes
     ----------
@@ -64,7 +69,12 @@ class SimulationDatabase:
         - Agents: Stores agent metadata and lifecycle information
         - AgentStates: Tracks agent positions and resources over time
         - ResourceStates: Tracks resource positions and amounts over time
-        - SimulationSteps: Stores aggregate metrics for each simulation step
+        - SimulationSteps: Stores comprehensive simulation metrics over time including:
+            * Population metrics (total agents, births, deaths, etc.)
+            * Resource metrics (efficiency, distribution)
+            * Performance metrics (health, age, rewards)
+            * Combat and cooperation metrics
+            * Evolutionary metrics (genetic diversity)
         """
         self.cursor.executescript(
             """
@@ -113,7 +123,30 @@ class SimulationDatabase:
                 independent_agents INTEGER,
                 control_agents INTEGER,
                 total_resources REAL,
-                average_agent_resources REAL
+                average_agent_resources REAL,
+                
+                -- Add population dynamics metrics
+                births INTEGER,
+                deaths INTEGER,
+                current_max_generation INTEGER,
+                
+                -- Add resource metrics
+                resource_efficiency REAL,
+                resource_distribution_entropy REAL,
+                
+                -- Add agent performance metrics
+                average_agent_health REAL,
+                average_agent_age INTEGER,
+                average_reward REAL,
+                
+                -- Add combat metrics
+                combat_encounters INTEGER,
+                successful_attacks INTEGER,
+                resources_shared REAL,
+                
+                -- Add evolutionary metrics
+                genetic_diversity REAL,
+                dominant_genome_ratio REAL
             );
         """
         )
@@ -130,7 +163,7 @@ class SimulationDatabase:
         starvation_threshold: int,
         genome_id: str = None,
         parent_id: Optional[int] = None,
-        generation: int = 0
+        generation: int = 0,
     ):
         """Log the creation of a new agent in the simulation.
 
@@ -165,8 +198,16 @@ class SimulationDatabase:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
-                agent_id, birth_time, agent_type, str(position), initial_resources,
-                max_health, starvation_threshold, genome_id, parent_id, generation
+                agent_id,
+                birth_time,
+                agent_type,
+                str(position),
+                initial_resources,
+                max_health,
+                starvation_threshold,
+                genome_id,
+                parent_id,
+                generation,
             ),
         )
         self.conn.commit()
@@ -210,23 +251,37 @@ class SimulationDatabase:
             Current simulation step number
         agent_states : List[Tuple]
             List of agent state tuples, each containing:
-            (agent_id, position_x, position_y, resource_level)
+            (agent_id, position_x, position_y, resource_level, current_health,
+             max_health, starvation_threshold, is_defending, total_reward, age)
         resource_states : List[Tuple]
             List of resource state tuples, each containing:
             (resource_id, amount, position_x, position_y)
         metrics : Dict
             Dictionary containing simulation metrics:
-            - total_agents: int
-            - system_agents: int
-            - independent_agents: int
-            - control_agents: int
-            - total_resources: float
-            - average_agent_resources: float
-
-        Notes
-        -----
-        This method performs a batch insert of all simulation state data
-        for efficiency. It commits the transaction after all data is written.
+            - Population metrics:
+                * total_agents: Total number of alive agents
+                * system_agents: Number of system agents
+                * independent_agents: Number of independent agents
+                * control_agents: Number of control agents
+                * births: Number of new agents this step
+                * deaths: Number of agent deaths this step
+                * current_max_generation: Highest generation number
+            - Resource metrics:
+                * total_resources: Total resources in environment
+                * average_agent_resources: Mean resources per agent
+                * resource_efficiency: Resource utilization effectiveness
+                * resource_distribution_entropy: Measure of resource distribution
+            - Performance metrics:
+                * average_agent_health: Mean health across agents
+                * average_agent_age: Mean age of agents
+                * average_reward: Mean reward accumulated
+            - Combat metrics:
+                * combat_encounters: Number of combat interactions
+                * successful_attacks: Number of successful attacks
+                * resources_shared: Amount of resources shared
+            - Evolutionary metrics:
+                * genetic_diversity: Measure of genome variety
+                * dominant_genome_ratio: Prevalence of most common genome
         """
         # Log agent states
         self.cursor.executemany(
@@ -250,14 +305,19 @@ class SimulationDatabase:
             [(step_number, *state) for state in resource_states],
         )
 
-        # Log step metrics
+        # Enhanced metrics logging
         self.cursor.execute(
             """
             INSERT INTO SimulationSteps (
                 step_number, total_agents, system_agents, independent_agents,
-                control_agents, total_resources, average_agent_resources
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
+                control_agents, total_resources, average_agent_resources,
+                births, deaths, current_max_generation,
+                resource_efficiency, resource_distribution_entropy,
+                average_agent_health, average_agent_age, average_reward,
+                combat_encounters, successful_attacks, resources_shared,
+                genetic_diversity, dominant_genome_ratio
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
             (
                 step_number,
                 metrics["total_agents"],
@@ -266,6 +326,19 @@ class SimulationDatabase:
                 metrics["control_agents"],
                 metrics["total_resources"],
                 metrics["average_agent_resources"],
+                metrics["births"],
+                metrics["deaths"],
+                metrics["current_max_generation"],
+                metrics["resource_efficiency"],
+                metrics["resource_distribution_entropy"],
+                metrics["average_agent_health"],
+                metrics["average_agent_age"],
+                metrics["average_reward"],
+                metrics["combat_encounters"],
+                metrics["successful_attacks"],
+                metrics["resources_shared"],
+                metrics["genetic_diversity"],
+                metrics["dominant_genome_ratio"],
             ),
         )
         self.conn.commit()
