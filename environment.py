@@ -37,6 +37,7 @@ class Environment:
         self.initialize_resources(resource_distribution)
         self.initial_agent_count = 0  # Add this to track initial agents
         self._initialize_agents()  # Changed to use config values
+        self.pending_actions = []  # Add this line to store pending actions
 
     def get_next_resource_id(self):
         resource_id = self.next_resource_id
@@ -65,11 +66,15 @@ class Environment:
         if self.time == 0:
             self.initial_agent_count += 1
 
+    def collect_action(self, **action_data):
+        """Collect an action for batch processing."""
+        self.pending_actions.append(action_data)
+
     def update(self):
         """Update environment state with batch processing."""
         self.time += 1
 
-        # Vectorize resource regeneration
+        # Process resource regeneration
         regen_mask = (
             np.random.random(len(self.resources)) < self.config.resource_regen_rate
         )
@@ -82,10 +87,15 @@ class Environment:
                     self.max_resource or float("inf"),
                 )
 
-        # Calculate metrics and log state
+        # Calculate metrics
         metrics = self._calculate_metrics()
 
-        # Log state with batch processing
+        # Batch process all pending actions
+        if self.pending_actions:
+            self.db.batch_log_agent_actions(self.pending_actions)
+            self.pending_actions = []  # Clear pending actions
+
+        # Log simulation state
         self.db.log_simulation_step(
             step_number=self.time,
             agents=self.agents,
@@ -93,6 +103,9 @@ class Environment:
             metrics=metrics,
             environment=self,
         )
+
+        # Single commit for all database operations
+        self.db.conn.commit()
 
     def _calculate_metrics(self):
         """Calculate various metrics for the current simulation state."""
@@ -371,3 +384,8 @@ class Environment:
             "genetic_diversity": genetic_diversity,
             "dominant_genome_ratio": dominant_genome_ratio,
         }
+
+    def close(self):
+        """Clean up environment resources."""
+        if hasattr(self, "db"):
+            self.db.close()

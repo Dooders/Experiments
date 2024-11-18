@@ -1,6 +1,6 @@
 import logging
 import sqlite3
-from typing import Dict, List, Tuple, TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -147,6 +147,21 @@ class SimulationDatabase:
                 -- Add evolutionary metrics
                 genetic_diversity REAL,
                 dominant_genome_ratio REAL
+            );
+            
+            CREATE TABLE IF NOT EXISTS AgentActions (
+                action_id INTEGER PRIMARY KEY,
+                step_number INTEGER NOT NULL,
+                agent_id INTEGER NOT NULL,
+                action_type TEXT NOT NULL,
+                action_target_id INTEGER,
+                position_before TEXT,
+                position_after TEXT,
+                resources_before REAL,
+                resources_after REAL,
+                reward REAL,
+                details TEXT, -- JSON-encoded dictionary for action-specific details
+                FOREIGN KEY(agent_id) REFERENCES Agents(agent_id)
             );
         """
         )
@@ -709,3 +724,115 @@ class SimulationDatabase:
                 "min_lifespan": row[3],
             }
         return results
+
+    def log_agent_action(
+        self,
+        step_number: int,
+        agent_id: int,
+        action_type: str,
+        action_target_id: Optional[int] = None,
+        position_before: Optional[Tuple[float, float]] = None,
+        position_after: Optional[Tuple[float, float]] = None,
+        resources_before: Optional[float] = None,
+        resources_after: Optional[float] = None,
+        reward: Optional[float] = None,
+        details: Optional[Dict] = None,
+    ):
+        """Log an agent's action during the simulation."""
+        import json
+
+        # Convert positions to string representation if provided
+        pos_before_str = str(position_before) if position_before is not None else None
+        pos_after_str = str(position_after) if position_after is not None else None
+
+        # Convert details dict to JSON string if provided
+        details_json = json.dumps(details) if details is not None else None
+
+        self.cursor.execute(
+            """
+            INSERT INTO AgentActions (
+                step_number, agent_id, action_type, action_target_id,
+                position_before, position_after, resources_before,
+                resources_after, reward, details
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                step_number,
+                agent_id,
+                action_type,
+                action_target_id,
+                pos_before_str,
+                pos_after_str,
+                resources_before,
+                resources_after,
+                reward,
+                details_json,
+            ),
+        )
+        # Remove the commit from here - we'll commit in batches instead
+
+    def batch_log_agent_actions(self, actions: List[Dict]):
+        """Batch insert multiple agent actions at once.
+
+        Parameters
+        ----------
+        actions : List[Dict]
+            List of action dictionaries containing:
+            - step_number: int
+            - agent_id: int
+            - action_type: str
+            - action_target_id: Optional[int]
+            - position_before: Optional[Tuple[float, float]]
+            - position_after: Optional[Tuple[float, float]]
+            - resources_before: Optional[float]
+            - resources_after: Optional[float]
+            - reward: Optional[float]
+            - details: Optional[Dict]
+        """
+        import json
+
+        # Prepare all actions for batch insert
+        values = []
+        for action in actions:
+            pos_before_str = (
+                str(action["position_before"])
+                if action.get("position_before") is not None
+                else None
+            )
+            pos_after_str = (
+                str(action["position_after"])
+                if action.get("position_after") is not None
+                else None
+            )
+            details_json = (
+                json.dumps(action.get("details"))
+                if action.get("details") is not None
+                else None
+            )
+
+            values.append(
+                (
+                    action["step_number"],
+                    action["agent_id"],
+                    action["action_type"],
+                    action.get("action_target_id"),
+                    pos_before_str,
+                    pos_after_str,
+                    action.get("resources_before"),
+                    action.get("resources_after"),
+                    action.get("reward"),
+                    details_json,
+                )
+            )
+
+        # Batch insert
+        self.cursor.executemany(
+            """
+            INSERT INTO AgentActions (
+                step_number, agent_id, action_type, action_target_id,
+                position_before, position_after, resources_before,
+                resources_after, reward, details
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            values,
+        )
