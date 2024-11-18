@@ -91,6 +91,7 @@ class Environment:
             agents=self.agents,
             resources=self.resources,
             metrics=metrics,
+            environment=self,
         )
 
     def _calculate_metrics(self):

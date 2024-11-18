@@ -176,6 +176,7 @@ def attack_action(agent: "BaseAgent") -> None:
 
     # Calculate reward and store experience
     reward = agent.calculate_attack_reward(target, damage_dealt, action)
+    agent.total_reward += reward
 
     # Store experience
     next_state = agent.get_state()

@@ -3,7 +3,7 @@ width: 100
 height: 100
 
 # Agent settings
-system_agents: 10
+system_agents: 0
 independent_agents: 10
 control_agents: 10
 initial_resource_level: 5

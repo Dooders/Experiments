@@ -1,8 +1,11 @@
 import logging
 import sqlite3
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, TYPE_CHECKING, Optional
 
 import pandas as pd
+
+if TYPE_CHECKING:
+    from environment import Environment
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +74,13 @@ class SimulationDatabase:
                 death_time INTEGER,
                 agent_type TEXT,
                 initial_position TEXT,
-                initial_resources REAL
+                initial_resources REAL,
+                max_health REAL,
+                starvation_threshold INTEGER,
+                genome_id TEXT,
+                parent_id INTEGER,
+                generation INTEGER,
+                FOREIGN KEY(parent_id) REFERENCES Agents(agent_id)
             );
 
             CREATE TABLE IF NOT EXISTS AgentStates (
@@ -80,6 +89,12 @@ class SimulationDatabase:
                 position_x REAL,
                 position_y REAL,
                 resource_level REAL,
+                current_health REAL,
+                max_health REAL,
+                starvation_threshold INTEGER,
+                is_defending BOOLEAN,
+                total_reward REAL,
+                age INTEGER,
                 FOREIGN KEY(agent_id) REFERENCES Agents(agent_id)
             );
 
@@ -111,6 +126,11 @@ class SimulationDatabase:
         agent_type: str,
         position: Tuple[float, float],
         initial_resources: float,
+        max_health: float,
+        starvation_threshold: int,
+        genome_id: str = None,
+        parent_id: Optional[int] = None,
+        generation: int = 0
     ):
         """Log the creation of a new agent in the simulation.
 
@@ -126,18 +146,28 @@ class SimulationDatabase:
             Initial (x, y) coordinates of the agent
         initial_resources : float
             Starting resource level of the agent
-
-        Example
-        -------
-        >>> db.log_agent(1, 0, 'system', (0.5, 0.5), 100.0)
+        max_health : float
+            Maximum health points of the agent
+        starvation_threshold : int
+            Number of steps agent can survive without resources
+        genome_id : str, optional
+            Unique identifier for agent's genome
+        parent_id : int, optional
+            ID of parent agent if this agent was created through reproduction
+        generation : int, optional
+            Generation number of the agent in evolutionary lineage
         """
         self.cursor.execute(
             """
             INSERT INTO Agents (
-                agent_id, birth_time, agent_type, initial_position, initial_resources
-            ) VALUES (?, ?, ?, ?, ?)
+                agent_id, birth_time, agent_type, initial_position, initial_resources,
+                max_health, starvation_threshold, genome_id, parent_id, generation
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-            (agent_id, birth_time, agent_type, str(position), initial_resources),
+            (
+                agent_id, birth_time, agent_type, str(position), initial_resources,
+                max_health, starvation_threshold, genome_id, parent_id, generation
+            ),
         )
         self.conn.commit()
 
@@ -202,10 +232,12 @@ class SimulationDatabase:
         self.cursor.executemany(
             """
             INSERT INTO AgentStates (
-                step_number, agent_id, position_x, position_y, resource_level
-            ) VALUES (?, ?, ?, ?, ?)
+                step_number, agent_id, position_x, position_y, resource_level,
+                current_health, max_health, starvation_threshold, is_defending, total_reward,
+                age
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-            [(step_number, *state) for state in agent_states],
+            [(step_number, *state[:4], *state[4:]) for state in agent_states],
         )
 
         # Log resource states
@@ -250,20 +282,17 @@ class SimulationDatabase:
         -------
         Dict
             Dictionary containing:
-            - agent_states: List of tuples (agent_id, type, x, y, resources)
+            - agent_states: List of tuples (agent_id, type, x, y, resources, health, max_health,
+                                          starvation_threshold, is_defending, total_reward, age)
             - resource_states: List of tuples (resource_id, amount, x, y)
             - metrics: Dict of aggregate metrics for the step
-
-        Example
-        -------
-        >>> data = db.get_simulation_data(100)
-        >>> print(f"Number of agents: {len(data['agent_states'])}")
-        >>> print(f"Total resources: {data['metrics']['total_resources']}")
         """
         # Get agent states
         self.cursor.execute(
             """
-            SELECT a.agent_id, ag.agent_type, a.position_x, a.position_y, a.resource_level
+            SELECT a.agent_id, ag.agent_type, a.position_x, a.position_y, a.resource_level,
+                   a.current_health, a.max_health, a.starvation_threshold, 
+                   a.is_defending, a.total_reward, a.age
             FROM AgentStates a
             JOIN Agents ag ON a.agent_id = ag.agent_id
             WHERE a.step_number = ?
@@ -479,11 +508,9 @@ class SimulationDatabase:
         agents: List,
         resources: List,
         metrics: Dict,
+        environment: "Environment",  # Add environment parameter
     ):
         """Log complete simulation state for a single time step.
-
-        This is a high-level method that handles the conversion of agent and
-        resource objects into their database representation before logging.
 
         Parameters
         ----------
@@ -494,7 +521,12 @@ class SimulationDatabase:
             - agent_id: int
             - position: Tuple[float, float]
             - resource_level: float
-            - alive: bool
+            - current_health: float
+            - max_health: float
+            - starvation_threshold: int
+            - is_defending: bool
+            - total_reward: float
+            - birth_time: int
         resources : List
             List of resource objects, each must have attributes:
             - resource_id: int
@@ -508,11 +540,8 @@ class SimulationDatabase:
             - control_agents: int
             - total_resources: float
             - average_agent_resources: float
-
-        Notes
-        -----
-        This method automatically filters out dead agents and converts
-        complex objects into their database representation before logging.
+        environment : Environment
+            Reference to the environment for time tracking
 
         Example
         -------
@@ -525,11 +554,24 @@ class SimulationDatabase:
         ...     "average_agent_resources": 100.0
         ... }
         >>> db.log_simulation_step(step_number=1, agents=agent_list,
-        ...                       resources=resource_list, metrics=metrics)
+        ...                       resources=resource_list, metrics=metrics,
+        ...                       environment=env)
         """
         # Convert agents to state tuples
         agent_states = [
-            (agent.agent_id, agent.position[0], agent.position[1], agent.resource_level)
+            (
+                agent.agent_id,
+                agent.position[0],
+                agent.position[1],
+                agent.resource_level,
+                agent.current_health,
+                agent.max_health,
+                agent.starvation_threshold,
+                1 if agent.is_defending else 0,
+                agent.total_reward,
+                environment.time
+                - agent.birth_time,  # Calculate age using environment time
+            )
             for agent in agents
             if agent.alive
         ]
@@ -547,3 +589,50 @@ class SimulationDatabase:
 
         # Use existing log_step method
         self.log_step(step_number, agent_states, resource_states, metrics)
+
+    def get_agent_lifespan_statistics(self) -> Dict[str, Dict[str, float]]:
+        """Calculate lifespan statistics for different agent types.
+
+        Returns
+        -------
+        Dict[str, Dict[str, float]]
+            Dictionary containing lifespan statistics per agent type:
+            {
+                'agent_type': {
+                    'average_lifespan': float,
+                    'max_lifespan': float,
+                    'min_lifespan': float
+                }
+            }
+        """
+        self.cursor.execute(
+            """
+            WITH AgentLifespans AS (
+                SELECT 
+                    ag.agent_type,
+                    CASE 
+                        WHEN ag.death_time IS NULL THEN MAX(a.age)
+                        ELSE ag.death_time - ag.birth_time 
+                    END as lifespan
+                FROM Agents ag
+                LEFT JOIN AgentStates a ON ag.agent_id = a.agent_id
+                GROUP BY ag.agent_id
+            )
+            SELECT 
+                agent_type,
+                AVG(lifespan) as avg_lifespan,
+                MAX(lifespan) as max_lifespan,
+                MIN(lifespan) as min_lifespan
+            FROM AgentLifespans
+            GROUP BY agent_type
+        """
+        )
+
+        results = {}
+        for row in self.cursor.fetchall():
+            results[row[0]] = {
+                "average_lifespan": row[1],
+                "max_lifespan": row[2],
+                "min_lifespan": row[3],
+            }
+        return results

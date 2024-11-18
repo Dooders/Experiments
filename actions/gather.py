@@ -301,7 +301,7 @@ def gather_action(agent: "BaseAgent") -> None:
     reward = agent.gather_module.calculate_gather_reward(
         agent, initial_resources, target_resource
     )
-
+    agent.total_reward += reward
     # Get next state
     next_state = agent.gather_module._process_gather_state(agent)
 

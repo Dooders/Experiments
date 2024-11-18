@@ -1,4 +1,9 @@
+from typing import TYPE_CHECKING, Optional
+
 import numpy as np
+
+if TYPE_CHECKING:
+    from environment import Environment
 
 from action import Action
 from actions.attack import attack_action
@@ -10,40 +15,66 @@ from .base_agent import BaseAgent
 
 
 class ControlAgent(BaseAgent):
-    """
-    A balanced agent implementation that maintains equilibrium between
-    cooperative and individualistic behaviors.
+    """A balanced agent implementation that maintains equilibrium between
+    cooperative and individualistic behaviors."""
 
-    This agent:
-    - Uses balanced action weights
-    - Has moderate resource gathering efficiency
-    - Maintains balanced sharing and attack tendencies
-    - Adapts behavior based on environmental conditions
-    """
+    def __init__(
+        self,
+        agent_id: int,
+        position: tuple[int, int],
+        resource_level: int,
+        environment: "Environment",
+        parent_id: Optional[int] = None,
+        generation: int = 0,
+        skip_logging: bool = False,
+        action_set: list[Action] = None
+    ):
+        """Initialize a ControlAgent.
 
-    def __init__(self, agent_id, position, resource_level, environment):
-        super().__init__(agent_id, position, resource_level, environment)
+        Parameters
+        ----------
+        agent_id : int
+            Unique identifier for this agent
+        position : tuple[int, int]
+            Initial (x,y) coordinates
+        resource_level : int
+            Starting resource amount
+        environment : Environment
+            Reference to simulation environment
+        parent_id : Optional[int]
+            ID of parent agent if this agent was created through reproduction
+        generation : int
+            Generation number in evolutionary lineage
+        skip_logging : bool
+            If True, skip database logging during initialization
+        action_set : list[Action], optional
+            Custom action set for this agent
+        """
+        # Get agent-specific parameters from config
+        agent_params = environment.config.agent_parameters.get("ControlAgent", {})
 
-        # Override default actions with balanced weights
-        self.actions = [
-            Action("move", 0.30, move_action),  # Balanced movement
-            Action("gather", 0.40, gather_action),  # Moderate focus on gathering
-            Action("share", 0.15, share_action),  # Moderate sharing
-            Action("attack", 0.15, attack_action),  # Moderate aggression
-        ]
+        # Create default action set if none provided
+        if action_set is None:
+            action_set = [
+                Action("move", 0.30, move_action),  # Balanced movement
+                Action("gather", 0.40, gather_action),  # Moderate focus on gathering
+                Action("share", 0.15, share_action),  # Moderate sharing
+                Action("attack", 0.15, attack_action),  # Moderate aggression
+            ]
 
-        # Normalize weights
-        total_weight = sum(action.weight for action in self.actions)
-        for action in self.actions:
-            action.weight /= total_weight
+        # Initialize base agent with custom action set and genealogy info
+        super().__init__(
+            agent_id=agent_id,
+            position=position,
+            resource_level=resource_level,
+            environment=environment,
+            action_set=action_set,
+            parent_id=parent_id,
+            generation=generation,
+            skip_logging=skip_logging
+        )
 
         # Configure gather module with balanced parameters
-        self.gather_module.config.gather_efficiency_multiplier = (
-            0.55  # Balanced between system (0.4) and independent (0.7)
-        )
-        self.gather_module.config.gather_cost_multiplier = (
-            0.3  # Balanced between system (0.4) and independent (0.2)
-        )
-        self.gather_module.config.min_resource_threshold = (
-            0.125  # Balanced between system (0.2) and independent (0.05)
-        )
+        self.gather_module.config.gather_efficiency_multiplier = 0.55  # Balanced efficiency
+        self.gather_module.config.gather_cost_multiplier = 0.3  # Balanced movement penalty
+        self.gather_module.config.min_resource_threshold = 0.125  # Balanced threshold

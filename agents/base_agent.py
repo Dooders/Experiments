@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 import torch
@@ -29,7 +29,7 @@ BASE_ACTION_SET = [
 
 class BaseAgent:
     """Base agent class representing an autonomous entity in the simulation environment.
-    
+
     This agent can move, gather resources, share with others, and engage in combat.
     It maintains its own state including position, resources, and health, while making
     decisions through various specialized modules.
@@ -54,6 +54,9 @@ class BaseAgent:
         resource_level: int,
         environment: "Environment",
         action_set: list[Action] = BASE_ACTION_SET,
+        parent_id: Optional[int] = None,
+        generation: int = 0,
+        skip_logging: bool = False
     ):
         """Initialize a new agent with given parameters."""
         # Add default actions
@@ -81,34 +84,46 @@ class BaseAgent:
         self.starvation_threshold = self.config.starvation_threshold
         self.max_starvation = self.config.max_starvation_time
         self.birth_time = environment.time
-        logger.info(
-            f"Agent {self.agent_id} created at {self.position} during step {environment.time} of type {self.__class__.__name__}"
-        )
 
-        # Log agent creation to database
-        environment.db.log_agent(
-            agent_id=self.agent_id,
-            birth_time=environment.time,
-            agent_type=self.__class__.__name__,
-            position=self.position,
-            initial_resources=self.resource_level,
-        )
-
-        # Initialize modules with their specific configs
-        self.move_module = MoveModule(self.config)
-        self.attack_module = AttackModule(self.config)
-        self.share_module = ShareModule(self.config)
-        self.gather_module = GatherModule(self.config)
-
-        # Add health tracking for combat
+        # Initialize health tracking first
         self.max_health = self.config.max_health
         self.current_health = self.max_health
         self.is_defending = False
 
-        # Initialize selection module
+        # Generate genome info
+        self.genome_id = f"{self.__class__.__name__}_{agent_id}_{environment.time}"
+        self.parent_id = parent_id
+        self.generation = generation
+
+        # Initialize all modules first
+        self.move_module = MoveModule(self.config)
+        self.attack_module = AttackModule(self.config)
+        self.share_module = ShareModule(self.config)
+        self.gather_module = GatherModule(self.config)
         self.select_module = SelectModule(
-            num_actions=len(self.actions), config=SelectConfig(), device=self.device
+            num_actions=len(self.actions), 
+            config=SelectConfig(), 
+            device=self.device
         )
+
+        # Log agent creation to database only if not skipped
+        if not skip_logging:
+            environment.db.log_agent(
+                agent_id=self.agent_id,
+                birth_time=environment.time,
+                agent_type=self.__class__.__name__,
+                position=self.position,
+                initial_resources=self.resource_level,
+                max_health=self.max_health,
+                starvation_threshold=self.starvation_threshold,
+                genome_id=self.genome_id,
+                parent_id=self.parent_id,
+                generation=self.generation
+            )
+
+            logger.info(
+                f"Agent {self.agent_id} created at {self.position} during step {environment.time} of type {self.__class__.__name__}"
+            )
 
     def get_state(self) -> AgentState:
         """Get the current normalized state of the agent.
@@ -192,13 +207,13 @@ class BaseAgent:
 
     def act(self):
         """Execute the agent's turn in the simulation.
-        
+
         This method handles the core action loop including:
         1. Resource consumption and starvation checks
         2. State observation
         3. Action selection and execution
         4. State/action memory for learning
-        
+
         The agent will not act if it's not alive. Each turn consumes base resources
         and can potentially lead to death if resources are depleted.
         """
@@ -232,12 +247,12 @@ class BaseAgent:
 
     def clone(self) -> "BaseAgent":
         """Create a mutated copy of this agent.
-        
+
         Creates a new agent by:
         1. Cloning the current agent's genome
         2. Applying random mutations with 10% probability
         3. Converting mutated genome back to agent instance
-        
+
         Returns:
             BaseAgent: A new agent with slightly modified characteristics
         """
@@ -249,12 +264,12 @@ class BaseAgent:
 
     def reproduce(self):
         """Attempt to create offspring if conditions are met.
-        
+
         Reproduction occurs when:
         1. Population is below maximum limit
         2. Agent has sufficient resources (above min_reproduction_resources)
         3. Agent can afford offspring cost while maintaining survival resources
-        
+
         The parent agent pays a resource cost for successful reproduction.
         """
         if len(self.environment.agents) >= self.config.max_population:
@@ -271,25 +286,57 @@ class BaseAgent:
                 )
 
     def create_offspring(self):
-        """Create a new agent as offspring.
+        """Create a new agent as offspring."""
+        # Get the agent's class (IndependentAgent, SystemAgent, etc)
+        agent_class = type(self)
         
-        Returns:
-            BaseAgent: A new agent of the same type with:
-            - New unique ID
-            - Same position as parent
-            - Initial resource level from config
-            - Reference to same environment
-        """
-        return type(self)(
-            agent_id=self.environment.get_next_agent_id(),
+        # Generate unique ID and genome info first
+        new_id = self.environment.get_next_agent_id()
+        generation = self.generation + 1
+        genome_id = f"{agent_class.__name__}_{new_id}_{self.environment.time}"
+        
+        # Log the new agent to database first
+        try:
+            self.environment.db.log_agent(
+                agent_id=new_id,
+                birth_time=self.environment.time,
+                agent_type=agent_class.__name__,
+                position=self.position,
+                initial_resources=self.config.offspring_initial_resources,
+                max_health=self.config.max_health,
+                starvation_threshold=self.config.starvation_threshold,
+                genome_id=genome_id,
+                parent_id=self.agent_id,
+                generation=generation
+            )
+        except Exception as e:
+            logger.error(f"Failed to log new agent {new_id} to database: {e}")
+            raise
+        
+        # Create new agent with all info, skipping database logging
+        new_agent = agent_class(
+            agent_id=new_id,
             position=self.position,
             resource_level=self.config.offspring_initial_resources,
             environment=self.environment,
+            parent_id=self.agent_id,
+            generation=generation,
+            skip_logging=True  # Skip logging since we already did it
         )
+        
+        # Set additional attributes
+        new_agent.genome_id = genome_id
+        
+        # Log creation
+        logger.info(
+            f"Agent {new_id} created at {self.position} during step {self.environment.time} of type {agent_class.__name__}"
+        )
+        
+        return new_agent
 
     def die(self):
         """Handle the agent's death process.
-        
+
         Performs cleanup operations including:
         1. Setting alive status to False
         2. Logging death event to database
@@ -322,19 +369,19 @@ class BaseAgent:
 
     def calculate_new_position(self, action):
         """Calculate new position based on movement action.
-        
+
         Takes into account:
         1. Environment boundaries
         2. Maximum movement distance
         3. Direction vectors for each action type
-        
+
         Args:
             action (int): Movement direction index
                 0: Right
                 1: Left
                 2: Up
                 3: Down
-        
+
         Returns:
             tuple: New (x, y) position coordinates, bounded by environment limits
         """
@@ -361,17 +408,17 @@ class BaseAgent:
 
     def calculate_move_reward(self, old_pos, new_pos):
         """Calculate reward for a movement action.
-        
+
         Reward calculation considers:
         1. Base movement cost (-0.1)
         2. Distance to nearest resource before and after move
         3. Positive reward (0.3) for moving closer to resources
         4. Negative reward (-0.2) for moving away from resources
-        
+
         Args:
             old_pos (tuple): Previous (x, y) position
             new_pos (tuple): New (x, y) position
-        
+
         Returns:
             float: Movement reward value
         """
@@ -412,15 +459,15 @@ class BaseAgent:
 
     def calculate_attack_position(self, action: int) -> tuple[float, float]:
         """Calculate target position for attack based on action.
-        
+
         Determines attack target location by:
         1. Getting direction vector from action space
         2. Scaling by attack range from config
         3. Adding to current position
-        
+
         Args:
             action (int): Attack action index from AttackActionSpace
-        
+
         Returns:
             tuple[float, float]: Target (x,y) coordinates for attack
         """
@@ -515,12 +562,12 @@ class BaseAgent:
 
     def to_genome(self) -> "Genome":
         """Convert agent's current state into a genome representation.
-        
+
         Creates a genetic encoding of the agent's:
         - Neural network weights
         - Action preferences
         - Other learnable parameters
-        
+
         Returns:
             Genome: Complete genetic representation of agent
         """
@@ -535,18 +582,18 @@ class BaseAgent:
         environment: "Environment",
     ) -> "BaseAgent":
         """Create a new agent instance from a genome.
-        
+
         Factory method that:
         1. Decodes genome into agent parameters
         2. Initializes new agent with those parameters
         3. Sets up required environment connections
-        
+
         Args:
             genome (Genome): Genetic encoding of agent parameters
             agent_id (int): Unique identifier for new agent
             position (tuple[int, int]): Starting coordinates
             environment (Environment): Simulation environment reference
-        
+
         Returns:
             BaseAgent: New agent instance with genome's characteristics
         """
