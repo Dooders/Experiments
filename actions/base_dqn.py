@@ -2,7 +2,7 @@
 
 import logging
 from collections import deque
-from typing import Any, Deque, Optional
+from typing import TYPE_CHECKING, Any, Deque, Optional
 
 import torch
 import torch.nn as nn
@@ -11,6 +11,9 @@ import torch.optim as optim
 logger = logging.getLogger(__name__)
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+if TYPE_CHECKING:
+    from database import SimulationDatabase
 
 
 class BaseDQNConfig:
@@ -71,9 +74,11 @@ class BaseDQNModule:
         output_dim: int,
         config: BaseDQNConfig,
         device: torch.device = DEVICE,
+        db: Optional["SimulationDatabase"] = None,
     ) -> None:
         self.device = device
         self.config = config
+        self.db = db
         self._setup_networks(input_dim, output_dim, config)
         self._setup_training(config)
         self.losses = []
@@ -105,6 +110,50 @@ class BaseDQNModule:
         self.tau = config.tau
         self.steps = 0
 
+    def _log_experience(
+        self,
+        step_number: int,
+        agent_id: int,
+        module_type: str,
+        state: torch.Tensor,
+        action: int,
+        reward: float,
+        next_state: torch.Tensor,
+        loss: Optional[float] = None,
+    ) -> None:
+        """Log a learning experience to the database if available.
+
+        Parameters
+        ----------
+        step_number : int
+            Current simulation step
+        agent_id : int
+            ID of the agent
+        module_type : str
+            Type of DQN module (e.g., 'movement', 'combat')
+        state : torch.Tensor
+            State before action
+        action : int
+            Action taken
+        reward : float
+            Reward received
+        next_state : torch.Tensor
+            State after action
+        loss : Optional[float]
+            Training loss value if available
+        """
+        if self.db is not None:
+            self.db.log_learning_experience(
+                step_number=step_number,
+                agent_id=agent_id,
+                module_type=module_type,
+                state_before=str(state.tolist()),
+                action_taken=action,
+                reward=reward,
+                state_after=str(next_state.tolist()),
+                loss=loss if loss is not None else 0.0,
+            )
+
     def store_experience(
         self,
         state: torch.Tensor,
@@ -112,13 +161,70 @@ class BaseDQNModule:
         reward: float,
         next_state: torch.Tensor,
         done: bool,
+        step_number: Optional[int] = None,
+        agent_id: Optional[int] = None,
+        module_type: Optional[str] = None,
     ) -> None:
-        """Store experience in replay memory."""
+        """Store experience in replay memory and optionally log to database.
+
+        Parameters
+        ----------
+        state : torch.Tensor
+            State before action
+        action : int
+            Action taken
+        reward : float
+            Reward received
+        next_state : torch.Tensor
+            State after action
+        done : bool
+            Whether episode ended
+        step_number : Optional[int]
+            Current simulation step for logging
+        agent_id : Optional[int]
+            ID of the agent for logging
+        module_type : Optional[str]
+            Type of DQN module for logging
+        """
         self.memory.append((state, action, reward, next_state, done))
         self.episode_rewards.append(reward)
 
-    def train(self, batch: list) -> Optional[float]:
-        """Train the network using a batch of experiences."""
+        if all(x is not None for x in [step_number, agent_id, module_type]):
+            self._log_experience(
+                step_number=step_number,
+                agent_id=agent_id,
+                module_type=module_type,
+                state=state,
+                action=action,
+                reward=reward,
+                next_state=next_state,
+            )
+
+    def train(
+        self,
+        batch: list,
+        step_number: Optional[int] = None,
+        agent_id: Optional[int] = None,
+        module_type: Optional[str] = None,
+    ) -> Optional[float]:
+        """Train the network using a batch of experiences and optionally log to database.
+
+        Parameters
+        ----------
+        batch : list
+            Batch of experiences for training
+        step_number : Optional[int]
+            Current simulation step for logging
+        agent_id : Optional[int]
+            ID of the agent for logging
+        module_type : Optional[str]
+            Type of DQN module for logging
+
+        Returns
+        -------
+        Optional[float]
+            Loss value if training occurred, None otherwise
+        """
         if len(batch) < self.config.batch_size:
             return None
 
@@ -159,6 +265,20 @@ class BaseDQNModule:
 
         loss_value = loss.item()
         self.losses.append(loss_value)
+
+        if all(x is not None for x in [step_number, agent_id, module_type]):
+            last_experience = batch[-1]
+            self._log_experience(
+                step_number=step_number,
+                agent_id=agent_id,
+                module_type=module_type,
+                state=last_experience[0],
+                action=last_experience[1],
+                reward=last_experience[2],
+                next_state=last_experience[3],
+                loss=loss_value,
+            )
+
         return loss_value
 
     def _soft_update_target_network(self) -> None:
@@ -177,13 +297,13 @@ class BaseDQNModule:
             dict: State dictionary containing network weights and training parameters
         """
         return {
-            'q_network_state': self.q_network.state_dict(),
-            'target_network_state': self.target_network.state_dict(),
-            'optimizer_state': self.optimizer.state_dict(),
-            'epsilon': self.epsilon,
-            'steps': self.steps,
-            'losses': self.losses,
-            'episode_rewards': self.episode_rewards,
+            "q_network_state": self.q_network.state_dict(),
+            "target_network_state": self.target_network.state_dict(),
+            "optimizer_state": self.optimizer.state_dict(),
+            "epsilon": self.epsilon,
+            "steps": self.steps,
+            "losses": self.losses,
+            "episode_rewards": self.episode_rewards,
         }
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
@@ -192,10 +312,10 @@ class BaseDQNModule:
         Args:
             state_dict (dict): State dictionary containing network weights and training parameters
         """
-        self.q_network.load_state_dict(state_dict['q_network_state'])
-        self.target_network.load_state_dict(state_dict['target_network_state'])
-        self.optimizer.load_state_dict(state_dict['optimizer_state'])
-        self.epsilon = state_dict['epsilon']
-        self.steps = state_dict['steps']
-        self.losses = state_dict['losses']
-        self.episode_rewards = state_dict['episode_rewards']
+        self.q_network.load_state_dict(state_dict["q_network_state"])
+        self.target_network.load_state_dict(state_dict["target_network_state"])
+        self.optimizer.load_state_dict(state_dict["optimizer_state"])
+        self.epsilon = state_dict["epsilon"]
+        self.steps = state_dict["steps"]
+        self.losses = state_dict["losses"]
+        self.episode_rewards = state_dict["episode_rewards"]

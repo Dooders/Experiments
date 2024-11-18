@@ -213,54 +213,64 @@ class ShareModule(BaseDQNModule):
 
 
 def share_action(agent: "BaseAgent") -> None:
-    """Execute sharing action using learned policy.
-
-    This function handles the complete sharing interaction:
-    1. Gets current state and nearby agents
-    2. Determines sharing action and target
-    3. Executes resource transfer if applicable
-    4. Updates cooperation history
-    5. Calculates rewards and stores experience
-    """
+    """Execute sharing action using learned policy."""
     # Get state information
     state = _get_share_state(agent)
+    initial_resources = agent.resource_level
 
     # Get sharing decision
     action, target, share_amount = agent.share_module.get_share_decision(agent, state)
 
-    reward = DEFAULT_SHARE_CONFIG.share_failure_penalty
-
-    if target and share_amount > 0 and agent.resource_level >= share_amount:
-        # Execute sharing
-        agent.resource_level -= share_amount
-        target.resource_level += share_amount
-
-        # Calculate reward
-        reward = _calculate_share_reward(agent, target, share_amount)
-        agent.total_reward += reward
-        
-        # Update cooperation history
-        agent.share_module.update_cooperation(target.agent_id, True)
-
-        logger.info(
-            f"Agent {agent.agent_id} shared {share_amount} resources with Agent {target.agent_id}. "
-            f"Sharer resources: {agent.resource_level + share_amount} -> {agent.resource_level}, "
-            f"Target resources: {target.resource_level - share_amount} -> {target.resource_level}"
+    if not target or share_amount <= 0 or agent.resource_level < share_amount:
+        # Collect failed share action
+        agent.environment.collect_action(
+            step_number=agent.environment.time,
+            agent_id=agent.agent_id,
+            action_type="share",
+            position_before=agent.position,
+            position_after=agent.position,
+            resources_before=initial_resources,
+            resources_after=initial_resources,
+            reward=DEFAULT_SHARE_CONFIG.share_failure_penalty,
+            details={
+                "success": False,
+                "reason": "invalid_share_conditions",
+                "attempted_amount": share_amount,
+            },
         )
-    else:
-        logger.debug(
-            f"Agent {agent.agent_id} chose not to share or couldn't find valid target. "
-            f"Action: {action}, Resources: {agent.resource_level}"
-        )
+        return
 
-    # Store experience for learning
-    next_state = _get_share_state(agent)
-    agent.share_module.store_experience(
-        state=torch.FloatTensor(state).to(agent.share_module.device),
-        action=action,
+    # Execute sharing
+    target_initial_resources = target.resource_level
+    agent.resource_level -= share_amount
+    target.resource_level += share_amount
+
+    # Calculate reward
+    reward = _calculate_share_reward(agent, target, share_amount)
+    agent.total_reward += reward
+
+    # Update cooperation history
+    agent.share_module.update_cooperation(target.agent_id, True)
+
+    # Collect successful share action
+    agent.environment.collect_action(
+        step_number=agent.environment.time,
+        agent_id=agent.agent_id,
+        action_type="share",
+        action_target_id=target.agent_id,
+        position_before=agent.position,
+        position_after=agent.position,
+        resources_before=initial_resources,
+        resources_after=agent.resource_level,
         reward=reward,
-        next_state=torch.FloatTensor(next_state).to(agent.share_module.device),
-        done=False,
+        details={
+            "success": True,
+            "amount_shared": share_amount,
+            "target_resources_before": target_initial_resources,
+            "target_resources_after": target.resource_level,
+            "target_was_starving": target_initial_resources
+            < target.config.starvation_threshold,
+        },
     )
 
 

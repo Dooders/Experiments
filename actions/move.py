@@ -193,51 +193,34 @@ class MoveModule(BaseDQNModule):
 
 
 def move_action(agent: "BaseAgent") -> None:
-    """Execute movement using optimized Deep Q-Learning based policy.
-
-    This function handles the complete movement cycle for an agent:
-    1. Gets and processes the current state
-    2. Determines the next movement using DQN
-    3. Updates the agent's position
-    4. Calculates rewards based on movement and resource proximity
-    5. Stores experience and performs training
-
-    Args:
-        agent (BaseAgent): The agent performing the movement. Must have:
-            - move_module: DQN module for movement decisions
-            - position: Current (x, y) coordinates
-            - get_state(): Method returning current state representation
-
-    Notes:
-        - Movement is bounded by the environment dimensions
-        - Rewards consider:
-            * Base movement cost
-            * Resource approach/retreat behavior
-            * Distance moved
-        - Experience is stored in replay memory for batch training
-        - Training occurs if sufficient experiences are available
-
-    Example:
-        >>> agent = BaseAgent(environment)
-        >>> move_action(agent)  # Updates agent's position and trains DQN
-    """
+    """Execute movement using optimized Deep Q-Learning based policy."""
     # Get state and ensure it's a tensor
     state = _ensure_tensor(agent.get_state(), agent.move_module.device)
 
     # Get movement and update position
     initial_position = agent.position
     new_position = agent.move_module.get_movement(agent, state)
+
+    # Collect action instead of direct logging
+    agent.environment.collect_action(
+        step_number=agent.environment.time,
+        agent_id=agent.agent_id,
+        action_type="move",
+        position_before=initial_position,
+        position_after=new_position,
+        resources_before=agent.resource_level,
+        resources_after=agent.resource_level - DEFAULT_MOVE_CONFIG.move_base_cost,
+        reward=DEFAULT_MOVE_CONFIG.move_base_cost,
+        details={"distance_moved": _calculate_distance(initial_position, new_position)},
+    )
+
+    # Update position
     agent.position = new_position
 
     # Calculate reward and store experience
     reward = _calculate_movement_reward(agent, initial_position, new_position)
     agent.total_reward += reward
     _store_and_train(agent, state, reward)
-
-    logger.debug(
-        f"Agent {id(agent)} moved from {initial_position} to {new_position}. "
-        f"Reward: {reward:.3f}, Epsilon: {agent.move_module.epsilon:.3f}"
-    )
 
 
 def _calculate_movement_reward(

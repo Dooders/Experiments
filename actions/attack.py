@@ -101,32 +101,7 @@ class AttackModule(BaseDQNModule):
 
 
 def attack_action(agent: "BaseAgent") -> None:
-    """Execute attack action using the AttackModule.
-
-    This function handles the complete attack action workflow for an agent, including:
-    - State evaluation and action selection
-    - Target identification and selection
-    - Damage calculation and application
-    - Experience storage for learning
-
-    The function implements several key mechanics:
-    - Defense stance when DEFEND action is selected
-    - Reduced damage when agent has low resources
-    - Closest target selection within attack range
-    - Experience replay storage for reinforcement learning
-
-    Args:
-        agent (BaseAgent): The agent executing the attack action
-
-    Returns:
-        None
-
-    Side Effects:
-        - Updates agent's defensive stance
-        - Modifies target agent's health
-        - Stores experience in agent's attack module
-        - Logs attack outcomes
-    """
+    """Execute attack action using the AttackModule."""
     # Get current state and health ratio
     state = agent.get_state()
     health_ratio = agent.current_health / agent.max_health
@@ -139,11 +114,26 @@ def attack_action(agent: "BaseAgent") -> None:
     # Handle defense action
     if action == AttackActionSpace.DEFEND:
         agent.is_defending = True
+
+        # Collect defense action
+        agent.environment.collect_action(
+            step_number=agent.environment.time,
+            agent_id=agent.agent_id,
+            action_type="defend",
+            position_before=agent.position,
+            position_after=agent.position,
+            resources_before=agent.resource_level,
+            resources_after=agent.resource_level,
+            reward=0,
+            details={"is_defending": True},
+        )
+
         logger.debug(f"Agent {id(agent)} took defensive stance")
         return
 
     # Calculate attack target position
     target_pos = agent.calculate_attack_position(action)
+    initial_resources = agent.resource_level
 
     # Find potential targets
     targets = [
@@ -154,41 +144,54 @@ def attack_action(agent: "BaseAgent") -> None:
         and np.sqrt(((np.array(other.position) - np.array(target_pos)) ** 2).sum())
         < agent.config.attack_range
     ]
+
     if not targets:
-        logger.debug(f"Agent {id(agent)} attack found no targets")
+        # Collect failed attack action
+        agent.environment.collect_action(
+            step_number=agent.environment.time,
+            agent_id=agent.agent_id,
+            action_type="attack",
+            position_before=agent.position,
+            position_after=agent.position,
+            resources_before=initial_resources,
+            resources_after=initial_resources,
+            reward=0,
+            details={"success": False, "reason": "no_targets"},
+        )
         return
 
-    # Select closest target
+    # Select and attack target
     target = min(
         targets,
         key=lambda t: np.sqrt(
             ((np.array(t.position) - np.array(target_pos)) ** 2).sum()
         ),
     )
-
-    # Calculate base damage
-    base_damage = agent.config.attack_base_damage
-    if agent.resource_level < agent.config.min_reproduction_resources:
-        base_damage *= 0.7  # Reduced damage when low on resources
+    target_initial_health = target.current_health
 
     # Execute attack
-    damage_dealt = target.handle_combat(agent, base_damage)
+    damage_dealt = target.handle_combat(agent, agent.config.attack_base_damage)
 
-    # Calculate reward and store experience
+    # Calculate reward
     reward = agent.calculate_attack_reward(target, damage_dealt, action)
     agent.total_reward += reward
 
-    # Store experience
-    next_state = agent.get_state()
-    agent.attack_module.store_experience(
-        state.to_tensor(agent.attack_module.device),
-        action,
-        reward,
-        next_state.to_tensor(agent.attack_module.device),
-        not target.alive,
-    )
-
-    logger.info(
-        f"Agent {id(agent)} attacked Agent {id(target)} for {damage_dealt:.1f} damage. "
-        f"Target health: {target.current_health:.1f}/{target.max_health}"
+    # Collect attack action
+    agent.environment.collect_action(
+        step_number=agent.environment.time,
+        agent_id=agent.agent_id,
+        action_type="attack",
+        action_target_id=target.agent_id,
+        position_before=agent.position,
+        position_after=agent.position,
+        resources_before=initial_resources,
+        resources_after=agent.resource_level,
+        reward=reward,
+        details={
+            "damage_dealt": damage_dealt,
+            "target_health_before": target_initial_health,
+            "target_health_after": target.current_health,
+            "success": damage_dealt > 0,
+            "target_killed": not target.alive,
+        },
     )

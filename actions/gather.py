@@ -273,50 +273,68 @@ def gather_action(agent: "BaseAgent") -> None:
     """Execute gathering action using the gather module."""
     # Get current state
     state = agent.gather_module._process_gather_state(agent)
+    initial_resources = agent.resource_level
 
     # Get gathering decision
     should_gather, target_resource = agent.gather_module.get_gather_decision(
         agent, state
     )
 
-    if not should_gather:
-        logger.debug(f"Agent {id(agent)} decided to skip gathering")
+    if not should_gather or not target_resource:
+        # Collect skipped gather action
+        agent.environment.collect_action(
+            step_number=agent.environment.time,
+            agent_id=agent.agent_id,
+            action_type="gather",
+            position_before=agent.position,
+            position_after=agent.position,
+            resources_before=initial_resources,
+            resources_after=initial_resources,
+            reward=0,
+            details={
+                "success": False,
+                "reason": (
+                    "decided_not_to_gather"
+                    if not should_gather
+                    else "no_target_resource"
+                ),
+            },
+        )
         return
 
-    # Record initial resources
-    initial_resources = agent.resource_level
+    # Record initial resource amount
+    resource_amount_before = target_resource.amount
 
     # Attempt gathering
-    if target_resource and not target_resource.is_depleted():
+    if not target_resource.is_depleted():
         gather_amount = min(agent.config.max_gather_amount, target_resource.amount)
         target_resource.consume(gather_amount)
         agent.resource_level += gather_amount
 
-        logger.debug(
-            f"Agent {id(agent)} gathered {gather_amount} resources from node at "
-            f"{target_resource.position}. Resource remaining: {target_resource.amount}"
+        # Calculate reward
+        reward = agent.gather_module.calculate_gather_reward(
+            agent, initial_resources, target_resource
         )
+        agent.total_reward += reward
 
-    # Calculate and store reward
-    reward = agent.gather_module.calculate_gather_reward(
-        agent, initial_resources, target_resource
-    )
-    agent.total_reward += reward
-    # Get next state
-    next_state = agent.gather_module._process_gather_state(agent)
-
-    # Store experience and train
-    if agent.gather_module.last_state is not None:
-        agent.gather_module.store_experience(
-            state=agent.gather_module.last_state,
-            action=agent.gather_module.last_action,
+        # Collect successful gather action
+        agent.environment.collect_action(
+            step_number=agent.environment.time,
+            agent_id=agent.agent_id,
+            action_type="gather",
+            position_before=agent.position,
+            position_after=agent.position,
+            resources_before=initial_resources,
+            resources_after=agent.resource_level,
             reward=reward,
-            next_state=next_state,
-            done=False,
+            details={
+                "success": True,
+                "amount_gathered": gather_amount,
+                "resource_before": resource_amount_before,
+                "resource_after": target_resource.amount,
+                "resource_depleted": target_resource.is_depleted(),
+                "distance_to_resource": np.linalg.norm(
+                    np.array(target_resource.position) - np.array(agent.position)
+                ),
+            },
         )
-
-        if len(agent.gather_module.memory) >= 2:
-            batch_size = min(32, len(agent.gather_module.memory))
-            agent.gather_module.train(
-                random.sample(agent.gather_module.memory, batch_size)
-            )

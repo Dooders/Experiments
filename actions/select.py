@@ -31,10 +31,11 @@ class SelectConfig(BaseDQNConfig):
     """Configuration for action selection behavior."""
 
     # Base action weights
-    move_weight: float = 0.4
+    move_weight: float = 0.3
     gather_weight: float = 0.3
-    share_weight: float = 0.2
+    share_weight: float = 0.15
     attack_weight: float = 0.1
+    reproduce_weight: float = 0.15
 
     # State-based multipliers
     move_mult_no_resources: float = 1.5
@@ -43,10 +44,13 @@ class SelectConfig(BaseDQNConfig):
     share_mult_poor: float = 0.5
     attack_mult_desperate: float = 1.4
     attack_mult_stable: float = 0.6
+    reproduce_mult_wealthy: float = 1.4
+    reproduce_mult_poor: float = 0.3
 
     # Thresholds
     attack_starvation_threshold: float = 0.5
     attack_defense_threshold: float = 0.3
+    reproduce_resource_threshold: float = 0.7
 
 
 class SelectQNetwork(BaseQNetwork):
@@ -108,9 +112,7 @@ class SelectModule(BaseDQNModule):
 
         return random.choices(actions, weights=combined_probs, k=1)[0]
 
-    def _adjust_probabilities(
-        self, agent: "BaseAgent", base_probs: List[float]
-    ) -> List[float]:
+    def _adjust_probabilities(self, agent: "BaseAgent", base_probs: List[float]) -> List[float]:
         """Adjust action probabilities based on agent's current state."""
         adjusted_probs = base_probs.copy()
         config = self.config
@@ -120,62 +122,62 @@ class SelectModule(BaseDQNModule):
         starvation_risk = agent.starvation_threshold / agent.max_starvation
         health_ratio = agent.current_health / agent.max_health
 
+        # Helper function to safely get action index
+        def get_action_index(action_name: str) -> int:
+            try:
+                return next(i for i, a in enumerate(agent.actions) if a.name == action_name)
+            except StopIteration:
+                return -1
+
         # Find nearby entities
         nearby_resources = [
-            r
-            for r in agent.environment.resources
-            if not r.is_depleted()
-            and np.sqrt(((np.array(r.position) - np.array(agent.position)) ** 2).sum())
-            < agent.config.gathering_range
+            r for r in agent.environment.resources
+            if not r.is_depleted() and np.sqrt(((np.array(r.position) - np.array(agent.position)) ** 2).sum()) < agent.config.gathering_range
         ]
 
         nearby_agents = [
-            a
-            for a in agent.environment.agents
-            if a != agent
-            and a.alive
-            and np.sqrt(((np.array(a.position) - np.array(agent.position)) ** 2).sum())
-            < agent.config.social_range
+            a for a in agent.environment.agents
+            if a != agent and a.alive and np.sqrt(((np.array(a.position) - np.array(agent.position)) ** 2).sum()) < agent.config.social_range
         ]
 
-        # Adjust move probability
-        move_idx = next(i for i, a in enumerate(agent.actions) if a.name == "move")
-        if not nearby_resources:
+        # Adjust probabilities only for actions that exist
+        move_idx = get_action_index("move")
+        if move_idx >= 0 and not nearby_resources:
             adjusted_probs[move_idx] *= config.move_mult_no_resources
 
-        # Adjust gather probability
-        gather_idx = next(i for i, a in enumerate(agent.actions) if a.name == "gather")
-        if (
-            nearby_resources
-            and resource_level < agent.config.min_reproduction_resources
-        ):
+        gather_idx = get_action_index("gather")
+        if gather_idx >= 0 and nearby_resources and resource_level < agent.config.min_reproduction_resources:
             adjusted_probs[gather_idx] *= config.gather_mult_low_resources
 
-        # Adjust share probability
-        share_idx = next(i for i, a in enumerate(agent.actions) if a.name == "share")
-        if resource_level > agent.config.min_reproduction_resources and nearby_agents:
-            adjusted_probs[share_idx] *= config.share_mult_wealthy
-        else:
-            adjusted_probs[share_idx] *= config.share_mult_poor
+        share_idx = get_action_index("share")
+        if share_idx >= 0:
+            if resource_level > agent.config.min_reproduction_resources and nearby_agents:
+                adjusted_probs[share_idx] *= config.share_mult_wealthy
+            else:
+                adjusted_probs[share_idx] *= config.share_mult_poor
 
-        # Adjust attack probability
-        attack_idx = next(i for i, a in enumerate(agent.actions) if a.name == "attack")
-        if (
-            starvation_risk > config.attack_starvation_threshold
-            and nearby_agents
-            and resource_level > 2
-        ):
-            adjusted_probs[attack_idx] *= config.attack_mult_desperate
-        else:
-            adjusted_probs[attack_idx] *= config.attack_mult_stable
+        attack_idx = get_action_index("attack")
+        if attack_idx >= 0:
+            if starvation_risk > config.attack_starvation_threshold and nearby_agents and resource_level > 2:
+                adjusted_probs[attack_idx] *= config.attack_mult_desperate
+            else:
+                adjusted_probs[attack_idx] *= config.attack_mult_stable
 
-        if health_ratio < config.attack_defense_threshold:
-            adjusted_probs[attack_idx] *= 0.5
-        elif (
-            health_ratio > 0.8
-            and resource_level > agent.config.min_reproduction_resources
-        ):
-            adjusted_probs[attack_idx] *= 1.5
+            if health_ratio < config.attack_defense_threshold:
+                adjusted_probs[attack_idx] *= 0.5
+            elif health_ratio > 0.8 and resource_level > agent.config.min_reproduction_resources:
+                adjusted_probs[attack_idx] *= 1.5
+
+        reproduce_idx = get_action_index("reproduce")
+        if reproduce_idx >= 0:
+            if resource_level > agent.config.min_reproduction_resources * 1.5 and health_ratio > 0.8:
+                adjusted_probs[reproduce_idx] *= config.reproduce_mult_wealthy
+            else:
+                adjusted_probs[reproduce_idx] *= config.reproduce_mult_poor
+
+            population_ratio = len(agent.environment.agents) / agent.config.max_population
+            if population_ratio > config.reproduce_resource_threshold:
+                adjusted_probs[reproduce_idx] *= 0.5
 
         # Normalize probabilities
         total = sum(adjusted_probs)
