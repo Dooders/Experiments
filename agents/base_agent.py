@@ -8,6 +8,7 @@ from action import *
 from actions.attack import AttackActionSpace, AttackModule, attack_action
 from actions.gather import GatherModule, gather_action
 from actions.move import MoveModule, move_action
+from actions.reproduce import ReproduceModule, reproduce_action
 from actions.select import SelectConfig, SelectModule, create_selection_state
 from actions.share import ShareModule, share_action
 from genome import Genome
@@ -24,6 +25,7 @@ BASE_ACTION_SET = [
     Action("gather", 0.3, gather_action),
     Action("share", 0.2, share_action),
     Action("attack", 0.1, attack_action),
+    Action("reproduce", 0.15, reproduce_action),
 ]
 
 
@@ -56,7 +58,7 @@ class BaseAgent:
         action_set: list[Action] = BASE_ACTION_SET,
         parent_id: Optional[int] = None,
         generation: int = 0,
-        skip_logging: bool = False
+        skip_logging: bool = False,
     ):
         """Initialize a new agent with given parameters."""
         # Add default actions
@@ -100,10 +102,9 @@ class BaseAgent:
         self.attack_module = AttackModule(self.config)
         self.share_module = ShareModule(self.config)
         self.gather_module = GatherModule(self.config)
+        self.reproduce_module = ReproduceModule(self.config)
         self.select_module = SelectModule(
-            num_actions=len(self.actions), 
-            config=SelectConfig(), 
-            device=self.device
+            num_actions=len(self.actions), config=SelectConfig(), device=self.device
         )
 
         # Log agent creation to database only if not skipped
@@ -118,7 +119,7 @@ class BaseAgent:
                 starvation_threshold=self.starvation_threshold,
                 genome_id=self.genome_id,
                 parent_id=self.parent_id,
-                generation=self.generation
+                generation=self.generation,
             )
 
             logger.info(
@@ -289,12 +290,12 @@ class BaseAgent:
         """Create a new agent as offspring."""
         # Get the agent's class (IndependentAgent, SystemAgent, etc)
         agent_class = type(self)
-        
+
         # Generate unique ID and genome info first
         new_id = self.environment.get_next_agent_id()
         generation = self.generation + 1
         genome_id = f"{agent_class.__name__}_{new_id}_{self.environment.time}"
-        
+
         # Log the new agent to database first
         try:
             self.environment.db.log_agent(
@@ -307,12 +308,12 @@ class BaseAgent:
                 starvation_threshold=self.config.starvation_threshold,
                 genome_id=genome_id,
                 parent_id=self.agent_id,
-                generation=generation
+                generation=generation,
             )
         except Exception as e:
             logger.error(f"Failed to log new agent {new_id} to database: {e}")
             raise
-        
+
         # Create new agent with all info, skipping database logging
         new_agent = agent_class(
             agent_id=new_id,
@@ -321,17 +322,17 @@ class BaseAgent:
             environment=self.environment,
             parent_id=self.agent_id,
             generation=generation,
-            skip_logging=True  # Skip logging since we already did it
+            skip_logging=True,  # Skip logging since we already did it
         )
-        
+
         # Set additional attributes
         new_agent.genome_id = genome_id
-        
+
         # Log creation
         logger.info(
             f"Agent {new_id} created at {self.position} during step {self.environment.time} of type {agent_class.__name__}"
         )
-        
+
         return new_agent
 
     def die(self):

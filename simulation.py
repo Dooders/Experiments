@@ -168,6 +168,7 @@ def run_simulation(
                     agent.act()
 
                 # Process reproduction in parallel
+                #! Need to sunset this at some point
                 for agent in batch:
                     agent.reproduce()
 

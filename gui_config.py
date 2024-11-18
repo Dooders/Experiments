@@ -25,7 +25,7 @@ CONFIG_FILE = "config.yaml"
 DOCS_FILE = "agents.md"
 
 # Default simulation settings
-DEFAULT_SIMULATION_STEPS = 500
+DEFAULT_SIMULATION_STEPS = 1000
 
 # Batch simulation parameters
 DEFAULT_BATCH_VARIATIONS = {
