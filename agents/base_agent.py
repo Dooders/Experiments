@@ -296,25 +296,7 @@ class BaseAgent:
         generation = self.generation + 1
         genome_id = f"{agent_class.__name__}_{new_id}_{self.environment.time}"
 
-        # Log the new agent to database first
-        try:
-            self.environment.db.log_agent(
-                agent_id=new_id,
-                birth_time=self.environment.time,
-                agent_type=agent_class.__name__,
-                position=self.position,
-                initial_resources=self.config.offspring_initial_resources,
-                max_health=self.config.max_health,
-                starvation_threshold=self.config.starvation_threshold,
-                genome_id=genome_id,
-                parent_id=self.agent_id,
-                generation=generation,
-            )
-        except Exception as e:
-            logger.error(f"Failed to log new agent {new_id} to database: {e}")
-            raise
-
-        # Create new agent with all info, skipping database logging
+        # Create new agent with all info
         new_agent = agent_class(
             agent_id=new_id,
             position=self.position,
@@ -322,11 +304,14 @@ class BaseAgent:
             environment=self.environment,
             parent_id=self.agent_id,
             generation=generation,
-            skip_logging=True,  # Skip logging since we already did it
+            skip_logging=True,  # Skip individual logging since we'll batch it
         )
 
         # Set additional attributes
         new_agent.genome_id = genome_id
+
+        # Add to environment using batch operation
+        self.environment.batch_add_agents([new_agent])
 
         # Log creation
         logger.info(

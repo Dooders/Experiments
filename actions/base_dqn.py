@@ -83,6 +83,7 @@ class BaseDQNModule:
         self._setup_training(config)
         self.losses = []
         self.episode_rewards = []
+        self.pending_experiences = []
 
     def _setup_networks(
         self, input_dim: int, output_dim: int, config: BaseDQNConfig
@@ -165,40 +166,30 @@ class BaseDQNModule:
         agent_id: Optional[int] = None,
         module_type: Optional[str] = None,
     ) -> None:
-        """Store experience in replay memory and optionally log to database.
-
-        Parameters
-        ----------
-        state : torch.Tensor
-            State before action
-        action : int
-            Action taken
-        reward : float
-            Reward received
-        next_state : torch.Tensor
-            State after action
-        done : bool
-            Whether episode ended
-        step_number : Optional[int]
-            Current simulation step for logging
-        agent_id : Optional[int]
-            ID of the agent for logging
-        module_type : Optional[str]
-            Type of DQN module for logging
-        """
+        """Store experience in replay memory and optionally log to database."""
         self.memory.append((state, action, reward, next_state, done))
         self.episode_rewards.append(reward)
 
+        # Collect experiences for batch logging
         if all(x is not None for x in [step_number, agent_id, module_type]):
-            self._log_experience(
-                step_number=step_number,
-                agent_id=agent_id,
-                module_type=module_type,
-                state=state,
-                action=action,
-                reward=reward,
-                next_state=next_state,
+            self.pending_experiences.append(
+                {
+                    "step_number": step_number,
+                    "agent_id": agent_id,
+                    "module_type": module_type,
+                    "state_before": str(state.tolist()),
+                    "action_taken": action,
+                    "reward": reward,
+                    "state_after": str(next_state.tolist()),
+                    "loss": None,
+                }
             )
+
+            # Batch log if we have enough experiences
+            if len(self.pending_experiences) >= 32:  # Use same batch size as training
+                if self.db is not None:
+                    self.db.batch_log_learning_experiences(self.pending_experiences)
+                self.pending_experiences = []
 
     def train(
         self,
@@ -319,3 +310,16 @@ class BaseDQNModule:
         self.steps = state_dict["steps"]
         self.losses = state_dict["losses"]
         self.episode_rewards = state_dict["episode_rewards"]
+
+    def cleanup(self):
+        """Clean up pending experiences."""
+        if self.db is not None and self.pending_experiences:
+            try:
+                self.db.batch_log_learning_experiences(self.pending_experiences)
+                self.pending_experiences = []
+            except Exception as e:
+                logger.error(f"Error cleaning up DQN module experiences: {e}")
+
+    def __del__(self):
+        """Ensure cleanup on deletion."""
+        self.cleanup()

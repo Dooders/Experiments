@@ -159,5 +159,34 @@ class TestSimulation(unittest.TestCase):
             
         self.assertGreater(env.resources[0].amount, initial_amount)
 
+    def test_batch_agent_addition(self):
+        """Test that multiple agents can be added efficiently in batch."""
+        env = Environment(
+            width=self.config.width,
+            height=self.config.height,
+            resource_distribution={"type": "random", "amount": self.config.initial_resources},
+            db_path=str(self.db_path)
+        )
+        
+        # Create multiple agents
+        agents = [
+            SystemAgent(i, (25, 25), self.config.initial_resource_level, env)
+            for i in range(10)
+        ]
+        
+        # Add them in batch
+        env.batch_add_agents(agents)
+        
+        # Verify all agents were added
+        self.assertEqual(len(env.agents), 10)
+        
+        # Verify database logging
+        db = SimulationDatabase(str(self.db_path))
+        cursor = db.cursor
+        cursor.execute("SELECT COUNT(*) FROM Agents")
+        count = cursor.fetchone()[0]
+        self.assertEqual(count, 10)
+        db.close()
+
 if __name__ == '__main__':
     unittest.main() 
