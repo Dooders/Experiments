@@ -12,17 +12,27 @@ logger = logging.getLogger(__name__)
 
 
 class SimulationDatabase:
+
     _thread_local = threading.local()
 
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str) -> None:
         """Initialize a new SimulationDatabase instance."""
         self.db_path = db_path
         self._setup_connection()
 
+        # Verify foreign key constraints are working
+        if not self.verify_foreign_keys():
+            logger.warning(
+                "Foreign key constraints are not working properly. "
+                "Data integrity cannot be guaranteed."
+            )
+
     def _setup_connection(self):
-        """Create a new connection for the current thread."""
+        """Create a new connection for the current thread and enable foreign key constraints."""
         if not hasattr(self._thread_local, "conn"):
             self._thread_local.conn = sqlite3.connect(self.db_path)
+            # Enable foreign key constraints
+            self._thread_local.conn.execute("PRAGMA foreign_keys = ON")
             self._thread_local.cursor = self._thread_local.conn.cursor()
             self._create_tables()
 
@@ -59,7 +69,8 @@ class SimulationDatabase:
                 birth_time INTEGER,
                 death_time INTEGER,
                 agent_type TEXT,
-                initial_position TEXT,
+                position_x REAL,
+                position_y REAL,
                 initial_resources REAL,
                 max_health REAL,
                 starvation_threshold INTEGER,
@@ -78,7 +89,7 @@ class SimulationDatabase:
                 current_health REAL,
                 max_health REAL,
                 starvation_threshold INTEGER,
-                is_defending BOOLEAN,
+                is_defending INTEGER,
                 total_reward REAL,
                 age INTEGER,
                 FOREIGN KEY(agent_id) REFERENCES Agents(agent_id)
@@ -157,6 +168,63 @@ class SimulationDatabase:
         )
         self.conn.commit()
 
+        # Add indexes for performance optimization
+        self.cursor.executescript(
+            """
+            -- Indexes for AgentStates table
+            CREATE INDEX IF NOT EXISTS idx_agent_states_agent_id 
+            ON AgentStates(agent_id);
+            
+            CREATE INDEX IF NOT EXISTS idx_agent_states_step_number 
+            ON AgentStates(step_number);
+            
+            CREATE INDEX IF NOT EXISTS idx_agent_states_composite 
+            ON AgentStates(step_number, agent_id);
+            
+            -- Indexes for Agents table
+            CREATE INDEX IF NOT EXISTS idx_agents_agent_type 
+            ON Agents(agent_type);
+            
+            CREATE INDEX IF NOT EXISTS idx_agents_birth_time 
+            ON Agents(birth_time);
+            
+            CREATE INDEX IF NOT EXISTS idx_agents_death_time 
+            ON Agents(death_time);
+            
+            -- Indexes for ResourceStates table
+            CREATE INDEX IF NOT EXISTS idx_resource_states_step_number 
+            ON ResourceStates(step_number);
+            
+            CREATE INDEX IF NOT EXISTS idx_resource_states_resource_id 
+            ON ResourceStates(resource_id);
+            
+            -- Indexes for SimulationSteps table
+            CREATE INDEX IF NOT EXISTS idx_simulation_steps_step_number 
+            ON SimulationSteps(step_number);
+            
+            -- Indexes for AgentActions table
+            CREATE INDEX IF NOT EXISTS idx_agent_actions_step_number 
+            ON AgentActions(step_number);
+            
+            CREATE INDEX IF NOT EXISTS idx_agent_actions_agent_id 
+            ON AgentActions(agent_id);
+            
+            CREATE INDEX IF NOT EXISTS idx_agent_actions_action_type 
+            ON AgentActions(action_type);
+            
+            -- Indexes for LearningExperiences table
+            CREATE INDEX IF NOT EXISTS idx_learning_experiences_step_number 
+            ON LearningExperiences(step_number);
+            
+            CREATE INDEX IF NOT EXISTS idx_learning_experiences_agent_id 
+            ON LearningExperiences(agent_id);
+            
+            CREATE INDEX IF NOT EXISTS idx_learning_experiences_module_type 
+            ON LearningExperiences(module_type);
+            """
+        )
+        self.conn.commit()
+
     def _execute_in_transaction(self, func):
         """Execute database operations within a transaction."""
         try:
@@ -165,6 +233,11 @@ class SimulationDatabase:
 
             with self.conn:  # This automatically handles commit/rollback
                 return func()
+        except sqlite3.IntegrityError as e:
+            logger.error(f"Database integrity error: {e}")
+            if "FOREIGN KEY constraint failed" in str(e):
+                logger.error("Foreign key constraint violation detected")
+            raise
         except Exception as e:
             logger.error(
                 f"Database transaction failed in thread {threading.current_thread().name}: {e}"
@@ -186,7 +259,8 @@ class SimulationDatabase:
                     data["agent_id"],
                     data["birth_time"],
                     data["agent_type"],
-                    str(data["position"]),
+                    data["position"][0],  # Extract x coordinate
+                    data["position"][1],  # Extract y coordinate
                     data["initial_resources"],
                     data["max_health"],
                     data["starvation_threshold"],
@@ -200,14 +274,127 @@ class SimulationDatabase:
             self.cursor.executemany(
                 """
                 INSERT INTO Agents (
-                    agent_id, birth_time, agent_type, initial_position, initial_resources,
-                    max_health, starvation_threshold, genome_id, parent_id, generation
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    agent_id, birth_time, agent_type, position_x, position_y,
+                    initial_resources, max_health, starvation_threshold, 
+                    genome_id, parent_id, generation
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 values,
             )
 
         self._execute_in_transaction(_insert)
+
+    def _prepare_metrics_values(self, step_number: int, metrics: Dict) -> Tuple:
+        """Prepare metrics values for database insertion.
+
+        Parameters
+        ----------
+        step_number : int
+            Current simulation step number
+        metrics : Dict
+            Dictionary containing simulation metrics
+
+        Returns
+        -------
+        Tuple
+            Values ready for database insertion
+        """
+        metric_keys = (
+            "total_agents",
+            "system_agents",
+            "independent_agents",
+            "control_agents",
+            "total_resources",
+            "average_agent_resources",
+            "births",
+            "deaths",
+            "current_max_generation",
+            "resource_efficiency",
+            "resource_distribution_entropy",
+            "average_agent_health",
+            "average_agent_age",
+            "average_reward",
+            "combat_encounters",
+            "successful_attacks",
+            "resources_shared",
+            "genetic_diversity",
+            "dominant_genome_ratio",
+        )
+        return (step_number, *[metrics[key] for key in metric_keys])
+
+    def _prepare_agent_state(self, agent, current_time: int) -> Tuple:
+        """Prepare agent state data for database insertion.
+
+        Parameters
+        ----------
+        agent : Agent
+            Agent object containing state data
+        current_time : int
+            Current simulation time
+
+        Returns
+        -------
+        Tuple
+            Agent state values ready for database insertion
+        """
+        return (
+            agent.agent_id,
+            *agent.position,
+            agent.resource_level,
+            agent.current_health,
+            agent.max_health,
+            agent.starvation_threshold,
+            int(agent.is_defending),
+            agent.total_reward,
+            current_time - agent.birth_time,
+        )
+
+    def _prepare_resource_state(self, resource) -> Tuple:
+        """Prepare resource state data for database insertion.
+
+        Parameters
+        ----------
+        resource : Resource
+            Resource object containing state data
+
+        Returns
+        -------
+        Tuple
+            Resource state values ready for database insertion
+        """
+        return (
+            resource.resource_id,
+            resource.amount,
+            *resource.position,
+        )
+
+    def _prepare_action_data(self, action: Dict) -> Tuple:
+        """Prepare action data for database insertion.
+
+        Parameters
+        ----------
+        action : Dict
+            Dictionary containing action data
+
+        Returns
+        -------
+        Tuple
+            Action values ready for database insertion
+        """
+        import json
+
+        return (
+            action["step_number"],
+            action["agent_id"],
+            action["action_type"],
+            action.get("action_target_id"),
+            str(action["position_before"]) if action.get("position_before") else None,
+            str(action["position_after"]) if action.get("position_after") else None,
+            action.get("resources_before"),
+            action.get("resources_after"),
+            action.get("reward"),
+            json.dumps(action["details"]) if action.get("details") else None,
+        )
 
     def log_step(
         self,
@@ -219,66 +406,61 @@ class SimulationDatabase:
         """Log comprehensive simulation state data for a single time step."""
 
         def _insert():
-            # Log agent states
-            self.cursor.executemany(
-                """
-                INSERT INTO AgentStates (
-                    step_number, agent_id, position_x, position_y, resource_level,
-                    current_health, max_health, starvation_threshold, is_defending, 
-                    total_reward, age
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [(step_number, *state[:4], *state[4:]) for state in agent_states],
-            )
+            # Bulk insert agent states
+            if agent_states:
+                self._bulk_insert_agent_states(step_number, agent_states)
 
-            # Log resource states
-            self.cursor.executemany(
-                """
-                INSERT INTO ResourceStates (
-                    step_number, resource_id, amount, position_x, position_y
-                ) VALUES (?, ?, ?, ?, ?)
-                """,
-                [(step_number, *state) for state in resource_states],
-            )
+            # Bulk insert resource states
+            if resource_states:
+                self._bulk_insert_resource_states(step_number, resource_states)
 
-            # Log metrics
-            self.cursor.execute(
-                """
-                INSERT INTO SimulationSteps (
-                    step_number, total_agents, system_agents, independent_agents,
-                    control_agents, total_resources, average_agent_resources,
-                    births, deaths, current_max_generation,
-                    resource_efficiency, resource_distribution_entropy,
-                    average_agent_health, average_agent_age, average_reward,
-                    combat_encounters, successful_attacks, resources_shared,
-                    genetic_diversity, dominant_genome_ratio
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    step_number,
-                    metrics["total_agents"],
-                    metrics["system_agents"],
-                    metrics["independent_agents"],
-                    metrics["control_agents"],
-                    metrics["total_resources"],
-                    metrics["average_agent_resources"],
-                    metrics["births"],
-                    metrics["deaths"],
-                    metrics["current_max_generation"],
-                    metrics["resource_efficiency"],
-                    metrics["resource_distribution_entropy"],
-                    metrics["average_agent_health"],
-                    metrics["average_agent_age"],
-                    metrics["average_reward"],
-                    metrics["combat_encounters"],
-                    metrics["successful_attacks"],
-                    metrics["resources_shared"],
-                    metrics["genetic_diversity"],
-                    metrics["dominant_genome_ratio"],
-                ),
-            )
+            # Insert metrics
+            self._insert_metrics(step_number, metrics)
 
         self._execute_in_transaction(_insert)
+
+    def _bulk_insert_agent_states(self, step_number: int, agent_states: List[Tuple]):
+        """Bulk insert agent states into database."""
+        self.cursor.executemany(
+            """
+            INSERT INTO AgentStates (
+                step_number, agent_id, position_x, position_y, resource_level,
+                current_health, max_health, starvation_threshold, is_defending, 
+                total_reward, age
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [(step_number, *state) for state in agent_states],
+        )
+
+    def _bulk_insert_resource_states(
+        self, step_number: int, resource_states: List[Tuple]
+    ):
+        """Bulk insert resource states into database."""
+        self.cursor.executemany(
+            """
+            INSERT INTO ResourceStates (
+                step_number, resource_id, amount, position_x, position_y
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            [(step_number, *state) for state in resource_states],
+        )
+
+    def _insert_metrics(self, step_number: int, metrics: Dict):
+        """Insert metrics data into database."""
+        self.cursor.execute(
+            """
+            INSERT INTO SimulationSteps (
+                step_number, total_agents, system_agents, independent_agents,
+                control_agents, total_resources, average_agent_resources,
+                births, deaths, current_max_generation,
+                resource_efficiency, resource_distribution_entropy,
+                average_agent_health, average_agent_age, average_reward,
+                combat_encounters, successful_attacks, resources_shared,
+                genetic_diversity, dominant_genome_ratio
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            self._prepare_metrics_values(step_number, metrics),
+        )
 
     def get_simulation_data(self, step_number: int) -> Dict:
         """Retrieve all simulation data for a specific time step.
@@ -506,86 +688,23 @@ class SimulationDatabase:
         agents: List,
         resources: List,
         metrics: Dict,
-        environment: "Environment",  # Add environment parameter
+        environment: "Environment",
     ):
-        """Log complete simulation state for a single time step.
+        """Log complete simulation state for a single time step."""
+        current_time = environment.time
 
-        Parameters
-        ----------
-        step_number : int
-            Current simulation step number
-        agents : List
-            List of agent objects, each must have attributes:
-            - agent_id: int
-            - position: Tuple[float, float]
-            - resource_level: float
-            - current_health: float
-            - max_health: float
-            - starvation_threshold: int
-            - is_defending: bool
-            - total_reward: float
-            - birth_time: int
-        resources : List
-            List of resource objects, each must have attributes:
-            - resource_id: int
-            - amount: float
-            - position: Tuple[float, float]
-        metrics : Dict
-            Dictionary containing simulation metrics:
-            - total_agents: int
-            - system_agents: int
-            - independent_agents: int
-            - control_agents: int
-            - total_resources: float
-            - average_agent_resources: float
-        environment : Environment
-            Reference to the environment for time tracking
-
-        Example
-        -------
-        >>> metrics = {
-        ...     "total_agents": 10,
-        ...     "system_agents": 5,
-        ...     "independent_agents": 3,
-        ...     "control_agents": 2,
-        ...     "total_resources": 1000.0,
-        ...     "average_agent_resources": 100.0
-        ... }
-        >>> db.log_simulation_step(step_number=1, agents=agent_list,
-        ...                       resources=resource_list, metrics=metrics,
-        ...                       environment=env)
-        """
-        # Convert agents to state tuples
+        # Convert agents and resources to state tuples
         agent_states = [
-            (
-                agent.agent_id,
-                agent.position[0],
-                agent.position[1],
-                agent.resource_level,
-                agent.current_health,
-                agent.max_health,
-                agent.starvation_threshold,
-                1 if agent.is_defending else 0,
-                agent.total_reward,
-                environment.time
-                - agent.birth_time,  # Calculate age using environment time
-            )
+            self._prepare_agent_state(agent, current_time)
             for agent in agents
             if agent.alive
         ]
 
-        # Convert resources to state tuples
         resource_states = [
-            (
-                resource.resource_id,
-                resource.amount,
-                resource.position[0],
-                resource.position[1],
-            )
-            for resource in resources
+            self._prepare_resource_state(resource) for resource in resources
         ]
 
-        # Use existing log_step method
+        # Use existing log_step method with prepared data
         self.log_step(step_number, agent_states, resource_states, metrics)
 
     def get_agent_lifespan_statistics(self) -> Dict[str, Dict[str, float]]:
@@ -682,70 +801,20 @@ class SimulationDatabase:
         # Remove the commit from here - we'll commit in batches instead
 
     def batch_log_agent_actions(self, actions: List[Dict]):
-        """Batch insert multiple agent actions at once.
+        """Batch insert multiple agent actions at once."""
+        values = [self._prepare_action_data(action) for action in actions]
 
-        Parameters
-        ----------
-        actions : List[Dict]
-            List of action dictionaries containing:
-            - step_number: int
-            - agent_id: int
-            - action_type: str
-            - action_target_id: Optional[int]
-            - position_before: Optional[Tuple[float, float]]
-            - position_after: Optional[Tuple[float, float]]
-            - resources_before: Optional[float]
-            - resources_after: Optional[float]
-            - reward: Optional[float]
-            - details: Optional[Dict]
-        """
-        import json
-
-        # Prepare all actions for batch insert
-        values = []
-        for action in actions:
-            pos_before_str = (
-                str(action["position_before"])
-                if action.get("position_before") is not None
-                else None
+        if values:
+            self.cursor.executemany(
+                """
+                INSERT INTO AgentActions (
+                    step_number, agent_id, action_type, action_target_id,
+                    position_before, position_after, resources_before,
+                    resources_after, reward, details
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                values,
             )
-            pos_after_str = (
-                str(action["position_after"])
-                if action.get("position_after") is not None
-                else None
-            )
-            details_json = (
-                json.dumps(action.get("details"))
-                if action.get("details") is not None
-                else None
-            )
-
-            values.append(
-                (
-                    action["step_number"],
-                    action["agent_id"],
-                    action["action_type"],
-                    action.get("action_target_id"),
-                    pos_before_str,
-                    pos_after_str,
-                    action.get("resources_before"),
-                    action.get("resources_after"),
-                    action.get("reward"),
-                    details_json,
-                )
-            )
-
-        # Batch insert
-        self.cursor.executemany(
-            """
-            INSERT INTO AgentActions (
-                step_number, agent_id, action_type, action_target_id,
-                position_before, position_after, resources_before,
-                resources_after, reward, details
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            values,
-        )
 
     def log_learning_experience(
         self,
@@ -882,15 +951,17 @@ class SimulationDatabase:
             self.cursor.execute(
                 """
                 INSERT INTO Agents (
-                    agent_id, birth_time, agent_type, initial_position, initial_resources,
-                    max_health, starvation_threshold, genome_id, parent_id, generation
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    agent_id, birth_time, agent_type, position_x, position_y,
+                    initial_resources, max_health, starvation_threshold, 
+                    genome_id, parent_id, generation
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     agent_id,
                     birth_time,
                     agent_type,
-                    str(position),
+                    position[0],
+                    position[1],
                     initial_resources,
                     max_health,
                     starvation_threshold,
@@ -924,3 +995,44 @@ class SimulationDatabase:
             )
 
         self._execute_in_transaction(_update)
+
+    def verify_foreign_keys(self) -> bool:
+        """
+        Verify that foreign key constraints are enabled and working.
+
+        Returns
+        -------
+        bool
+            True if foreign keys are enabled and working, False otherwise
+        """
+        try:
+            # Check if foreign keys are enabled
+            self.cursor.execute("PRAGMA foreign_keys")
+            foreign_keys_enabled = bool(self.cursor.fetchone()[0])
+
+            if not foreign_keys_enabled:
+                logger.warning("Foreign key constraints are not enabled")
+                return False
+
+            # Test foreign key constraint
+            try:
+                # Try to insert a record with an invalid foreign key
+                self.cursor.execute(
+                    """
+                    INSERT INTO AgentStates (
+                        step_number, agent_id, position_x, position_y, 
+                        resource_level, current_health, max_health,
+                        starvation_threshold, is_defending, total_reward, age
+                    ) VALUES (0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+                    """
+                )
+                # If we get here, foreign keys aren't working
+                logger.warning("Foreign key constraints failed validation test")
+                return False
+            except sqlite3.IntegrityError:
+                # This is what we want - constraint violation
+                return True
+
+        except Exception as e:
+            logger.error(f"Error verifying foreign keys: {e}")
+            return False
