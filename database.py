@@ -15,15 +15,24 @@ class SimulationDatabase:
     
     _thread_local = threading.local()
 
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str) -> None:
         """Initialize a new SimulationDatabase instance."""
         self.db_path = db_path
         self._setup_connection()
+        
+        # Verify foreign key constraints are working
+        if not self.verify_foreign_keys():
+            logger.warning(
+                "Foreign key constraints are not working properly. "
+                "Data integrity cannot be guaranteed."
+            )
 
     def _setup_connection(self):
-        """Create a new connection for the current thread."""
+        """Create a new connection for the current thread and enable foreign key constraints."""
         if not hasattr(self._thread_local, "conn"):
             self._thread_local.conn = sqlite3.connect(self.db_path)
+            # Enable foreign key constraints
+            self._thread_local.conn.execute("PRAGMA foreign_keys = ON")
             self._thread_local.cursor = self._thread_local.conn.cursor()
             self._create_tables()
 
@@ -167,6 +176,11 @@ class SimulationDatabase:
 
             with self.conn:  # This automatically handles commit/rollback
                 return func()
+        except sqlite3.IntegrityError as e:
+            logger.error(f"Database integrity error: {e}")
+            if "FOREIGN KEY constraint failed" in str(e):
+                logger.error("Foreign key constraint violation detected")
+            raise
         except Exception as e:
             logger.error(
                 f"Database transaction failed in thread {threading.current_thread().name}: {e}"
@@ -929,3 +943,44 @@ class SimulationDatabase:
             )
 
         self._execute_in_transaction(_update)
+
+    def verify_foreign_keys(self) -> bool:
+        """
+        Verify that foreign key constraints are enabled and working.
+        
+        Returns
+        -------
+        bool
+            True if foreign keys are enabled and working, False otherwise
+        """
+        try:
+            # Check if foreign keys are enabled
+            self.cursor.execute("PRAGMA foreign_keys")
+            foreign_keys_enabled = bool(self.cursor.fetchone()[0])
+            
+            if not foreign_keys_enabled:
+                logger.warning("Foreign key constraints are not enabled")
+                return False
+            
+            # Test foreign key constraint
+            try:
+                # Try to insert a record with an invalid foreign key
+                self.cursor.execute(
+                    """
+                    INSERT INTO AgentStates (
+                        step_number, agent_id, position_x, position_y, 
+                        resource_level, current_health, max_health,
+                        starvation_threshold, is_defending, total_reward, age
+                    ) VALUES (0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+                    """
+                )
+                # If we get here, foreign keys aren't working
+                logger.warning("Foreign key constraints failed validation test")
+                return False
+            except sqlite3.IntegrityError:
+                # This is what we want - constraint violation
+                return True
+            
+        except Exception as e:
+            logger.error(f"Error verifying foreign keys: {e}")
+            return False
