@@ -12,14 +12,14 @@ logger = logging.getLogger(__name__)
 
 
 class SimulationDatabase:
-    
+
     _thread_local = threading.local()
 
     def __init__(self, db_path: str) -> None:
         """Initialize a new SimulationDatabase instance."""
         self.db_path = db_path
         self._setup_connection()
-        
+
         # Verify foreign key constraints are working
         if not self.verify_foreign_keys():
             logger.warning(
@@ -252,14 +252,15 @@ class SimulationDatabase:
         agent_data : List[Dict]
             List of dictionaries containing agent data
         """
+
         def _insert():
             values = [
                 (
                     data["agent_id"],
                     data["birth_time"],
                     data["agent_type"],
-                    data["position"][0],    # Extract x coordinate
-                    data["position"][1],    # Extract y coordinate
+                    data["position"][0],  # Extract x coordinate
+                    data["position"][1],  # Extract y coordinate
                     data["initial_resources"],
                     data["max_health"],
                     data["starvation_threshold"],
@@ -283,6 +284,118 @@ class SimulationDatabase:
 
         self._execute_in_transaction(_insert)
 
+    def _prepare_metrics_values(self, step_number: int, metrics: Dict) -> Tuple:
+        """Prepare metrics values for database insertion.
+
+        Parameters
+        ----------
+        step_number : int
+            Current simulation step number
+        metrics : Dict
+            Dictionary containing simulation metrics
+
+        Returns
+        -------
+        Tuple
+            Values ready for database insertion
+        """
+        metric_keys = (
+            "total_agents",
+            "system_agents",
+            "independent_agents",
+            "control_agents",
+            "total_resources",
+            "average_agent_resources",
+            "births",
+            "deaths",
+            "current_max_generation",
+            "resource_efficiency",
+            "resource_distribution_entropy",
+            "average_agent_health",
+            "average_agent_age",
+            "average_reward",
+            "combat_encounters",
+            "successful_attacks",
+            "resources_shared",
+            "genetic_diversity",
+            "dominant_genome_ratio",
+        )
+        return (step_number, *[metrics[key] for key in metric_keys])
+
+    def _prepare_agent_state(self, agent, current_time: int) -> Tuple:
+        """Prepare agent state data for database insertion.
+
+        Parameters
+        ----------
+        agent : Agent
+            Agent object containing state data
+        current_time : int
+            Current simulation time
+
+        Returns
+        -------
+        Tuple
+            Agent state values ready for database insertion
+        """
+        return (
+            agent.agent_id,
+            *agent.position,
+            agent.resource_level,
+            agent.current_health,
+            agent.max_health,
+            agent.starvation_threshold,
+            int(agent.is_defending),
+            agent.total_reward,
+            current_time - agent.birth_time,
+        )
+
+    def _prepare_resource_state(self, resource) -> Tuple:
+        """Prepare resource state data for database insertion.
+
+        Parameters
+        ----------
+        resource : Resource
+            Resource object containing state data
+
+        Returns
+        -------
+        Tuple
+            Resource state values ready for database insertion
+        """
+        return (
+            resource.resource_id,
+            resource.amount,
+            *resource.position,
+        )
+
+    def _prepare_action_data(self, action: Dict) -> Tuple:
+        """Prepare action data for database insertion.
+
+        Parameters
+        ----------
+        action : Dict
+            Dictionary containing action data
+
+        Returns
+        -------
+        Tuple
+            Action values ready for database insertion
+        """
+        import json
+
+        return (
+            action["step_number"],
+            action["agent_id"],
+            action["action_type"],
+            action.get("action_target_id"),
+            str(action["position_before"]) if action.get("position_before") else None,
+            str(action["position_after"]) if action.get("position_after") else None,
+            action.get("resources_before"),
+            action.get("resources_after"),
+            action.get("reward"),
+            json.dumps(action["details"]) if action.get("details") else None,
+        )
+
     def log_step(
         self,
         step_number: int,
@@ -293,55 +406,61 @@ class SimulationDatabase:
         """Log comprehensive simulation state data for a single time step."""
 
         def _insert():
-            # Bulk insert agent states - already in tuple form, no conversion needed
+            # Bulk insert agent states
             if agent_states:
-                self.cursor.executemany(
-                    """
-                    INSERT INTO AgentStates (
-                        step_number, agent_id, position_x, position_y, resource_level,
-                        current_health, max_health, starvation_threshold, is_defending, 
-                        total_reward, age
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    [(step_number, *state) for state in agent_states],
-                )
+                self._bulk_insert_agent_states(step_number, agent_states)
 
-            # Bulk insert resource states - already in tuple form
+            # Bulk insert resource states
             if resource_states:
-                self.cursor.executemany(
-                    """
-                    INSERT INTO ResourceStates (
-                        step_number, resource_id, amount, position_x, position_y
-                    ) VALUES (?, ?, ?, ?, ?)
-                    """,
-                    [(step_number, *state) for state in resource_states],
-                )
+                self._bulk_insert_resource_states(step_number, resource_states)
 
-            # Single insert for metrics since it's one record per step
-            self.cursor.execute(
-                """
-                INSERT INTO SimulationSteps (
-                    step_number, total_agents, system_agents, independent_agents,
-                    control_agents, total_resources, average_agent_resources,
-                    births, deaths, current_max_generation,
-                    resource_efficiency, resource_distribution_entropy,
-                    average_agent_health, average_agent_age, average_reward,
-                    combat_encounters, successful_attacks, resources_shared,
-                    genetic_diversity, dominant_genome_ratio
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (step_number, *[metrics[key] for key in (
-                    'total_agents', 'system_agents', 'independent_agents',
-                    'control_agents', 'total_resources', 'average_agent_resources',
-                    'births', 'deaths', 'current_max_generation',
-                    'resource_efficiency', 'resource_distribution_entropy',
-                    'average_agent_health', 'average_agent_age', 'average_reward',
-                    'combat_encounters', 'successful_attacks', 'resources_shared',
-                    'genetic_diversity', 'dominant_genome_ratio'
-                )]),
-            )
+            # Insert metrics
+            self._insert_metrics(step_number, metrics)
 
         self._execute_in_transaction(_insert)
+
+    def _bulk_insert_agent_states(self, step_number: int, agent_states: List[Tuple]):
+        """Bulk insert agent states into database."""
+        self.cursor.executemany(
+            """
+            INSERT INTO AgentStates (
+                step_number, agent_id, position_x, position_y, resource_level,
+                current_health, max_health, starvation_threshold, is_defending, 
+                total_reward, age
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [(step_number, *state) for state in agent_states],
+        )
+
+    def _bulk_insert_resource_states(
+        self, step_number: int, resource_states: List[Tuple]
+    ):
+        """Bulk insert resource states into database."""
+        self.cursor.executemany(
+            """
+            INSERT INTO ResourceStates (
+                step_number, resource_id, amount, position_x, position_y
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            [(step_number, *state) for state in resource_states],
+        )
+
+    def _insert_metrics(self, step_number: int, metrics: Dict):
+        """Insert metrics data into database."""
+        self.cursor.execute(
+            """
+            INSERT INTO SimulationSteps (
+                step_number, total_agents, system_agents, independent_agents,
+                control_agents, total_resources, average_agent_resources,
+                births, deaths, current_max_generation,
+                resource_efficiency, resource_distribution_entropy,
+                average_agent_health, average_agent_age, average_reward,
+                combat_encounters, successful_attacks, resources_shared,
+                genetic_diversity, dominant_genome_ratio
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            self._prepare_metrics_values(step_number, metrics),
+        )
 
     def get_simulation_data(self, step_number: int) -> Dict:
         """Retrieve all simulation data for a specific time step.
@@ -572,37 +691,20 @@ class SimulationDatabase:
         environment: "Environment",
     ):
         """Log complete simulation state for a single time step."""
-        # Pre-calculate current time once
         current_time = environment.time
-        
-        # Convert agents to state tuples - do type conversion once per agent
+
+        # Convert agents and resources to state tuples
         agent_states = [
-            (
-                agent.agent_id,
-                *agent.position,  # Unpack position tuple directly
-                agent.resource_level,
-                agent.current_health,
-                agent.max_health,
-                agent.starvation_threshold,
-                int(agent.is_defending),  # Convert boolean to int once
-                agent.total_reward,
-                current_time - agent.birth_time,  # Use pre-calculated time
-            )
+            self._prepare_agent_state(agent, current_time)
             for agent in agents
             if agent.alive
         ]
 
-        # Convert resources to state tuples - unpack position directly
         resource_states = [
-            (
-                resource.resource_id,
-                resource.amount,
-                *resource.position,  # Unpack position tuple directly
-            )
-            for resource in resources
+            self._prepare_resource_state(resource) for resource in resources
         ]
 
-        # Use existing log_step method with pre-converted data
+        # Use existing log_step method with prepared data
         self.log_step(step_number, agent_states, resource_states, metrics)
 
     def get_agent_lifespan_statistics(self) -> Dict[str, Dict[str, float]]:
@@ -700,26 +802,8 @@ class SimulationDatabase:
 
     def batch_log_agent_actions(self, actions: List[Dict]):
         """Batch insert multiple agent actions at once."""
-        import json
+        values = [self._prepare_action_data(action) for action in actions]
 
-        # Pre-convert all actions to tuples in a single list comprehension
-        values = [
-            (
-                action["step_number"],
-                action["agent_id"],
-                action["action_type"],
-                action.get("action_target_id"),
-                str(action["position_before"]) if action.get("position_before") else None,
-                str(action["position_after"]) if action.get("position_after") else None,
-                action.get("resources_before"),
-                action.get("resources_after"),
-                action.get("reward"),
-                json.dumps(action["details"]) if action.get("details") else None,
-            )
-            for action in actions
-        ]
-
-        # Single executemany call for all actions
         if values:
             self.cursor.executemany(
                 """
@@ -915,7 +999,7 @@ class SimulationDatabase:
     def verify_foreign_keys(self) -> bool:
         """
         Verify that foreign key constraints are enabled and working.
-        
+
         Returns
         -------
         bool
@@ -925,11 +1009,11 @@ class SimulationDatabase:
             # Check if foreign keys are enabled
             self.cursor.execute("PRAGMA foreign_keys")
             foreign_keys_enabled = bool(self.cursor.fetchone()[0])
-            
+
             if not foreign_keys_enabled:
                 logger.warning("Foreign key constraints are not enabled")
                 return False
-            
+
             # Test foreign key constraint
             try:
                 # Try to insert a record with an invalid foreign key
@@ -948,7 +1032,7 @@ class SimulationDatabase:
             except sqlite3.IntegrityError:
                 # This is what we want - constraint violation
                 return True
-            
+
         except Exception as e:
             logger.error(f"Error verifying foreign keys: {e}")
             return False
