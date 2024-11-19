@@ -168,6 +168,63 @@ class SimulationDatabase:
         )
         self.conn.commit()
 
+        # Add indexes for performance optimization
+        self.cursor.executescript(
+            """
+            -- Indexes for AgentStates table
+            CREATE INDEX IF NOT EXISTS idx_agent_states_agent_id 
+            ON AgentStates(agent_id);
+            
+            CREATE INDEX IF NOT EXISTS idx_agent_states_step_number 
+            ON AgentStates(step_number);
+            
+            CREATE INDEX IF NOT EXISTS idx_agent_states_composite 
+            ON AgentStates(step_number, agent_id);
+            
+            -- Indexes for Agents table
+            CREATE INDEX IF NOT EXISTS idx_agents_agent_type 
+            ON Agents(agent_type);
+            
+            CREATE INDEX IF NOT EXISTS idx_agents_birth_time 
+            ON Agents(birth_time);
+            
+            CREATE INDEX IF NOT EXISTS idx_agents_death_time 
+            ON Agents(death_time);
+            
+            -- Indexes for ResourceStates table
+            CREATE INDEX IF NOT EXISTS idx_resource_states_step_number 
+            ON ResourceStates(step_number);
+            
+            CREATE INDEX IF NOT EXISTS idx_resource_states_resource_id 
+            ON ResourceStates(resource_id);
+            
+            -- Indexes for SimulationSteps table
+            CREATE INDEX IF NOT EXISTS idx_simulation_steps_step_number 
+            ON SimulationSteps(step_number);
+            
+            -- Indexes for AgentActions table
+            CREATE INDEX IF NOT EXISTS idx_agent_actions_step_number 
+            ON AgentActions(step_number);
+            
+            CREATE INDEX IF NOT EXISTS idx_agent_actions_agent_id 
+            ON AgentActions(agent_id);
+            
+            CREATE INDEX IF NOT EXISTS idx_agent_actions_action_type 
+            ON AgentActions(action_type);
+            
+            -- Indexes for LearningExperiences table
+            CREATE INDEX IF NOT EXISTS idx_learning_experiences_step_number 
+            ON LearningExperiences(step_number);
+            
+            CREATE INDEX IF NOT EXISTS idx_learning_experiences_agent_id 
+            ON LearningExperiences(agent_id);
+            
+            CREATE INDEX IF NOT EXISTS idx_learning_experiences_module_type 
+            ON LearningExperiences(module_type);
+            """
+        )
+        self.conn.commit()
+
     def _execute_in_transaction(self, func):
         """Execute database operations within a transaction."""
         try:
