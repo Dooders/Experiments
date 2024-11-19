@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class SimulationDatabase:
+    
     _thread_local = threading.local()
 
     def __init__(self, db_path: str):
@@ -59,7 +60,8 @@ class SimulationDatabase:
                 birth_time INTEGER,
                 death_time INTEGER,
                 agent_type TEXT,
-                initial_position TEXT,
+                position_x REAL,
+                position_y REAL,
                 initial_resources REAL,
                 max_health REAL,
                 starvation_threshold INTEGER,
@@ -78,7 +80,7 @@ class SimulationDatabase:
                 current_health REAL,
                 max_health REAL,
                 starvation_threshold INTEGER,
-                is_defending BOOLEAN,
+                is_defending INTEGER,
                 total_reward REAL,
                 age INTEGER,
                 FOREIGN KEY(agent_id) REFERENCES Agents(agent_id)
@@ -179,14 +181,14 @@ class SimulationDatabase:
         agent_data : List[Dict]
             List of dictionaries containing agent data
         """
-
         def _insert():
             values = [
                 (
                     data["agent_id"],
                     data["birth_time"],
                     data["agent_type"],
-                    str(data["position"]),
+                    data["position"][0],    # Extract x coordinate
+                    data["position"][1],    # Extract y coordinate
                     data["initial_resources"],
                     data["max_health"],
                     data["starvation_threshold"],
@@ -200,9 +202,10 @@ class SimulationDatabase:
             self.cursor.executemany(
                 """
                 INSERT INTO Agents (
-                    agent_id, birth_time, agent_type, initial_position, initial_resources,
-                    max_health, starvation_threshold, genome_id, parent_id, generation
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    agent_id, birth_time, agent_type, position_x, position_y,
+                    initial_resources, max_health, starvation_threshold, 
+                    genome_id, parent_id, generation
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 values,
             )
@@ -882,15 +885,17 @@ class SimulationDatabase:
             self.cursor.execute(
                 """
                 INSERT INTO Agents (
-                    agent_id, birth_time, agent_type, initial_position, initial_resources,
-                    max_health, starvation_threshold, genome_id, parent_id, generation
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    agent_id, birth_time, agent_type, position_x, position_y,
+                    initial_resources, max_health, starvation_threshold, 
+                    genome_id, parent_id, generation
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     agent_id,
                     birth_time,
                     agent_type,
-                    str(position),
+                    position[0],
+                    position[1],
                     initial_resources,
                     max_health,
                     starvation_threshold,

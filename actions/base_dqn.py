@@ -166,7 +166,26 @@ class BaseDQNModule:
         agent_id: Optional[int] = None,
         module_type: Optional[str] = None,
     ) -> None:
-        """Store experience in replay memory and optionally log to database."""
+        """Store experience in replay memory and optionally log to database.
+        Parameters
+        ----------
+        state : torch.Tensor
+            State before action
+        action : int
+            Action taken
+        reward : float
+            Reward received
+        next_state : torch.Tensor
+            State after action
+        done : bool
+            Whether episode ended
+        step_number : Optional[int]
+            Current simulation step for logging
+        agent_id : Optional[int]
+            ID of the agent for logging
+        module_type : Optional[str]
+            Type of DQN module for logging
+        """
         self.memory.append((state, action, reward, next_state, done))
         self.episode_rewards.append(reward)
 
