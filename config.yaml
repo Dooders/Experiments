@@ -5,7 +5,7 @@ height: 100
 # Agent settings
 system_agents: 0
 independent_agents: 10
-control_agents: 10
+control_agents: 0
 initial_resource_level: 5
 max_population: 300
 starvation_threshold: 0
