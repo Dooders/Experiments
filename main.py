@@ -12,6 +12,7 @@ from config import SimulationConfig
 from gui_config import *
 from simulation import run_simulation
 from visualization import SimulationVisualizer
+from agent_analysis import AgentAnalysisWindow
 
 
 class SimulationGUI:
@@ -694,7 +695,16 @@ class SimulationGUI:
                 self._generate_report,
                 "Generate detailed analysis report",
             ),
-            ("View Statistics", self._view_statistics, "View simulation statistics"),
+            (
+                "View Statistics",
+                self._view_statistics,
+                "View simulation statistics",
+            ),
+            (
+                "Agent Analysis",
+                self._open_agent_analysis_window,
+                "Analyze individual agents",
+            ),
         ]
 
         for label, command, tooltip in analysis_menu_items:
@@ -1024,6 +1034,19 @@ class SimulationGUI:
         except Exception as e:
             logging.warning(f"Error during cleanup: {e}")
             # Don't raise the exception - cleanup is non-critical
+
+    def _open_agent_analysis_window(self) -> None:
+        """
+        Open the agent analysis window.
+
+        Creates a new window for analyzing individual agents.
+        """
+        if not self.current_db_path:
+            messagebox.showwarning("No Data", "Please open or run a simulation first.")
+            return
+
+        # Create an instance of AgentAnalysisWindow
+        agent_analysis_window = AgentAnalysisWindow(self.root, self.current_db_path)
 
 
 def main():
