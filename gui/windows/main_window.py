@@ -297,6 +297,7 @@ class SimulationGUI:
             
             # Store the full data in the chart but don't display it yet
             if historical_data and "metrics" in historical_data:
+                logging.debug("Setting full data in chart")
                 self.components["chart"].set_full_data({
                     "steps": historical_data["steps"],
                     "metrics": {
@@ -311,13 +312,20 @@ class SimulationGUI:
             initial_data = db.get_simulation_data(0)
             self.current_step = 0
             
+            # Set up timeline interaction callbacks first
+            logging.debug("Setting up timeline callbacks")
+            self.components["chart"].set_timeline_callback(self._step_to)
+            self.components["chart"].set_playback_callback(
+                lambda: self.components["controls"].set_playing(True)
+            )
+            
             # Update components with initial data
             for name, component in self.components.items():
                 if name != "controls" and hasattr(component, "update"):
                     component.update(initial_data)
 
         except Exception as e:
-            logging.error(f"Error starting visualization: {str(e)}")
+            logging.error(f"Error starting visualization: {str(e)}", exc_info=True)
             self.show_error("Visualization Error", f"Failed to initialize visualization: {str(e)}")
 
     def _open_simulation(self) -> None:
@@ -439,25 +447,30 @@ class SimulationGUI:
             db = SimulationDatabase(self.current_db_path)
             data = db.get_simulation_data(self.current_step + 1)
             
-            if data:
-                self.current_step += 1
-                # Update each component with the data, except controls
-                for name, component in self.components.items():
-                    if name != "controls" and hasattr(component, "update"):
-                        try:
-                            # Ensure data is passed as a dictionary
-                            if not isinstance(data, dict):
-                                logging.warning(f"Invalid data format for {name}: {type(data)}")
-                                continue
-                            component.update(data)
-                        except Exception as comp_error:
-                            logging.error(f"Error updating {name}: {str(comp_error)}")
+            # Check if we've reached the end of the data
+            if not data or not data.get("metrics"):
+                # Stop playback
+                self.components["controls"].set_playing(False)
+                return
+            
+            self.current_step += 1
+            # Update each component with the data, except controls
+            for name, component in self.components.items():
+                if name != "controls" and hasattr(component, "update"):
+                    try:
+                        # Ensure data is passed as a dictionary
+                        if not isinstance(data, dict):
+                            logging.warning(f"Invalid data format for {name}: {type(data)}")
+                            continue
+                        component.update(data)
+                    except Exception as comp_error:
+                        logging.error(f"Error updating {name}: {str(comp_error)}")
                     
-                # Schedule next update if still playing
-                if self.components["controls"].playing:
-                    delay = self.components["controls"].get_delay()
-                    self.root.after(delay, self._play_simulation)
-                    
+            # Schedule next update if still playing
+            if self.components["controls"].playing:
+                delay = self.components["controls"].get_delay()
+                self.root.after(delay, self._play_simulation)
+                
         except Exception as e:
             self.show_error("Playback Error", f"Failed to update simulation: {str(e)}")
             self.components["controls"].set_playing(False)
@@ -474,13 +487,30 @@ class SimulationGUI:
             
         try:
             db = SimulationDatabase(self.current_db_path)
+            
+            # Ensure step is within valid range
+            if step < 0:
+                step = 0
+            
+            # Get max step from chart's full data
+            max_step = len(self.components["chart"].full_data["steps"]) - 1
+            if step > max_step:
+                step = max_step
+            
             data = db.get_simulation_data(step)
             
             if not isinstance(data, dict):
                 raise ValueError(f"Invalid data format: expected dict, got {type(data)}")
             
+            # Update current step
+            self.current_step = step
+            
+            # Reset chart history to current step
+            self.components["chart"].reset_history_to_step(step)
+            
+            # Update other components
             for name, component in self.components.items():
-                if name != "controls" and hasattr(component, "update"):
+                if name not in ["controls", "chart"] and hasattr(component, "update"):
                     try:
                         component.update(data)
                     except Exception as comp_error:

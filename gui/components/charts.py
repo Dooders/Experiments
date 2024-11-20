@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 from typing import Dict, Optional
+import logging
 
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -112,14 +113,6 @@ class SimulationChart(ttk.Frame):
             self.history["control_agents"].append(metrics.get("control_agents", 0))
             self.history["total_resources"].append(metrics.get("total_resources", 0))
 
-            # Store full data if this is new data
-            if current_step >= len(self.full_data["steps"]):
-                self.full_data["steps"].append(current_step)
-                self.full_data["system_agents"].append(metrics.get("system_agents", 0))
-                self.full_data["independent_agents"].append(metrics.get("independent_agents", 0))
-                self.full_data["control_agents"].append(metrics.get("control_agents", 0))
-                self.full_data["total_resources"].append(metrics.get("total_resources", 0))
-
             # Update current data lines
             for key in ["system_agents", "independent_agents", "control_agents"]:
                 self.lines[key].set_data(
@@ -149,73 +142,78 @@ class SimulationChart(ttk.Frame):
             # Update current step line
             self.lines["current_step"].set_xdata([current_step, current_step])
             
-            # Calculate max y value for step line and axis limits
-            max_agents = max(
-                max(self.full_data["system_agents"] or [0]),
-                max(self.full_data["independent_agents"] or [0]),
-                max(self.full_data["control_agents"] or [0])
-            )
-            max_resources = max(self.full_data["total_resources"] or [0])
-            
-            # Set y-limits with padding
-            self.ax1.set_ylim(0, max(1, max_agents * 1.1))
-            self.ax2.set_ylim(0, max(1, max_resources * 1.1))
-            
-            # Set x-limits with padding
-            max_step = max(self.full_data["steps"]) if self.full_data["steps"] else 100
-            self.ax1.set_xlim(0, max(max_step + 10, 100))
-            
-            # Update step line height
-            overall_max = max(max_agents, max_resources)
-            self.lines["current_step"].set_ydata([0, overall_max * 1.1])
+            # Update step line height using stored y-limits
+            y_max = self.ax1.get_ylim()[1]
+            self.lines["current_step"].set_ydata([0, y_max])
 
             # Force redraw
             self.canvas.draw()
 
         except Exception as e:
-            import logging
             logging.error(f"Failed to update chart: {str(e)}")
             logging.error(f"Data received: {data}")
 
     def _setup_interactions(self):
         """Setup mouse interaction handlers."""
-        self.canvas.mpl_connect("button_press_event", self._on_press)
-        self.canvas.mpl_connect("motion_notify_event", self._on_motion)
-        self.canvas.mpl_connect("button_release_event", self._on_release)
+        # Connect to matplotlib events with debug logging
+        self.canvas.mpl_connect('button_press_event', self._on_click)
+        self.canvas.mpl_connect('motion_notify_event', self._on_drag)
+        self.canvas.mpl_connect('button_release_event', self._on_release)
+        
+        # Enable debug logging
+        logging.getLogger().setLevel(logging.DEBUG)
+        logging.debug("Chart interactions setup complete")
 
-    def _on_press(self, event):
-        """Handle mouse press on the chart."""
-        if event.inaxes in (self.ax1, self.ax2):
-            self.is_dragging = True
-            self.was_playing = getattr(self, "playing", False)
-            self._notify_timeline_click(event.xdata)
+    def _on_click(self, event):
+        """Handle mouse click on the chart."""
+        logging.debug(f"Click detected - inaxes: {event.inaxes}, xdata: {event.xdata}, ydata: {event.ydata}")
+        
+        if event.inaxes in [self.ax1, self.ax2] and event.xdata is not None:
+            try:
+                step = int(round(event.xdata))
+                if hasattr(self, 'max_step'):
+                    step = max(0, min(step, self.max_step))
+                    logging.debug(f"Valid click at step {step}")
+                    if hasattr(self, "on_timeline_click"):
+                        logging.debug("Calling timeline callback")
+                        self.on_timeline_click(step)
+                        self.is_dragging = True
+                    else:
+                        logging.warning("Timeline callback not set")
+                else:
+                    logging.warning(f"max_step not set, raw step value was {step}")
+            except Exception as e:
+                logging.error(f"Error in click handler: {str(e)}", exc_info=True)
 
-    def _on_motion(self, event):
-        """Handle mouse motion while dragging."""
-        if self.is_dragging and event.inaxes in (self.ax1, self.ax2):
-            self._notify_timeline_click(event.xdata)
+    def _on_drag(self, event):
+        """Handle mouse drag on the chart."""
+        if self.is_dragging and event.inaxes in [self.ax1, self.ax2] and event.xdata is not None:
+            try:
+                step = int(round(event.xdata))
+                if hasattr(self, 'max_step'):
+                    step = max(0, min(step, self.max_step))
+                    logging.debug(f"Dragging to step {step}")
+                    if hasattr(self, "on_timeline_click"):
+                        self.on_timeline_click(step)
+                    else:
+                        logging.warning("Timeline callback not set")
+            except Exception as e:
+                logging.error(f"Error in drag handler: {str(e)}", exc_info=True)
 
     def _on_release(self, event):
-        """Handle mouse release to end dragging."""
-        if self.is_dragging:
-            self.is_dragging = False
-            if self.was_playing:
-                self._notify_playback_resume()
-
-    def _notify_timeline_click(self, x_coord: float):
-        """Notify parent of timeline navigation."""
-        if hasattr(self, "on_timeline_click") and x_coord is not None:
-            step = int(round(x_coord))
-            self.on_timeline_click(step)
-
-    def _notify_playback_resume(self):
-        """Notify parent to resume playback."""
-        if hasattr(self, "on_playback_resume"):
-            self.on_playback_resume()
+        """Handle mouse release."""
+        logging.debug("Mouse released")
+        self.is_dragging = False
 
     def set_timeline_callback(self, callback):
         """Set callback for timeline navigation."""
+        logging.debug("Setting timeline callback")
         self.on_timeline_click = callback
+        if hasattr(self, 'full_data') and self.full_data["steps"]:
+            self.max_step = len(self.full_data["steps"]) - 1
+            logging.debug(f"Set max_step to {self.max_step}")
+        else:
+            logging.warning("No full data available when setting timeline callback")
 
     def set_playback_callback(self, callback):
         """Set callback for playback resume."""
@@ -260,7 +258,11 @@ class SimulationChart(ttk.Frame):
             # Clear history (current display)
             self.history = {key: [] for key in self.history}
             
-            # Update axes limits based on full data
+            # Calculate and store fixed axis limits
+            self.max_step = max(steps) if steps else 100
+            logging.debug(f"Setting max_step to {self.max_step}")
+            
+            # Calculate max values for y-axis limits
             max_agents = max(
                 max(metrics["system_agents"] or [0]),
                 max(metrics["independent_agents"] or [0]),
@@ -268,13 +270,12 @@ class SimulationChart(ttk.Frame):
             )
             max_resources = max(metrics["total_resources"] or [0])
             
-            # Set y-limits with padding
+            # Set fixed y-limits with padding
             self.ax1.set_ylim(0, max(1, max_agents * 1.1))
             self.ax2.set_ylim(0, max(1, max_resources * 1.1))
             
-            # Set x-limits with padding
-            max_step = max(steps) if steps else 100
-            self.ax1.set_xlim(0, max(max_step + 10, 100))
+            # Set fixed x-limits
+            self.ax1.set_xlim(0, self.max_step)
             
             # Clear all lines
             for line in self.lines.values():
@@ -292,5 +293,55 @@ class SimulationChart(ttk.Frame):
             self.canvas.draw()
             
         except Exception as e:
-            import logging
-            logging.error(f"Failed to set full data: {str(e)}") 
+            logging.error(f"Failed to set full data: {str(e)}")
+            raise  # Re-raise the exception to see the full traceback
+
+    def reset_history_to_step(self, step: int):
+        """Reset the history up to a specific step."""
+        if not hasattr(self, 'full_data') or not self.full_data["steps"]:
+            return
+        
+        # Reset history
+        self.history = {
+            "steps": self.full_data["steps"][:step+1],
+            "system_agents": self.full_data["system_agents"][:step+1],
+            "independent_agents": self.full_data["independent_agents"][:step+1],
+            "control_agents": self.full_data["control_agents"][:step+1],
+            "total_resources": self.full_data["total_resources"][:step+1]
+        }
+        
+        # Update current data lines
+        for key in ["system_agents", "independent_agents", "control_agents"]:
+            self.lines[key].set_data(
+                self.history["steps"], 
+                self.history[key]
+            )
+
+        # Update current resources line
+        self.lines["resources"].set_data(
+            self.history["steps"], 
+            self.history["total_resources"]
+        )
+
+        # Update future data lines
+        for key in ["system_agents", "independent_agents", "control_agents"]:
+            self.future_lines[key].set_data(
+                self.full_data["steps"][step+1:], 
+                self.full_data[key][step+1:]
+            )
+
+        # Update future resources line
+        self.future_lines["resources"].set_data(
+            self.full_data["steps"][step+1:], 
+            self.full_data["total_resources"][step+1:]
+        )
+
+        # Update current step line
+        self.lines["current_step"].set_xdata([step, step])
+        
+        # Update step line height
+        y_max = self.ax1.get_ylim()[1]
+        self.lines["current_step"].set_ydata([0, y_max])
+
+        # Force redraw
+        self.canvas.draw()
