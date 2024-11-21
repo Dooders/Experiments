@@ -16,11 +16,10 @@ class AgentAnalysisWindow(ttk.Frame):
     Frame for detailed analysis of individual agents.
     """
 
-    def __init__(self, parent: tk.Widget, db_path: str, on_back_callback=None):
+    def __init__(self, parent: tk.Widget, db_path: str):
         super().__init__(parent)
         self.db_path = db_path
         self.chart_canvas = None
-        self.on_back_callback = on_back_callback
 
         self.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
         self.grid_columnconfigure(0, weight=1)
@@ -37,24 +36,9 @@ class AgentAnalysisWindow(ttk.Frame):
         main_container.grid_columnconfigure(0, weight=1)
         main_container.grid_rowconfigure(1, weight=1)
 
-        # Top bar containing back button and agent selection
-        top_bar = ttk.Frame(main_container)
-        top_bar.grid(row=0, column=0, sticky="ew", padx=5, pady=(0, 10))
-        top_bar.grid_columnconfigure(1, weight=1)  # Make agent selection expand
-
-        # Back button
-        if self.on_back_callback:
-            back_btn = ttk.Button(
-                top_bar,
-                text="← Back",
-                command=self.on_back_callback,
-                style="Back.TButton"
-            )
-            back_btn.grid(row=0, column=0, padx=(0, 10))
-
         # Agent Selection Area
-        selection_frame = ttk.Frame(top_bar)
-        selection_frame.grid(row=0, column=1, sticky="ew")
+        selection_frame = ttk.Frame(main_container)
+        selection_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=(0, 10))
         selection_frame.grid_columnconfigure(1, weight=1)
 
         ttk.Label(selection_frame, text="Select Agent:").grid(
