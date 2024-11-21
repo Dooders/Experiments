@@ -24,8 +24,13 @@ class SimulationGUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("Agent-Based Simulation")
-        self.root.geometry("1200x800")
-
+        
+        # Maximize the window
+        self.root.state('zoomed')  # For Windows
+        # Alternative for Linux/Mac:
+        # self.root.attributes('-zoomed', True)  # For Linux
+        # self.root.attributes('-fullscreen', True)  # For Mac
+        
         # Initialize variables
         self.current_db_path = None
         self.current_step = 0
