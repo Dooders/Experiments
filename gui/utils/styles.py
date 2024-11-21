@@ -56,4 +56,69 @@ def configure_ttk_styles():
             ]
         })
     ])
-    style.configure("Horizontal.TScale", background="white") 
+    style.configure("Horizontal.TScale", background="white")
+    
+    # Welcome screen button style
+    style.configure(
+        "Welcome.TButton",
+        padding=(20, 10),
+        font=("Arial", 11),
+        background="#f0f0f0",  # Light gray background
+        relief="raised"
+    )
+    
+    # Configure hover effect for welcome buttons
+    style.map(
+        "Welcome.TButton",
+        background=[("active", "#e0e0e0")],  # Slightly darker when hovered
+        relief=[("pressed", "sunken")]  # Pressed effect
+    )
+    
+    # Configuration section styles
+    style.configure(
+        "Config.TLabelframe",
+        background="#f5f5f5",  # Light gray background
+        relief="solid",
+    )
+    style.configure(
+        "Config.TLabelframe.Label",
+        font=("Arial", 12, "bold"),
+        padding=(0, 5),
+        background="#f5f5f5"  # Match parent background
+    )
+    
+    style.configure(
+        "ConfigSection.TLabelframe",
+        background="#ffffff",  # White background for sections
+        relief="solid",
+    )
+    style.configure(
+        "ConfigSection.TLabelframe.Label",
+        font=("Arial", 10, "bold"),
+        padding=(0, 3),
+        background="#ffffff"  # Match section background
+    )
+    
+    style.configure(
+        "ConfigLabel.TLabel",
+        font=("Arial", 9),
+        background="#ffffff"  # Match section background
+    )
+    
+    style.configure(
+        "Config.TEntry",
+        padding=5,
+        relief="solid",
+        fieldbackground="white",  # Ensure white background for text entry
+    )
+    
+    # Configure frames to match their parents' backgrounds
+    style.configure("TFrame", background="#f5f5f5")
+    
+    # Make sure entry widgets have white backgrounds
+    style.map("TEntry",
+        fieldbackground=[("readonly", "white"), ("disabled", "#f0f0f0")],
+        background=[("readonly", "white"), ("disabled", "#f0f0f0")]
+    )
+    
+    # Other existing styles... 

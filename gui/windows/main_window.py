@@ -62,86 +62,119 @@ class SimulationGUI:
 
         # Quick action buttons at top left
         button_frame = ttk.Frame(welcome_frame)
-        button_frame.grid(row=0, column=0, sticky="w", padx=20, pady=10)
+        button_frame.grid(row=0, column=0, sticky="w", padx=20, pady=20)
 
-        ttk.Button(
+        # Create a custom style for welcome screen buttons
+        style = ttk.Style()
+        style.configure(
+            "Welcome.TButton",
+            padding=(20, 10),  # Wider horizontal padding
+            font=("Arial", 11),  # Slightly larger font
+        )
+
+        new_sim_btn = ttk.Button(
             button_frame,
             text="New Simulation",
             command=self._new_simulation,
-            style="Action.TButton"
-        ).pack(side=tk.LEFT, padx=5)
+            style="Welcome.TButton"
+        )
+        new_sim_btn.pack(side=tk.LEFT, padx=10)  # Increased spacing between buttons
+        ToolTip(new_sim_btn, "Start a new simulation with custom parameters")
 
-        ttk.Button(
+        open_sim_btn = ttk.Button(
             button_frame,
             text="Open Simulation",
             command=self._open_simulation,
-            style="Action.TButton"
-        ).pack(side=tk.LEFT, padx=5)
+            style="Welcome.TButton"
+        )
+        open_sim_btn.pack(side=tk.LEFT, padx=10)
+        ToolTip(open_sim_btn, "Load and analyze an existing simulation")
+
+        # Load default configuration
+        try:
+            config = SimulationConfig.from_yaml("config.yaml")
+        except Exception as e:
+            self.show_error("Configuration Error", f"Failed to load configuration: {str(e)}")
+            config = SimulationConfig()  # Use default values if config load fails
 
         # Configuration section
-        config_frame = ttk.LabelFrame(welcome_frame, text="Simulation Configuration", padding=10)
+        config_frame = ttk.LabelFrame(
+            welcome_frame,
+            text="Simulation Configuration",
+            padding=15,
+            style="Config.TLabelframe"
+        )
         config_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=10)
 
-        # Load default config
-        config = SimulationConfig.from_yaml("config.yaml")
+        # Create sections for different configuration categories
+        sections = {
+            "Environment Settings": [
+                ("Environment Width", "width", config.width, "Width of the simulation environment"),
+                ("Environment Height", "height", config.height, "Height of the simulation environment"),
+                ("Initial Resources", "initial_resources", config.initial_resources, "Starting amount of resources"),
+                ("Resource Regen Rate", "resource_regen_rate", config.resource_regen_rate, "Rate at which resources regenerate"),
+                ("Max Resource Amount", "max_resource_amount", config.max_resource_amount, "Maximum resources per cell"),
+            ],
+            "Agent Population": [
+                ("System Agents", "system_agents", config.system_agents, "Number of system-controlled agents"),
+                ("Independent Agents", "independent_agents", config.independent_agents, "Number of independently-controlled agents"),
+                ("Control Agents", "control_agents", config.control_agents, "Number of control group agents"),
+                ("Max Population", "max_population", config.max_population, "Maximum total agent population"),
+            ],
+            "Simulation Parameters": [
+                ("Simulation Steps", "simulation_steps", config.simulation_steps, "Number of steps to run the simulation"),
+                ("Base Consumption Rate", "base_consumption_rate", config.base_consumption_rate, "Rate at which agents consume resources"),
+                ("Max Movement", "max_movement", config.max_movement, "Maximum distance agents can move per step"),
+                ("Gathering Range", "gathering_range", config.gathering_range, "Range at which agents can gather resources"),
+            ]
+        }
 
-        # Create configuration entries
+        # Create three columns for different sections
+        column_frames = []
+        for i in range(3):
+            frame = ttk.Frame(config_frame)
+            frame.grid(row=0, column=i, sticky="nsew", padx=10)
+            frame.grid_columnconfigure(0, weight=1)
+            column_frames.append(frame)
+
+        # Initialize config_vars dictionary
         self.config_vars = {}
-        config_fields = [
-            # Simulation settings
-            ("Simulation Steps", "simulation_steps", config.simulation_steps),
-            
-            # Environment settings
-            ("Environment Width", "width", config.width),
-            ("Environment Height", "height", config.height),
-            
-            # Agent population settings
-            ("System Agents", "system_agents", config.system_agents),
-            ("Independent Agents", "independent_agents", config.independent_agents),
-            ("Control Agents", "control_agents", config.control_agents),
-            ("Max Population", "max_population", config.max_population),
-            
-            # Resource settings
-            ("Initial Resources", "initial_resources", config.initial_resources),
-            ("Resource Regen Rate", "resource_regen_rate", config.resource_regen_rate),
-            ("Max Resource Amount", "max_resource_amount", config.max_resource_amount),
-            
-            # Agent behavior settings
-            ("Base Consumption Rate", "base_consumption_rate", config.base_consumption_rate),
-            ("Max Movement", "max_movement", config.max_movement),
-            ("Gathering Range", "gathering_range", config.gathering_range),
-        ]
 
-        # Create two columns for configuration
-        left_frame = ttk.Frame(config_frame)
-        right_frame = ttk.Frame(config_frame)
-        left_frame.grid(row=0, column=0, sticky="nsew", padx=10)
-        right_frame.grid(row=0, column=1, sticky="nsew", padx=10)
-
-        # Split fields between columns
-        mid_point = len(config_fields) // 2
-        for i, (label, key, default) in enumerate(config_fields):
-            # Choose which frame to put the field in
-            parent_frame = left_frame if i < mid_point else right_frame
-            row = i if i < mid_point else i - mid_point
-            
-            container = ttk.Frame(parent_frame)
-            container.grid(row=row, column=0, sticky="ew", pady=2)
-            container.grid_columnconfigure(1, weight=1)
-            
-            ttk.Label(container, text=f"{label}:").grid(row=0, column=0, padx=5)
-            var = tk.StringVar(value=str(default))
-            entry = ttk.Entry(container, textvariable=var, width=15)
-            entry.grid(row=0, column=1, sticky="w", padx=5)
-            self.config_vars[key] = var
-            
-            # Add tooltip with description
-            tooltip_text = (
-                "Number of steps to run the simulation" 
-                if key == "simulation_steps" 
-                else f"Configure {label.lower()}"
+        # Distribute sections across columns
+        for i, (section_name, fields) in enumerate(sections.items()):
+            section_frame = ttk.LabelFrame(
+                column_frames[i],
+                text=section_name,
+                padding=10,
+                style="ConfigSection.TLabelframe"
             )
-            ToolTip(entry, tooltip_text)
+            section_frame.pack(fill="x", expand=True)
+
+            # Add fields to section
+            for label, key, default, tooltip in fields:
+                container = ttk.Frame(section_frame)
+                container.pack(fill="x", pady=4)
+                
+                # Label
+                ttk.Label(
+                    container,
+                    text=f"{label}:",
+                    style="ConfigLabel.TLabel"
+                ).pack(side=tk.LEFT, padx=(0, 5))
+                
+                # Entry with validation
+                var = tk.StringVar(value=str(default))
+                entry = ttk.Entry(
+                    container,
+                    textvariable=var,
+                    width=12,
+                    style="Config.TEntry"
+                )
+                entry.pack(side=tk.RIGHT)
+                self.config_vars[key] = var
+                
+                # Add tooltip with specific description
+                ToolTip(entry, tooltip)
 
         # Welcome message below configuration
         welcome_text = (
