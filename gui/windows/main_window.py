@@ -30,6 +30,7 @@ class SimulationGUI:
         self.current_db_path = None
         self.current_step = 0
         self.components = {}
+        self.playback_timer = None
         
         # Configure styles
         configure_ttk_styles()
@@ -536,6 +537,11 @@ class SimulationGUI:
             return
         
         try:
+            # Cancel any existing timer
+            if self.playback_timer:
+                self.root.after_cancel(self.playback_timer)
+                self.playback_timer = None
+
             db = SimulationDatabase(self.current_db_path)
             data = db.get_simulation_data(self.current_step + 1)
             
@@ -561,7 +567,7 @@ class SimulationGUI:
             # Schedule next update if still playing
             if self.components["controls"].playing:
                 delay = self.components["controls"].get_delay()
-                self.root.after(delay, self._play_simulation)
+                self.playback_timer = self.root.after(delay, self._play_simulation)
                 
         except Exception as e:
             self.show_error("Playback Error", f"Failed to update simulation: {str(e)}")
@@ -569,8 +575,9 @@ class SimulationGUI:
 
     def _stop_simulation(self):
         """Stop simulation playback."""
-        # Nothing needs to be done here since we're using after() for timing
-        pass
+        if self.playback_timer:
+            self.root.after_cancel(self.playback_timer)
+            self.playback_timer = None
 
     def _step_to(self, step: int) -> None:
         """Move to specific simulation step."""
