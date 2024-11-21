@@ -5,6 +5,7 @@ from tkinter import messagebox
 from typing import Dict
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
@@ -28,20 +29,32 @@ class AgentAnalysisWindow(BaseWindow):
         super().__init__(
             parent,
             title="Agent Analysis",
-            size=(1200, 800)
+            size=(1400, 700)
         )
         self.db_path = db_path
         self.chart_canvas = None
+        
+        self.window.grid_columnconfigure(0, weight=1)
+        self.window.grid_rowconfigure(1, weight=1)
         
         self._load_agents()
 
     def _setup_ui(self):
         """Setup the main UI components with a grid layout."""
+        # Main container with padding
+        main_container = ttk.Frame(self.window, padding=10)
+        main_container.grid(row=0, column=0, sticky="nsew")
+        main_container.grid_columnconfigure(0, weight=1)
+        main_container.grid_rowconfigure(1, weight=1)
+
         # Agent Selection Area (Top)
         selection_frame = ttk.LabelFrame(
-            self.window, text="Agent Selection", padding=10
+            main_container,
+            text="Agent Selection",
+            padding=10,
+            style="AgentAnalysis.TLabelframe"
         )
-        selection_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=5)
+        selection_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=(0, 10))
 
         # Configure agent selection
         ttk.Label(selection_frame, text="Select Agent:").pack(
@@ -49,109 +62,271 @@ class AgentAnalysisWindow(BaseWindow):
         )
         self.agent_var = tk.StringVar()
         self.agent_combobox = ttk.Combobox(
-            selection_frame, textvariable=self.agent_var, width=60
+            selection_frame,
+            textvariable=self.agent_var,
+            width=60,
+            style="AgentAnalysis.TCombobox"
         )
-        self.agent_combobox.pack(side=tk.LEFT)
+        self.agent_combobox.pack(side=tk.LEFT, fill="x", expand=True)
         self.agent_combobox.bind("<<ComboboxSelected>>", self._on_agent_selected)
 
-        # Main Content Area (Bottom)
-        content_frame = ttk.Frame(self.window)
-        content_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
+        # Main Content Area (Bottom) - Using PanedWindow for resizable sections
+        content_frame = ttk.PanedWindow(main_container, orient=tk.HORIZONTAL)
+        content_frame.grid(row=1, column=0, sticky="nsew")
 
-        # Configure column weights
-        content_frame.grid_columnconfigure(0, weight=2)  # Info panel
-        content_frame.grid_columnconfigure(1, weight=3)  # Charts panel
-        content_frame.grid_rowconfigure(0, weight=1)
-
-        # Left Side - Agent Information
-        self._setup_info_panel(content_frame)
-
+        # Left Side - Agent Information (reduced width)
+        info_frame = ttk.LabelFrame(
+            content_frame,
+            text="Agent Information",
+            padding=10,
+            style="AgentAnalysis.TLabelframe",
+            width=400  # Set fixed initial width
+        )
+        
         # Right Side - Charts
-        self._setup_charts_panel(content_frame)
+        charts_frame = ttk.LabelFrame(
+            content_frame,
+            text="Agent Analytics",
+            padding=10,
+            style="AgentAnalysis.TLabelframe"
+        )
+
+        # Add frames to PanedWindow with appropriate weights
+        content_frame.add(info_frame, weight=1)  # Reduced weight for info panel
+        content_frame.add(charts_frame, weight=4)  # Increased weight for charts
+        
+        # Set minimum size for info frame
+        info_frame.grid_propagate(False)  # Prevent frame from shrinking below specified width
+        info_frame.pack_propagate(False)
+
+        # Setup info panel with scrolling
+        info_canvas = tk.Canvas(info_frame)
+        scrollbar = ttk.Scrollbar(info_frame, orient="vertical", command=info_canvas.yview)
+        self.scrollable_info = ttk.Frame(info_canvas)
+
+        info_canvas.configure(yscrollcommand=scrollbar.set)
+
+        # Pack scrollbar and canvas
+        scrollbar.pack(side="right", fill="y")
+        info_canvas.pack(side="left", fill="both", expand=True)
+
+        # Create window in canvas
+        canvas_frame = info_canvas.create_window((0, 0), window=self.scrollable_info, anchor="nw")
+
+        # Configure scrolling
+        def configure_scroll_region(event):
+            info_canvas.configure(scrollregion=info_canvas.bbox("all"))
+        
+        def configure_canvas_width(event):
+            info_canvas.itemconfig(canvas_frame, width=event.width)
+
+        self.scrollable_info.bind("<Configure>", configure_scroll_region)
+        info_canvas.bind("<Configure>", configure_canvas_width)
+
+        # Setup info sections in scrollable frame
+        self._setup_info_panel(self.scrollable_info)
+
+        # Setup charts in a notebook for tabbed view
+        self.charts_notebook = ttk.Notebook(charts_frame)
+        self.charts_notebook.pack(fill="both", expand=True)
+
+        # Metrics tab
+        self.metrics_frame = ttk.Frame(self.charts_notebook)
+        self.charts_notebook.add(self.metrics_frame, text="Metrics Over Time")
+
+        # Actions tab
+        self.actions_frame = ttk.Frame(self.charts_notebook)
+        self.charts_notebook.add(self.actions_frame, text="Action Analysis")
 
     def _setup_info_panel(self, parent):
         """Setup the left panel containing agent information."""
-        info_frame = ttk.LabelFrame(parent, text="Agent Information", padding=10)
-        info_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        # Create a more compact layout for info sections
+        info_frame = ttk.Frame(parent)
+        info_frame.pack(fill="x", expand=True, padx=5)
 
-        # Basic Info Section
-        self.basic_info = ttk.LabelFrame(info_frame, text="Basic Details", padding=5)
-        self.basic_info.pack(fill=tk.X, pady=(0, 10))
+        # Basic Info Section with two columns
+        basic_frame = ttk.LabelFrame(info_frame, text="Basic Information", padding=(5, 2))
+        basic_frame.pack(fill="x", pady=(0, 5))
 
-        # Create labels for basic info
-        self.info_labels: Dict[str, ttk.Label] = {}
-        basic_fields = [
-            "Type",
-            "Birth Time",
-            "Death Time",
-            "Generation",
-            "Parent ID",
-            "Initial Resources",
-            "Max Health",
-            "Starvation Threshold",
-            "Genome ID",
+        # Create two columns for basic info
+        left_basic = ttk.Frame(basic_frame)
+        right_basic = ttk.Frame(basic_frame)
+        left_basic.pack(side=tk.LEFT, expand=True, fill="x", padx=5)
+        right_basic.pack(side=tk.LEFT, expand=True, fill="x", padx=5)
+
+        # Split basic fields between columns
+        basic_fields_left = [
+            ("Type", "type"),
+            ("Birth Time", "birth_time"),
+            ("Death Time", "death_time"),
+            ("Generation", "generation"),
+            ("Parent ID", "parent_id"),
         ]
-        for field in basic_fields:
-            container = ttk.Frame(self.basic_info)
-            container.pack(fill=tk.X, pady=2)
-            ttk.Label(container, text=f"{field}:", width=25).pack(side=tk.LEFT)
-            self.info_labels[field] = ttk.Label(container, text="-", width=30)
-            self.info_labels[field].pack(side=tk.LEFT)
+        
+        basic_fields_right = [
+            ("Initial Resources", "initial_resources"),
+            ("Max Health", "max_health"),
+            ("Starvation Threshold", "starvation_threshold"),
+            ("Genome ID", "genome_id"),
+        ]
+
+        self.info_labels = {}
+        
+        # Create left column labels
+        for label, key in basic_fields_left:
+            container = ttk.Frame(left_basic)
+            container.pack(fill="x", pady=1)
+            ttk.Label(
+                container,
+                text=f"{label}:",
+                width=15,
+                style="InfoLabel.TLabel"
+            ).pack(side=tk.LEFT)
+            self.info_labels[key] = ttk.Label(
+                container,
+                text="-",
+                width=12,
+                style="InfoValue.TLabel"
+            )
+            self.info_labels[key].pack(side=tk.LEFT)
+
+        # Create right column labels
+        for label, key in basic_fields_right:
+            container = ttk.Frame(right_basic)
+            container.pack(fill="x", pady=1)
+            ttk.Label(
+                container,
+                text=f"{label}:",
+                width=15,
+                style="InfoLabel.TLabel"
+            ).pack(side=tk.LEFT)
+            self.info_labels[key] = ttk.Label(
+                container,
+                text="-",
+                width=12,
+                style="InfoValue.TLabel"
+            )
+            self.info_labels[key].pack(side=tk.LEFT)
 
         # Current Stats Section
-        stats_frame = ttk.LabelFrame(info_frame, text="Current Statistics", padding=5)
-        stats_frame.pack(fill=tk.X)
+        stats_frame = ttk.LabelFrame(info_frame, text="Current Status", padding=(5, 2))
+        stats_frame.pack(fill="x", pady=5)
 
-        self.stat_labels: Dict[str, ttk.Label] = {}
-        stats = [
-            "Health",
-            "Resources",
-            "Total Reward",
-            "Age",
-            "Is Defending",
-            "Current Position",
+        # Create two columns for stats
+        left_stats = ttk.Frame(stats_frame)
+        right_stats = ttk.Frame(stats_frame)
+        left_stats.pack(side=tk.LEFT, expand=True, fill="x", padx=5)
+        right_stats.pack(side=tk.LEFT, expand=True, fill="x", padx=5)
+
+        # Split current stats between columns
+        stats_left = [
+            ("Health", "health"),
+            ("Resources", "resources"),
+            ("Total Reward", "total_reward"),
         ]
-        for stat in stats:
-            container = ttk.Frame(stats_frame)
-            container.pack(fill=tk.X, pady=2)
-            ttk.Label(container, text=f"{stat}:", width=25).pack(side=tk.LEFT)
-            self.stat_labels[stat] = ttk.Label(container, text="-", width=30)
-            self.stat_labels[stat].pack(side=tk.LEFT)
+        
+        stats_right = [
+            ("Age", "age"),
+            ("Is Defending", "is_defending"),
+            ("Position", "current_position"),
+        ]
+
+        self.stat_labels = {}
+        
+        # Create left column stats
+        for label, key in stats_left:
+            container = ttk.Frame(left_stats)
+            container.pack(fill="x", pady=1)
+            ttk.Label(
+                container,
+                text=f"{label}:",
+                width=15,
+                style="InfoLabel.TLabel"
+            ).pack(side=tk.LEFT)
+            self.stat_labels[key] = ttk.Label(
+                container,
+                text="-",
+                width=12,
+                style="InfoValue.TLabel"
+            )
+            self.stat_labels[key].pack(side=tk.LEFT)
+
+        # Create right column stats
+        for label, key in stats_right:
+            container = ttk.Frame(right_stats)
+            container.pack(fill="x", pady=1)
+            ttk.Label(
+                container,
+                text=f"{label}:",
+                width=15,
+                style="InfoLabel.TLabel"
+            ).pack(side=tk.LEFT)
+            self.stat_labels[key] = ttk.Label(
+                container,
+                text="-",
+                width=12,
+                style="InfoValue.TLabel"
+            )
+            self.stat_labels[key].pack(side=tk.LEFT)
 
         # Performance Metrics Section
-        metrics_frame = ttk.LabelFrame(info_frame, text="Performance Metrics", padding=5)
-        metrics_frame.pack(fill=tk.X, pady=(10, 0))
+        metrics_frame = ttk.LabelFrame(info_frame, text="Performance", padding=(5, 2))
+        metrics_frame.pack(fill="x", pady=(5, 0))
 
-        self.metric_labels: Dict[str, ttk.Label] = {}
-        metrics = [
-            "Survival Time",
-            "Peak Health",
-            "Peak Resources",
-            "Total Actions",
+        # Create two columns for metrics
+        left_metrics = ttk.Frame(metrics_frame)
+        right_metrics = ttk.Frame(metrics_frame)
+        left_metrics.pack(side=tk.LEFT, expand=True, fill="x", padx=5)
+        right_metrics.pack(side=tk.LEFT, expand=True, fill="x", padx=5)
+
+        # Split metrics between columns
+        metrics_left = [
+            ("Survival Time", "survival_time"),
+            ("Peak Health", "peak_health"),
         ]
-        for metric in metrics:
-            container = ttk.Frame(metrics_frame)
-            container.pack(fill=tk.X, pady=2)
-            ttk.Label(container, text=f"{metric}:", width=25).pack(side=tk.LEFT)
-            self.metric_labels[metric] = ttk.Label(container, text="-", width=30)
-            self.metric_labels[metric].pack(side=tk.LEFT)
+        
+        metrics_right = [
+            ("Peak Resources", "peak_resources"),
+            ("Total Actions", "total_actions"),
+        ]
 
-    def _setup_charts_panel(self, parent):
-        """Setup the right panel containing charts."""
-        charts_frame = ttk.LabelFrame(parent, text="Agent Analytics", padding=10)
-        charts_frame.grid(row=0, column=1, sticky="nsew")
+        self.metric_labels = {}
+        
+        # Create left column metrics
+        for label, key in metrics_left:
+            container = ttk.Frame(left_metrics)
+            container.pack(fill="x", pady=1)
+            ttk.Label(
+                container,
+                text=f"{label}:",
+                width=15,
+                style="InfoLabel.TLabel"
+            ).pack(side=tk.LEFT)
+            self.metric_labels[key] = ttk.Label(
+                container,
+                text="-",
+                width=12,
+                style="InfoValue.TLabel"
+            )
+            self.metric_labels[key].pack(side=tk.LEFT)
 
-        # Configure grid for charts
-        charts_frame.grid_columnconfigure(0, weight=1)
-        charts_frame.grid_rowconfigure(0, weight=1)
-        charts_frame.grid_rowconfigure(1, weight=1)
-
-        # Create frames for different charts
-        self.metrics_chart_frame = ttk.Frame(charts_frame)
-        self.metrics_chart_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 5))
-
-        self.actions_chart_frame = ttk.Frame(charts_frame)
-        self.actions_chart_frame.grid(row=1, column=0, sticky="nsew", pady=(5, 0))
+        # Create right column metrics
+        for label, key in metrics_right:
+            container = ttk.Frame(right_metrics)
+            container.pack(fill="x", pady=1)
+            ttk.Label(
+                container,
+                text=f"{label}:",
+                width=15,
+                style="InfoLabel.TLabel"
+            ).pack(side=tk.LEFT)
+            self.metric_labels[key] = ttk.Label(
+                container,
+                text="-",
+                width=12,
+                style="InfoValue.TLabel"
+            )
+            self.metric_labels[key].pack(side=tk.LEFT)
 
     def _load_agents(self):
         """Load available agents from database."""
@@ -166,10 +341,19 @@ class AgentAnalysisWindow(BaseWindow):
             conn.close()
 
             # Format combobox values
-            self.agent_combobox["values"] = [
+            values = [
                 f"Agent {row['agent_id']} ({row['agent_type']}) - Born: {row['birth_time']}"
                 for _, row in df.iterrows()
             ]
+            
+            self.agent_combobox["values"] = values
+            
+            # Auto-select first agent if available
+            if values:
+                self.agent_combobox.set(values[0])
+                # Trigger the selection event
+                self._on_agent_selected(None)
+                
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load agents: {e}")
 
@@ -297,96 +481,220 @@ class AgentAnalysisWindow(BaseWindow):
         df = pd.read_sql_query(query, conn, params=(agent_id,))
 
         # Clear previous chart
-        for widget in self.metrics_chart_frame.winfo_children():
+        for widget in self.metrics_frame.winfo_children():
             widget.destroy()
 
         if not df.empty:
             self._create_metrics_plot(df)
 
     def _create_metrics_plot(self, df):
-        """Create the metrics time series plot."""
-        fig, ax = plt.subplots(figsize=(8, 4))
+        """Create the metrics time series plot with action timeline."""
+        # Clear previous plot
+        for widget in self.metrics_frame.winfo_children():
+            widget.destroy()
+
+        # Create figure with two subplots stacked vertically
+        fig = plt.figure(figsize=(10, 6))
         
-        # Plot metrics
-        ax.plot(df["step_number"], df["current_health"], 
+        # Create gridspec with tighter spacing and no space for legend on right
+        gs = fig.add_gridspec(2, 1, height_ratios=[3, 1], hspace=0.05)
+        
+        # Metrics plot (top)
+        ax1 = fig.add_subplot(gs[0])
+        
+        # Plot metrics with improved styling
+        ax1.plot(df["step_number"], df["current_health"], 
                 label="Health", color="#2ecc71", linewidth=2)
-        ax.plot(df["step_number"], df["resource_level"], 
+        ax1.plot(df["step_number"], df["resource_level"], 
                 label="Resources", color="#3498db", linewidth=2)
-        ax.plot(df["step_number"], df["total_reward"], 
+        ax1.plot(df["step_number"], df["total_reward"], 
                 label="Reward", color="#e74c3c", linewidth=2)
 
         # Add defense indicators
         defense_steps = df[df["is_defending"] == 1]["step_number"]
         if not defense_steps.empty:
-            ax.scatter(defense_steps, [0] * len(defense_steps),
+            ax1.scatter(defense_steps, [0] * len(defense_steps),
                       marker="^", color="red", label="Defending", alpha=0.5)
 
-        ax.set_xlabel("Time Step")
-        ax.set_ylabel("Value")
-        ax.set_title("Agent Metrics Over Time")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
+        # Improve plot styling
+        ax1.set_xlabel("")  # Remove x-label as it's shared
+        ax1.set_ylabel("Value", fontsize=10)
+        ax1.set_title("Agent Metrics Over Time", fontsize=12, pad=15)
+        ax1.legend(loc='upper right', frameon=True)
+        ax1.grid(True, alpha=0.3)
 
-        canvas = FigureCanvasTkAgg(fig, master=self.metrics_chart_frame)
+        # Get the x-axis range from metrics data
+        x_min = df["step_number"].min()
+        x_max = df["step_number"].max()
+        
+        # Set fixed x-axis limits for metrics plot
+        ax1.set_xlim(x_min, x_max)
+
+        # Action timeline plot (bottom)
+        ax2 = fig.add_subplot(gs[1], sharex=ax1)
+        
+        # Get action data for the timeline using the same range
+        action_data = self._get_action_data(x_min, x_max)
+        
+        # Plot actions as symbols on timeline
+        self._plot_action_timeline(ax2, action_data)
+        
+        # Style the action timeline
+        ax2.set_xlabel("Time Step", fontsize=10)
+        ax2.set_yticks([])  # Hide y-axis ticks
+        ax2.grid(True, alpha=0.3, axis='x')
+        
+        # Set the same x-axis limits for action plot
+        ax2.set_xlim(x_min, x_max)
+        
+        # Share x-axis ticks between plots
+        ax1.set_xticks([])  # Remove x-ticks from top plot
+        
+        # Use tight_layout with specific padding
+        plt.tight_layout(pad=2.0, h_pad=0.1, w_pad=0.1)
+        
+        # Adjust the subplot parameters after tight_layout
+        plt.subplots_adjust(right=0.98, left=0.1, bottom=0.1, top=0.9)
+
+        # Create canvas and pack
+        canvas = FigureCanvasTkAgg(fig, master=self.metrics_frame)
         canvas.draw()
-        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-    def _update_actions_chart(self, conn, agent_id):
-        """Update the actions distribution and rewards charts."""
-        query = """
-            SELECT 
-                action_type,
-                COUNT(*) as count,
-                AVG(CASE WHEN reward IS NOT NULL THEN reward ELSE 0 END) as avg_reward
-            FROM AgentActions
-            WHERE agent_id = ?
-            GROUP BY action_type
-            ORDER BY count DESC
-        """
-        df = pd.read_sql_query(query, conn, params=(agent_id,))
+    def _get_action_data(self, start_step, end_step):
+        """Get action data for the timeline."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            agent_id = int(self.agent_var.get().split()[1])
+            
+            # First, let's check if there are any actions at all for this agent
+            check_query = """
+                SELECT COUNT(*), MIN(step_number), MAX(step_number)
+                FROM AgentActions 
+                WHERE agent_id = ?
+            """
+            result = pd.read_sql_query(check_query, conn, params=(agent_id,))
+            count, min_step, max_step = result.iloc[0]
+            
+            # Handle case where no actions exist
+            if count == 0 or min_step is None or max_step is None:
+                conn.close()
+                return pd.DataFrame(columns=["step_number", "action_type", "reward", "action_id"])
 
-        # Clear previous chart
-        for widget in self.actions_chart_frame.winfo_children():
-            widget.destroy()
+            # Main query - use the provided step range but constrained by actual data range
+            query = """
+                SELECT 
+                    aa.step_number,
+                    LOWER(aa.action_type) as action_type,
+                    aa.reward,
+                    aa.action_id
+                FROM AgentActions aa
+                WHERE aa.agent_id = ? 
+                AND aa.step_number >= ?
+                AND aa.step_number <= ?
+                ORDER BY aa.step_number
+            """
+            
+            # Use the intersection of requested range and available data range
+            query_start = max(start_step, min_step)
+            query_end = min(end_step, max_step)
+            
+            df = pd.read_sql_query(query, conn, params=(agent_id, query_start, query_end))
+            conn.close()
+            return df
+            
+        except Exception as e:
+            print(f"Error getting action data: {e}")
+            import traceback
+            traceback.print_exc()
+            return pd.DataFrame(columns=["step_number", "action_type", "reward", "action_id"])
 
-        if not df.empty:
-            self._create_actions_plot(df)
+    def _plot_action_timeline(self, ax, df):
+        """Plot actions as evenly distributed slices in a horizontal bar."""
+        # Define action colors with clear semantic meaning
+        action_colors = {
+            "move": "#3498db",     # Blue
+            "gather": "#2ecc71",   # Green
+            "attack": "#e74c3c",   # Red
+            "defend": "#f39c12",   # Orange
+            "reproduce": "#9b59b6", # Purple
+            "share": "#1abc9c",    # Turquoise
+            "rest": "#95a5a6"      # Gray
+        }
 
-    def _create_actions_plot(self, df):
-        """Create the actions distribution and rewards plot."""
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+        if df.empty:
+            ax.text(0.5, 0.5, "No actions recorded", 
+                    ha='center', va='center', transform=ax.transAxes)
+            return
 
-        # Action counts
-        bars = ax1.bar(df["action_type"], df["count"])
-        ax1.set_xlabel("Action Type")
-        ax1.set_ylabel("Count")
-        ax1.set_title("Action Distribution")
-        plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45, ha="right")
+        # Get the full time range from the axis limits
+        start_step = int(ax.get_xlim()[0])
+        end_step = int(ax.get_xlim()[1])
 
-        # Add value labels
-        for bar in bars:
-            height = bar.get_height()
-            ax1.text(bar.get_x() + bar.get_width()/2., height,
-                    f"{int(height)}", ha="center", va="bottom")
+        # Clear previous plot content
+        ax.clear()
 
-        # Average rewards
-        bars = ax2.bar(df["action_type"], df["avg_reward"])
-        ax2.set_xlabel("Action Type")
-        ax2.set_ylabel("Average Reward")
-        ax2.set_title("Action Rewards")
-        plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45, ha="right")
+        # For each action, create a rectangle patch
+        for _, row in df.iterrows():
+            action_type = row["action_type"].lower()
+            color = action_colors.get(action_type, "#808080")  # Default to gray
+            
+            # Create rectangle for this action
+            rect = plt.Rectangle(
+                (row["step_number"], 0),  # (x, y)
+                1,                        # width (1 time step)
+                1,                        # height
+                facecolor=color,
+                alpha=0.8
+            )
+            ax.add_patch(rect)
 
-        # Add value labels
-        for bar in bars:
-            height = bar.get_height()
-            ax2.text(bar.get_x() + bar.get_width()/2., height,
-                    f"{height:.2f}", ha="center", va="bottom")
+        # Create legend elements for all possible actions
+        legend_elements = []
+        for action, color in action_colors.items():
+            legend_elements.append(
+                plt.Rectangle(
+                    (0, 0), 1, 1, 
+                    facecolor=color,
+                    label=action.capitalize()
+                )
+            )
 
-        plt.tight_layout()
+        # Configure main axis
+        ax.set_yticks([])
+        ax.set_xlabel("Time Step", fontsize=10)
+        ax.set_ylim(0, 1)
+        ax.set_xlim(start_step, end_step)
 
-        canvas = FigureCanvasTkAgg(fig, master=self.actions_chart_frame)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        # Add grid
+        ax.grid(True, axis='x', alpha=0.2)
+
+        # Position the main plot to leave room for legend at bottom
+        ax.set_position([0.1, 0.25, 0.85, 0.65])
+
+        # Create legend below the plot with horizontal layout
+        ax.legend(
+            handles=legend_elements,
+            loc='upper center',
+            bbox_to_anchor=(0.5, -0.15),
+            ncol=len(action_colors),  # Display all items in one row
+            title="Actions",
+            frameon=True,
+            fontsize=9,
+            borderaxespad=0
+        )
+
+    def _adjust_color_for_reward(self, base_color, reward):
+        """Adjust color based on reward value."""
+        # Convert reward to a scale factor (-1 to 1 range)
+        scale = min(max(reward, -1), 1)
+        
+        if scale > 0:
+            # Positive reward: blend with white
+            return tuple(int(c + (255 - c) * scale * 0.5) for c in base_color)
+        else:
+            # Negative reward: blend with black
+            return tuple(int(c * (1 + scale * 0.5)) for c in base_color)
 
     def _update_info_labels(self, info: Dict):
         """Update the basic information labels."""
@@ -404,4 +712,68 @@ class AgentAnalysisWindow(BaseWindow):
         """Update the performance metrics labels."""
         for key, label in self.metric_labels.items():
             value = metrics.get(key.lower().replace(" ", "_"), "-")
-            label.config(text=f"{value:.2f}" if isinstance(value, float) else str(value)) 
+            label.config(text=f"{value:.2f}" if isinstance(value, float) else str(value))
+
+    def _update_actions_chart(self, conn, agent_id):
+        """Update the actions distribution chart."""
+        query = """
+            SELECT 
+                action_type,
+                COUNT(*) as count,
+                AVG(CASE WHEN reward IS NOT NULL THEN reward ELSE 0 END) as avg_reward
+            FROM AgentActions
+            WHERE agent_id = ?
+            GROUP BY action_type
+            ORDER BY count DESC
+        """
+        df = pd.read_sql_query(query, conn, params=(agent_id,))
+
+        # Clear previous chart
+        for widget in self.actions_frame.winfo_children():
+            widget.destroy()
+
+        if not df.empty:
+            self._create_actions_plot(df)
+
+    def _create_actions_plot(self, df):
+        """Create the actions distribution and rewards plot."""
+        # Clear previous plot
+        for widget in self.actions_frame.winfo_children():
+            widget.destroy()
+
+        # Create figure with two subplots side by side
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 3.5))
+
+        # Action counts with improved styling
+        bars = ax1.bar(df["action_type"], df["count"], color="#3498db", alpha=0.8)
+        ax1.set_xlabel("Action Type", fontsize=10)
+        ax1.set_ylabel("Count", fontsize=10)
+        ax1.set_title("Action Distribution", fontsize=12, pad=15)
+        plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45, ha="right")
+
+        # Add value labels
+        for bar in bars:
+            height = bar.get_height()
+            ax1.text(bar.get_x() + bar.get_width()/2., height,
+                    f"{int(height)}", ha="center", va="bottom")
+
+        # Average rewards with improved styling
+        bars = ax2.bar(df["action_type"], df["avg_reward"], color="#2ecc71", alpha=0.8)
+        ax2.set_xlabel("Action Type", fontsize=10)
+        ax2.set_ylabel("Average Reward", fontsize=10)
+        ax2.set_title("Action Rewards", fontsize=12, pad=15)
+        plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45, ha="right")
+
+        # Add value labels
+        for bar in bars:
+            height = bar.get_height()
+            ax2.text(bar.get_x() + bar.get_width()/2., height,
+                    f"{height:.2f}", ha="center", va="bottom")
+
+        # Improve layout
+        plt.tight_layout()
+
+        # Create canvas and pack
+        canvas = FigureCanvasTkAgg(fig, master=self.actions_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5) 

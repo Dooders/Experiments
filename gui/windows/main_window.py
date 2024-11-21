@@ -198,39 +198,45 @@ class SimulationGUI:
         for widget in self.main_frame.winfo_children():
             widget.destroy()
 
-        # Create components
-        self.components["stats"] = StatsPanel(self.main_frame)
-        self.components["stats"].grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        # Create left and right panes
+        left_pane = ttk.Frame(self.main_frame, style="SimPane.TFrame")
+        right_pane = ttk.Frame(self.main_frame, style="SimPane.TFrame")
         
-        # Hide progress and log sections
-        if hasattr(self.components["stats"], "progress_frame"):
-            self.components["stats"].progress_frame.grid_remove()
-        if hasattr(self.components["stats"], "log_frame"):
-            self.components["stats"].log_frame.grid_remove()
-        self.components["stats"].hide_progress()
-        self.components["stats"].clear_log()
+        left_pane.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        right_pane.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
 
-        self.components["chart"] = SimulationChart(self.main_frame)
-        self.components["chart"].grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
+        # Configure weights for resizing
+        self.main_frame.grid_columnconfigure(0, weight=2)  # Left pane
+        self.main_frame.grid_columnconfigure(1, weight=3)  # Right pane
+        self.main_frame.grid_rowconfigure(0, weight=1)
+
+        # Left pane components
+        self.components["stats"] = StatsPanel(left_pane)
+        self.components["stats"].pack(fill="both", expand=True, padx=5, pady=5)
         
-        self.components["environment"] = EnvironmentView(self.main_frame)
-        self.components["environment"].grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        self.components["environment"] = EnvironmentView(left_pane)
+        self.components["environment"].pack(fill="both", expand=True, padx=5, pady=5)
 
+        # Right pane - Chart
+        self.components["chart"] = SimulationChart(right_pane)
+        self.components["chart"].pack(fill="both", expand=True, padx=5, pady=5)
+
+        # Bottom controls - spans both panes
+        controls_frame = ttk.Frame(self.main_frame, style="Controls.TFrame")
+        controls_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
+        
         self.components["controls"] = ControlPanel(
-            self.main_frame,
+            controls_frame,
             play_callback=self._toggle_playback,
             step_callback=self._step_to,
             export_callback=self._export_data
         )
-        self.components["controls"].grid(
-            row=2, column=0, columnspan=2, sticky="ew", padx=5, pady=5
-        )
+        self.components["controls"].pack(fill="x", expand=True)
 
-        # Configure grid weights for proper layout
-        self.main_frame.grid_columnconfigure(0, weight=2)  # Stats panel
-        self.main_frame.grid_columnconfigure(1, weight=3)  # Chart
-        self.main_frame.grid_rowconfigure(0, weight=1)     # Top row
-        self.main_frame.grid_rowconfigure(1, weight=1)     # Bottom row
+        # Configure component frames
+        for component in self.components.values():
+            if isinstance(component, (StatsPanel, EnvironmentView, SimulationChart)):
+                component.configure(relief="solid", borderwidth=1)
 
     def _new_simulation(self) -> None:
         """Start a new simulation with current configuration."""

@@ -121,4 +121,64 @@ def configure_ttk_styles():
         background=[("readonly", "white"), ("disabled", "#f0f0f0")]
     )
     
+    # Simulation view styles
+    style.configure(
+        "SimPane.TFrame",
+        background="#f8f9fa",  # Light background
+        relief="flat",
+    )
+    
+    style.configure(
+        "Controls.TFrame",
+        background="#ffffff",
+        relief="solid",
+        borderwidth=1,
+        padding=5
+    )
+    
+    # Update existing Card styles
+    style.configure(
+        "Card.TFrame",
+        background="#ffffff",
+        relief="solid",
+        borderwidth=1,
+        padding=8
+    )
+    
+    # Agent Analysis Window styles
+    style.configure(
+        "AgentAnalysis.TLabelframe",
+        background="#ffffff",
+        relief="solid",
+        borderwidth=1,
+        padding=10
+    )
+    
+    style.configure(
+        "AgentAnalysis.TLabelframe.Label",
+        font=("Arial", 10, "bold"),
+        background="#ffffff"
+    )
+    
+    style.configure(
+        "AgentAnalysis.TCombobox",
+        padding=5,
+        relief="solid"
+    )
+    
+    # Info panel styles
+    style.configure(
+        "InfoLabel.TLabel",
+        font=("Arial", 9),
+        background="#ffffff",
+        padding=(2, 0)
+    )
+    
+    style.configure(
+        "InfoValue.TLabel",
+        font=("Arial", 9, "bold"),
+        background="#ffffff",
+        padding=(2, 0)
+    )
+    
     # Other existing styles... 
