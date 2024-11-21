@@ -480,11 +480,27 @@ class SimulationGUI:
         messagebox.showinfo("Not Implemented", "Statistics view not yet implemented.")
 
     def _open_agent_analysis_window(self) -> None:
-        """Open agent analysis window."""
+        """Open agent analysis view in main window."""
         if not self.current_db_path:
             messagebox.showwarning("No Data", "Please open or run a simulation first.")
             return
-        AgentAnalysisWindow(self.root, self.current_db_path)
+
+        # Clear existing components
+        for widget in self.main_frame.winfo_children():
+            widget.destroy()
+
+        # Create and show agent analysis frame with back callback
+        analysis_frame = AgentAnalysisWindow(
+            self.main_frame, 
+            self.current_db_path,
+            on_back_callback=self._return_to_simulation
+        )
+        analysis_frame.grid(row=0, column=0, sticky="nsew")
+
+    def _return_to_simulation(self) -> None:
+        """Return to simulation view from agent analysis."""
+        self._setup_simulation_view()
+        self._start_visualization()
 
     def _show_documentation(self) -> None:
         """Show documentation window."""

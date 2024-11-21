@@ -9,60 +9,65 @@ import pandas as pd
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from gui.components.tooltips import ToolTip
-from gui.windows.base_window import BaseWindow
 
 
-class AgentAnalysisWindow(BaseWindow):
+class AgentAnalysisWindow(ttk.Frame):
     """
-    Window for detailed analysis of individual agents.
-
-    Provides detailed visualization and analysis of:
-    - Basic agent information
-    - Current statistics
-    - Performance metrics
-    - Time series data
-    - Action distributions
+    Frame for detailed analysis of individual agents.
     """
 
-    def __init__(self, parent: tk.Tk, db_path: str):
-        super().__init__(parent, title="Agent Analysis", size=(1400, 700))
+    def __init__(self, parent: tk.Widget, db_path: str, on_back_callback=None):
+        super().__init__(parent)
         self.db_path = db_path
         self.chart_canvas = None
+        self.on_back_callback = on_back_callback
 
-        self.window.grid_columnconfigure(0, weight=1)
-        self.window.grid_rowconfigure(1, weight=1)
+        self.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
 
+        self._setup_ui()
         self._load_agents()
 
     def _setup_ui(self):
         """Setup the main UI components with a grid layout."""
         # Main container with padding
-        main_container = ttk.Frame(self.window, padding=10)
+        main_container = ttk.Frame(self)
         main_container.grid(row=0, column=0, sticky="nsew")
         main_container.grid_columnconfigure(0, weight=1)
         main_container.grid_rowconfigure(1, weight=1)
 
-        # Agent Selection Area (Top)
-        selection_frame = ttk.LabelFrame(
-            main_container,
-            text="Agent Selection",
-            padding=10,
-            style="AgentAnalysis.TLabelframe",
-        )
-        selection_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=(0, 10))
+        # Top bar containing back button and agent selection
+        top_bar = ttk.Frame(main_container)
+        top_bar.grid(row=0, column=0, sticky="ew", padx=5, pady=(0, 10))
+        top_bar.grid_columnconfigure(1, weight=1)  # Make agent selection expand
 
-        # Configure agent selection
-        ttk.Label(selection_frame, text="Select Agent:").pack(
-            side=tk.LEFT, padx=(0, 10)
+        # Back button
+        if self.on_back_callback:
+            back_btn = ttk.Button(
+                top_bar,
+                text="← Back",
+                command=self.on_back_callback,
+                style="Back.TButton"
+            )
+            back_btn.grid(row=0, column=0, padx=(0, 10))
+
+        # Agent Selection Area
+        selection_frame = ttk.Frame(top_bar)
+        selection_frame.grid(row=0, column=1, sticky="ew")
+        selection_frame.grid_columnconfigure(1, weight=1)
+
+        ttk.Label(selection_frame, text="Select Agent:").grid(
+            row=0, column=0, padx=(0, 10)
         )
+        
         self.agent_var = tk.StringVar()
         self.agent_combobox = ttk.Combobox(
             selection_frame,
             textvariable=self.agent_var,
-            width=60,
-            style="AgentAnalysis.TCombobox",
+            style="AgentAnalysis.TCombobox"
         )
-        self.agent_combobox.pack(side=tk.LEFT, fill="x", expand=True)
+        self.agent_combobox.grid(row=0, column=1, sticky="ew")
         self.agent_combobox.bind("<<ComboboxSelected>>", self._on_agent_selected)
 
         # Main Content Area (Bottom) - Using PanedWindow for resizable sections
