@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Optional, Tuple
 
 import numpy as np
 import torch
+from scipy.spatial import KDTree
 
 from actions.base_dqn import BaseDQNConfig, BaseDQNModule, BaseQNetwork
 
@@ -108,6 +109,10 @@ class GatherModule(BaseDQNModule):
         self.last_gather_step = 0
         self.steps_since_gather = 0
         self.consecutive_failed_attempts = 0
+
+        # Initialize KD-tree
+        self.kd_tree = None
+        self.update_kd_tree(agent.environment.resources)
 
     def select_action(
         self, state_tensor: torch.Tensor, epsilon: Optional[float] = None
@@ -214,15 +219,12 @@ class GatherModule(BaseDQNModule):
         if not agent.environment.resources:
             return None
 
-        # Get resources within gathering range
+        # Get resources within gathering range using KD-tree
+        indices = self.kd_tree.query_ball_point(agent.position, r=agent.config.gathering_range)
         resources_in_range = [
-            r
-            for r in agent.environment.resources
-            if (
-                np.linalg.norm(np.array(r.position) - np.array(agent.position))
-                <= agent.config.gathering_range
-                and r.amount >= self.config.min_resource_threshold
-            )
+            agent.environment.resources[i]
+            for i in indices
+            if agent.environment.resources[i].amount >= self.config.min_resource_threshold
         ]
 
         if not resources_in_range:
@@ -239,6 +241,11 @@ class GatherModule(BaseDQNModule):
             )
 
         return max(resources_in_range, key=score_resource)
+
+    def update_kd_tree(self, resources):
+        """Update the KD-tree with current resource positions."""
+        resource_positions = [r.position for r in resources]
+        self.kd_tree = KDTree(resource_positions)
 
     def calculate_gather_reward(
         self,
