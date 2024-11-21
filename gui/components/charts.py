@@ -1,7 +1,6 @@
 import tkinter as tk
 from tkinter import ttk
 from typing import Dict, Optional
-import logging
 
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -150,40 +149,27 @@ class SimulationChart(ttk.Frame):
             self.canvas.draw()
 
         except Exception as e:
-            logging.error(f"Failed to update chart: {str(e)}")
-            logging.error(f"Data received: {data}")
+            pass
 
     def _setup_interactions(self):
         """Setup mouse interaction handlers."""
-        # Connect to matplotlib events with debug logging
+        # Connect to matplotlib events
         self.canvas.mpl_connect('button_press_event', self._on_click)
         self.canvas.mpl_connect('motion_notify_event', self._on_drag)
         self.canvas.mpl_connect('button_release_event', self._on_release)
-        
-        # Enable debug logging
-        logging.getLogger().setLevel(logging.DEBUG)
-        logging.debug("Chart interactions setup complete")
 
     def _on_click(self, event):
         """Handle mouse click on the chart."""
-        logging.debug(f"Click detected - inaxes: {event.inaxes}, xdata: {event.xdata}, ydata: {event.ydata}")
-        
         if event.inaxes in [self.ax1, self.ax2] and event.xdata is not None:
             try:
                 step = int(round(event.xdata))
                 if hasattr(self, 'max_step'):
                     step = max(0, min(step, self.max_step))
-                    logging.debug(f"Valid click at step {step}")
                     if hasattr(self, "on_timeline_click"):
-                        logging.debug("Calling timeline callback")
                         self.on_timeline_click(step)
                         self.is_dragging = True
-                    else:
-                        logging.warning("Timeline callback not set")
-                else:
-                    logging.warning(f"max_step not set, raw step value was {step}")
             except Exception as e:
-                logging.error(f"Error in click handler: {str(e)}", exc_info=True)
+                pass
 
     def _on_drag(self, event):
         """Handle mouse drag on the chart."""
@@ -192,28 +178,20 @@ class SimulationChart(ttk.Frame):
                 step = int(round(event.xdata))
                 if hasattr(self, 'max_step'):
                     step = max(0, min(step, self.max_step))
-                    logging.debug(f"Dragging to step {step}")
                     if hasattr(self, "on_timeline_click"):
                         self.on_timeline_click(step)
-                    else:
-                        logging.warning("Timeline callback not set")
             except Exception as e:
-                logging.error(f"Error in drag handler: {str(e)}", exc_info=True)
+                pass
 
     def _on_release(self, event):
         """Handle mouse release."""
-        logging.debug("Mouse released")
         self.is_dragging = False
 
     def set_timeline_callback(self, callback):
         """Set callback for timeline navigation."""
-        logging.debug("Setting timeline callback")
         self.on_timeline_click = callback
         if hasattr(self, 'full_data') and self.full_data["steps"]:
             self.max_step = len(self.full_data["steps"]) - 1
-            logging.debug(f"Set max_step to {self.max_step}")
-        else:
-            logging.warning("No full data available when setting timeline callback")
 
     def set_playback_callback(self, callback):
         """Set callback for playback resume."""
@@ -260,7 +238,6 @@ class SimulationChart(ttk.Frame):
             
             # Calculate and store fixed axis limits
             self.max_step = max(steps) if steps else 100
-            logging.debug(f"Setting max_step to {self.max_step}")
             
             # Calculate max values for y-axis limits
             max_agents = max(
@@ -292,9 +269,8 @@ class SimulationChart(ttk.Frame):
             # Force redraw
             self.canvas.draw()
             
-        except Exception as e:
-            logging.error(f"Failed to set full data: {str(e)}")
-            raise  # Re-raise the exception to see the full traceback
+        except Exception:
+            pass  # Silently handle any errors
 
     def reset_history_to_step(self, step: int):
         """Reset the history up to a specific step."""

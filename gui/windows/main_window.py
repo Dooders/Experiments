@@ -1,7 +1,7 @@
-import logging
 import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from dataclasses import replace
 
 from gui.components.charts import SimulationChart
 from gui.components.controls import ControlPanel
@@ -14,6 +14,8 @@ from gui.windows.agent_analysis_window import AgentAnalysisWindow
 from config import SimulationConfig
 from database import SimulationDatabase
 from simulation import run_simulation
+
+import logging
 
 
 class SimulationGUI:
@@ -35,7 +37,6 @@ class SimulationGUI:
         # Setup main components
         self._setup_menu()
         self._setup_main_frame()
-        self._setup_logging()
         self._show_welcome_screen()
 
     def _setup_main_frame(self) -> None:
@@ -49,7 +50,7 @@ class SimulationGUI:
         self.main_frame.grid_rowconfigure(0, weight=1)
 
     def _show_welcome_screen(self):
-        """Show the welcome screen."""
+        """Show the welcome screen with configuration options."""
         # Clear any existing components
         for widget in self.main_frame.winfo_children():
             widget.destroy()
@@ -58,42 +59,105 @@ class SimulationGUI:
         welcome_frame = ttk.Frame(self.main_frame)
         welcome_frame.grid(row=0, column=0, columnspan=2, sticky="nsew")
         welcome_frame.grid_columnconfigure(0, weight=1)
-        welcome_frame.grid_rowconfigure(0, weight=1)
 
-        # Welcome message
-        welcome_text = (
-            "Welcome to Agent-Based Simulation\n\n"
-            "Use the menu to:\n"
-            "• Start a new simulation\n"
-            "• Open an existing simulation\n"
-            "• Configure simulation parameters"
-        )
-        
-        welcome_label = ttk.Label(
-            welcome_frame,
-            text=welcome_text,
-            justify=tk.CENTER,
-            font=("Arial", 14)
-        )
-        welcome_label.grid(row=0, column=0)
-
-        # Quick action buttons
+        # Quick action buttons at top left
         button_frame = ttk.Frame(welcome_frame)
-        button_frame.grid(row=1, column=0, pady=20)
+        button_frame.grid(row=0, column=0, sticky="w", padx=20, pady=10)
 
         ttk.Button(
             button_frame,
             text="New Simulation",
             command=self._new_simulation,
             style="Action.TButton"
-        ).pack(side=tk.LEFT, padx=10)
+        ).pack(side=tk.LEFT, padx=5)
 
         ttk.Button(
             button_frame,
             text="Open Simulation",
             command=self._open_simulation,
             style="Action.TButton"
-        ).pack(side=tk.LEFT, padx=10)
+        ).pack(side=tk.LEFT, padx=5)
+
+        # Configuration section
+        config_frame = ttk.LabelFrame(welcome_frame, text="Simulation Configuration", padding=10)
+        config_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=10)
+
+        # Load default config
+        config = SimulationConfig.from_yaml("config.yaml")
+
+        # Create configuration entries
+        self.config_vars = {}
+        config_fields = [
+            # Simulation settings
+            ("Simulation Steps", "simulation_steps", config.simulation_steps),
+            
+            # Environment settings
+            ("Environment Width", "width", config.width),
+            ("Environment Height", "height", config.height),
+            
+            # Agent population settings
+            ("System Agents", "system_agents", config.system_agents),
+            ("Independent Agents", "independent_agents", config.independent_agents),
+            ("Control Agents", "control_agents", config.control_agents),
+            ("Max Population", "max_population", config.max_population),
+            
+            # Resource settings
+            ("Initial Resources", "initial_resources", config.initial_resources),
+            ("Resource Regen Rate", "resource_regen_rate", config.resource_regen_rate),
+            ("Max Resource Amount", "max_resource_amount", config.max_resource_amount),
+            
+            # Agent behavior settings
+            ("Base Consumption Rate", "base_consumption_rate", config.base_consumption_rate),
+            ("Max Movement", "max_movement", config.max_movement),
+            ("Gathering Range", "gathering_range", config.gathering_range),
+        ]
+
+        # Create two columns for configuration
+        left_frame = ttk.Frame(config_frame)
+        right_frame = ttk.Frame(config_frame)
+        left_frame.grid(row=0, column=0, sticky="nsew", padx=10)
+        right_frame.grid(row=0, column=1, sticky="nsew", padx=10)
+
+        # Split fields between columns
+        mid_point = len(config_fields) // 2
+        for i, (label, key, default) in enumerate(config_fields):
+            # Choose which frame to put the field in
+            parent_frame = left_frame if i < mid_point else right_frame
+            row = i if i < mid_point else i - mid_point
+            
+            container = ttk.Frame(parent_frame)
+            container.grid(row=row, column=0, sticky="ew", pady=2)
+            container.grid_columnconfigure(1, weight=1)
+            
+            ttk.Label(container, text=f"{label}:").grid(row=0, column=0, padx=5)
+            var = tk.StringVar(value=str(default))
+            entry = ttk.Entry(container, textvariable=var, width=15)
+            entry.grid(row=0, column=1, sticky="w", padx=5)
+            self.config_vars[key] = var
+            
+            # Add tooltip with description
+            tooltip_text = (
+                "Number of steps to run the simulation" 
+                if key == "simulation_steps" 
+                else f"Configure {label.lower()}"
+            )
+            ToolTip(entry, tooltip_text)
+
+        # Welcome message below configuration
+        welcome_text = (
+            "\nWelcome to Agent-Based Simulation\n\n"
+            "Configure simulation parameters above and use the buttons to:\n"
+            "• Start a new simulation\n"
+            "• Open an existing simulation"
+        )
+        
+        welcome_label = ttk.Label(
+            welcome_frame,
+            text=welcome_text,
+            justify=tk.CENTER,
+            font=("Arial", 12)
+        )
+        welcome_label.grid(row=2, column=0, pady=20)
 
     def _setup_simulation_view(self):
         """Setup the simulation visualization components."""
@@ -136,9 +200,26 @@ class SimulationGUI:
         self.main_frame.grid_rowconfigure(1, weight=1)     # Bottom row
 
     def _new_simulation(self) -> None:
-        """Start a new simulation."""
+        """Start a new simulation with current configuration."""
         try:
-            config = SimulationConfig.from_yaml("config.yaml")
+            # Load base config to get default values
+            base_config = SimulationConfig.from_yaml("config.yaml")
+            
+            # Create a dictionary of the updated values
+            config_updates = {}
+            for key, var in self.config_vars.items():
+                try:
+                    # Convert string values to appropriate types
+                    value = var.get().strip()
+                    if isinstance(getattr(base_config, key), float):
+                        config_updates[key] = float(value)
+                    else:
+                        config_updates[key] = int(value)
+                except ValueError:
+                    raise ValueError(f"Invalid value for {key}: {var.get()}")
+
+            # Create new config by updating base config with new values
+            config = replace(base_config, **config_updates)
             
             # Create new database
             self.current_db_path = "simulations/simulation.db"
@@ -155,6 +236,8 @@ class SimulationGUI:
             )
             sim_thread.start()
 
+        except ValueError as e:
+            self.show_error("Configuration Error", str(e))
         except Exception as e:
             self.show_error("Error", f"Failed to start simulation: {str(e)}")
 
@@ -398,36 +481,6 @@ class SimulationGUI:
                 messagebox.showinfo("Success", "Data exported successfully!")
             except Exception as e:
                 self.show_error("Export Error", f"Failed to export data: {str(e)}")
-
-    def _setup_logging(self) -> None:
-        """Configure application logging system."""
-        if not os.path.exists("logs"):
-            os.makedirs("logs")
-
-        class GUIHandler(logging.Handler):
-            def __init__(self, gui):
-                super().__init__()
-                self.gui = gui
-
-            def emit(self, record):
-                msg = self.format(record)
-                if hasattr(self.gui, "components") and "stats" in self.gui.components:
-                    self.gui.components["stats"].log_message(msg)
-
-        # Configure root logger
-        root_logger = logging.getLogger()
-        root_logger.setLevel(logging.INFO)
-        
-        # Remove existing handlers
-        for handler in root_logger.handlers[:]:
-            root_logger.removeHandler(handler)
-
-        # Add GUI handler
-        gui_handler = GUIHandler(self)
-        gui_handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-        )
-        root_logger.addHandler(gui_handler)
 
     def _toggle_playback(self, playing: bool) -> None:
         """Handle playback state change."""

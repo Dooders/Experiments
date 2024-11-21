@@ -138,11 +138,11 @@ class StatsPanel(ttk.Frame):
 
     def log_message(self, message: str):
         """Add a message to the log display."""
-        pass  # Log functionality removed
+        pass  # Remove logging functionality
 
     def clear_log(self):
         """Clear the log display."""
-        pass  # Log functionality removed
+        pass  # Remove logging functionality
 
     def show_progress(self, message: str = "Working..."):
         """Show progress indicator with message."""
