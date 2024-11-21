@@ -233,6 +233,8 @@ class SimulationConfig:
     attack_range: float = 20.0
     attack_base_damage: float = 10.0
 
+    simulation_steps: int = 100  # Default value
+
     @classmethod
     def from_yaml(cls, file_path: str) -> "SimulationConfig":
         """Load configuration from a YAML file."""

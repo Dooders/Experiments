@@ -164,6 +164,23 @@ class SimulationDatabase:
                 loss REAL,
                 FOREIGN KEY(agent_id) REFERENCES Agents(agent_id)
             );
+
+            CREATE TABLE IF NOT EXISTS HealthIncidents (
+                incident_id INTEGER PRIMARY KEY,
+                step_number INTEGER NOT NULL,
+                agent_id INTEGER NOT NULL,
+                health_before REAL NOT NULL,
+                health_after REAL NOT NULL,
+                cause TEXT NOT NULL,
+                details TEXT, -- JSON-encoded additional details
+                FOREIGN KEY(agent_id) REFERENCES Agents(agent_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_health_incidents_agent_id 
+            ON HealthIncidents(agent_id);
+
+            CREATE INDEX IF NOT EXISTS idx_health_incidents_step_number 
+            ON HealthIncidents(step_number);
         """
         )
         self.conn.commit()
@@ -1036,3 +1053,72 @@ class SimulationDatabase:
         except Exception as e:
             logger.error(f"Error verifying foreign keys: {e}")
             return False
+
+    def log_health_incident(self, step_number: int, agent_id: int, 
+                           health_before: float, health_after: float,
+                           cause: str, details: Optional[Dict] = None):
+        """Log a health-changing incident for an agent.
+        
+        Parameters
+        ----------
+        step_number : int
+            Current simulation step
+        agent_id : int
+            ID of affected agent
+        health_before : float
+            Health value before incident
+        health_after : float
+            Health value after incident
+        cause : str
+            Cause of health change (e.g., 'attack', 'starvation', 'healing')
+        details : Optional[Dict]
+            Additional details about the incident
+        """
+        import json
+        
+        details_json = json.dumps(details) if details else None
+        
+        self.cursor.execute("""
+            INSERT INTO HealthIncidents (
+                step_number, agent_id, health_before, health_after,
+                cause, details
+            ) VALUES (?, ?, ?, ?, ?, ?)
+        """, (step_number, agent_id, health_before, health_after,
+              cause, details_json))
+        self.conn.commit()
+
+    def get_agent_health_incidents(self, agent_id: int) -> List[Dict]:
+        """Get all health incidents for an agent.
+        
+        Parameters
+        ----------
+        agent_id : int
+            ID of the agent
+        
+        Returns
+        -------
+        List[Dict]
+            List of health incidents with their details
+        """
+        import json
+        
+        self.cursor.execute("""
+            SELECT step_number, health_before, health_after, 
+                   cause, details
+            FROM HealthIncidents
+            WHERE agent_id = ?
+            ORDER BY step_number
+        """, (agent_id,))
+        
+        incidents = []
+        for row in self.cursor.fetchall():
+            incident = {
+                'step_number': row[0],
+                'health_before': row[1],
+                'health_after': row[2],
+                'cause': row[3],
+                'details': json.loads(row[4]) if row[4] else None
+            }
+            incidents.append(incident)
+        
+        return incidents
