@@ -660,6 +660,17 @@ class AgentAnalysisWindow(BaseWindow):
                 )
             )
 
+        # Create a separate legend axis to avoid tight_layout issues
+        legend_ax = ax.figure.add_axes([0.85, 0.1, 0.15, 0.8])
+        legend_ax.axis('off')
+        legend_ax.legend(
+            handles=legend_elements,
+            loc='center',
+            title="Actions",
+            frameon=True,
+            fontsize=9
+        )
+
         # Configure main axis
         ax.set_yticks([])
         ax.set_xlabel("Time Step", fontsize=10)
@@ -669,20 +680,8 @@ class AgentAnalysisWindow(BaseWindow):
         # Add grid
         ax.grid(True, axis='x', alpha=0.2)
 
-        # Position the main plot to leave room for legend at bottom
-        ax.set_position([0.1, 0.25, 0.85, 0.65])
-
-        # Create legend below the plot with horizontal layout
-        ax.legend(
-            handles=legend_elements,
-            loc='upper center',
-            bbox_to_anchor=(0.5, -0.15),
-            ncol=len(action_colors),  # Display all items in one row
-            title="Actions",
-            frameon=True,
-            fontsize=9,
-            borderaxespad=0
-        )
+        # Adjust the main axis to make room for legend
+        ax.set_position([0.1, 0.1, 0.7, 0.8])
 
     def _adjust_color_for_reward(self, base_color, reward):
         """Adjust color based on reward value."""
