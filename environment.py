@@ -104,9 +104,8 @@ class Environment:
                 np.random.random(len(self.resources)) < self.config.resource_regen_rate
             )
             for resource, should_regen in zip(self.resources, regen_mask):
-                if should_regen and (
-                    self.max_resource is None or resource.amount < self.max_resource
-                ):
+                if (should_regen and 
+                    (self.max_resource is None or resource.amount < self.max_resource)):
                     resource.amount = min(
                         resource.amount + self.config.resource_regen_amount,
                         self.max_resource or float("inf"),
@@ -128,6 +127,18 @@ class Environment:
                 metrics=metrics,
                 environment=self,
             )
+
+            # Call cleanup method of each agent's DQN modules to log learning experiences
+            for agent in self.agents:
+                for module in [
+                    agent.move_module,
+                    agent.attack_module,
+                    agent.share_module,
+                    agent.gather_module,
+                    agent.reproduce_module,
+                ]:
+                    if hasattr(module, "cleanup"):
+                        module.cleanup()
 
         # Execute all updates in a single transaction
         self.db._execute_in_transaction(_process_updates)

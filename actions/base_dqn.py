@@ -210,6 +210,18 @@ class BaseDQNModule:
                     self.db.batch_log_learning_experiences(self.pending_experiences)
                 self.pending_experiences = []
 
+        # Log individual experience
+        if all(x is not None for x in [step_number, agent_id, module_type]):
+            self._log_experience(
+                step_number=step_number,
+                agent_id=agent_id,
+                module_type=module_type,
+                state=state,
+                action=action,
+                reward=reward,
+                next_state=next_state,
+            )
+
     def train(
         self,
         batch: list,
