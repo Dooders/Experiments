@@ -14,11 +14,25 @@ logger = logging.getLogger(__name__)
 class SimulationDatabase:
 
     _thread_local = threading.local()
+    _tables_created = False
+    _tables_creation_lock = threading.Lock()
 
     def __init__(self, db_path: str) -> None:
         """Initialize a new SimulationDatabase instance."""
         self.db_path = db_path
         self._setup_connection()
+
+        # Add batch operation buffers
+        self._action_buffer = []
+        self._learning_exp_buffer = []
+        self._health_incident_buffer = []
+        self._buffer_size = 1000  # Adjust based on your needs
+
+        # Create tables only once in a thread-safe manner
+        with SimulationDatabase._tables_creation_lock:
+            if not SimulationDatabase._tables_created:
+                self._create_tables()
+                SimulationDatabase._tables_created = True
 
         # Verify foreign key constraints are working
         if not self.verify_foreign_keys():
@@ -34,7 +48,6 @@ class SimulationDatabase:
             # Enable foreign key constraints
             self._thread_local.conn.execute("PRAGMA foreign_keys = ON")
             self._thread_local.cursor = self._thread_local.conn.cursor()
-            self._create_tables()
 
     @property
     def conn(self):
@@ -49,19 +62,7 @@ class SimulationDatabase:
         return self._thread_local.cursor
 
     def _create_tables(self):
-        """Create the required database schema if tables don't exist.
-
-        Creates four main tables:
-        - Agents: Stores agent metadata and lifecycle information
-        - AgentStates: Tracks agent positions and resources over time
-        - ResourceStates: Tracks resource positions and amounts over time
-        - SimulationSteps: Stores comprehensive simulation metrics over time including:
-            * Population metrics (total agents, births, deaths, etc.)
-            * Resource metrics (efficiency, distribution)
-            * Performance metrics (health, age, rewards)
-            * Combat and cooperation metrics
-            * Evolutionary metrics (genetic diversity)
-        """
+        """Create the required database schema if tables don't exist."""
         self.cursor.executescript(
             """
             CREATE TABLE IF NOT EXISTS Agents (
@@ -183,7 +184,6 @@ class SimulationDatabase:
             ON HealthIncidents(step_number);
         """
         )
-        self.conn.commit()
 
         # Add indexes for performance optimization
         self.cursor.executescript(
@@ -240,7 +240,6 @@ class SimulationDatabase:
             ON LearningExperiences(module_type);
             """
         )
-        self.conn.commit()
 
     def _execute_in_transaction(self, func):
         """Execute database operations within a transaction."""
@@ -628,28 +627,16 @@ class SimulationDatabase:
         df.to_csv(filepath, index=False)
 
     def flush_all_buffers(self):
-        """Flush all database buffers and ensure data is written to disk.
-
-        This method ensures that all pending changes are written to the database file
-        by:
-        1. Committing any pending transactions
-        2. Forcing a write-ahead log checkpoint
-
-        Raises
-        ------
-        Exception
-            If there is an error during the flush operation
-
-        Notes
-        -----
-        This is particularly important to call before closing the database
-        or when ensuring data persistence is critical.
-        """
+        """Flush all data buffers and ensure data is written to disk."""
         try:
-            self.conn.commit()  # Commit any pending transactions
-            self.cursor.execute(
-                "PRAGMA wal_checkpoint(FULL)"
-            )  # Force write-ahead log checkpoint
+            self.flush_action_buffer()
+            self.flush_learning_buffer()
+            self.flush_health_buffer()
+
+            # Only commit if we're not already in a transaction
+            if not self.conn.in_transaction:
+                self.conn.commit()
+            self.cursor.execute("PRAGMA wal_checkpoint(FULL)")
         except Exception as e:
             logger.error(f"Error flushing database buffers: {e}")
             raise
@@ -658,7 +645,7 @@ class SimulationDatabase:
         """Close the database connection for the current thread."""
         if hasattr(self._thread_local, "conn"):
             try:
-                self.flush_all_buffers()
+                self.flush_all_buffers()  # Ensure all buffered data is written
                 self._thread_local.conn.close()
                 del self._thread_local.conn
                 del self._thread_local.cursor
@@ -689,15 +676,18 @@ class SimulationDatabase:
         -------
         >>> db.log_resource(resource_id=1, initial_amount=1000.0, position=(0.3, 0.7))
         """
-        self.cursor.execute(
-            """
-            INSERT INTO ResourceStates (
-                step_number, resource_id, amount, position_x, position_y
-            ) VALUES (?, ?, ?, ?, ?)
-        """,
-            (0, resource_id, initial_amount, position[0], position[1]),
-        )
-        self.conn.commit()
+
+        def _insert():
+            self.cursor.execute(
+                """
+                INSERT INTO ResourceStates (
+                    step_number, resource_id, amount, position_x, position_y
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (0, resource_id, initial_amount, position[0], position[1]),
+            )
+
+        self._execute_in_transaction(_insert)
 
     def log_simulation_step(
         self,
@@ -784,54 +774,30 @@ class SimulationDatabase:
         reward: Optional[float] = None,
         details: Optional[Dict] = None,
     ):
-        """Log an agent's action during the simulation."""
-        import json
+        """Buffer an agent action for batch processing."""
+        action_data = {
+            "step_number": step_number,
+            "agent_id": agent_id,
+            "action_type": action_type,
+            "action_target_id": action_target_id,
+            "position_before": position_before,
+            "position_after": position_after,
+            "resources_before": resources_before,
+            "resources_after": resources_after,
+            "reward": reward,
+            "details": details,
+        }
+        self._action_buffer.append(action_data)
 
-        # Convert positions to string representation if provided
-        pos_before_str = str(position_before) if position_before is not None else None
-        pos_after_str = str(position_after) if position_after is not None else None
+        # Flush buffer if it reaches the size limit
+        if len(self._action_buffer) >= self._buffer_size:
+            self.flush_action_buffer()
 
-        # Convert details dict to JSON string if provided
-        details_json = json.dumps(details) if details is not None else None
-
-        self.cursor.execute(
-            """
-            INSERT INTO AgentActions (
-                step_number, agent_id, action_type, action_target_id,
-                position_before, position_after, resources_before,
-                resources_after, reward, details
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                step_number,
-                agent_id,
-                action_type,
-                action_target_id,
-                pos_before_str,
-                pos_after_str,
-                resources_before,
-                resources_after,
-                reward,
-                details_json,
-            ),
-        )
-        # Remove the commit from here - we'll commit in batches instead
-
-    def batch_log_agent_actions(self, actions: List[Dict]):
-        """Batch insert multiple agent actions at once."""
-        values = [self._prepare_action_data(action) for action in actions]
-
-        if values:
-            self.cursor.executemany(
-                """
-                INSERT INTO AgentActions (
-                    step_number, agent_id, action_type, action_target_id,
-                    position_before, position_after, resources_before,
-                    resources_after, reward, details
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                values,
-            )
+    def flush_action_buffer(self):
+        """Flush the action buffer by batch inserting all buffered actions."""
+        if self._action_buffer:
+            self.batch_log_agent_actions(self._action_buffer)
+            self._action_buffer.clear()
 
     def log_learning_experience(
         self,
@@ -844,86 +810,137 @@ class SimulationDatabase:
         state_after: str,
         loss: float,
     ):
-        """Log a single learning experience during the simulation.
-
-        Parameters
-        ----------
-        step_number : int
-            Current simulation step number
-        agent_id : int
-            ID of the agent that had the learning experience
-        module_type : str
-            Type of learning module (e.g., 'movement', 'combat', etc.)
-        state_before : str
-            String representation of the state before action
-        action_taken : int
-            Integer representing the action chosen
-        reward : float
-            Reward received for the action
-        state_after : str
-            String representation of the state after action
-        loss : float
-            Loss value from the learning update
-        """
-        self.cursor.execute(
-            """
-            INSERT INTO LearningExperiences (
-                step_number, agent_id, module_type, state_before,
-                action_taken, reward, state_after, loss
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                step_number,
-                agent_id,
-                module_type,
-                state_before,
-                action_taken,
-                reward,
-                state_after,
-                loss,
-            ),
+        """Buffer a learning experience for batch processing."""
+        self._learning_exp_buffer.append(
+            {
+                "step_number": step_number,
+                "agent_id": agent_id,
+                "module_type": module_type,
+                "state_before": state_before,
+                "action_taken": action_taken,
+                "reward": reward,
+                "state_after": state_after,
+                "loss": loss,
+            }
         )
+
+        if len(self._learning_exp_buffer) >= self._buffer_size:
+            self.flush_learning_buffer()
+
+    def flush_learning_buffer(self):
+        """Flush the learning experience buffer."""
+        if self._learning_exp_buffer:
+            self.batch_log_learning_experiences(self._learning_exp_buffer)
+            self._learning_exp_buffer.clear()
+
+    def log_health_incident(
+        self,
+        step_number: int,
+        agent_id: int,
+        health_before: float,
+        health_after: float,
+        cause: str,
+        details: Optional[Dict] = None,
+    ):
+        """Buffer a health incident for batch processing."""
+        self._health_incident_buffer.append(
+            {
+                "step_number": step_number,
+                "agent_id": agent_id,
+                "health_before": health_before,
+                "health_after": health_after,
+                "cause": cause,
+                "details": details,
+            }
+        )
+
+        if len(self._health_incident_buffer) >= self._buffer_size:
+            self.flush_health_buffer()
+
+    def flush_health_buffer(self):
+        """Flush the health incident buffer."""
+        if self._health_incident_buffer:
+
+            def _batch_insert():
+                import json
+
+                values = [
+                    (
+                        incident["step_number"],
+                        incident["agent_id"],
+                        incident["health_before"],
+                        incident["health_after"],
+                        incident["cause"],
+                        (
+                            json.dumps(incident["details"])
+                            if incident.get("details")
+                            else None
+                        ),
+                    )
+                    for incident in self._health_incident_buffer
+                ]
+
+                self.cursor.executemany(
+                    """
+                    INSERT INTO HealthIncidents (
+                        step_number, agent_id, health_before, health_after,
+                        cause, details
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    values,
+                )
+
+            self._execute_in_transaction(_batch_insert)
+            self._health_incident_buffer.clear()
+
+    def batch_log_agent_actions(self, actions: List[Dict]):
+        """Batch insert multiple agent actions at once."""
+
+        def _insert():
+            values = [self._prepare_action_data(action) for action in actions]
+            if values:
+                self.cursor.executemany(
+                    """
+                    INSERT INTO AgentActions (
+                        step_number, agent_id, action_type, action_target_id,
+                        position_before, position_after, resources_before,
+                        resources_after, reward, details
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    values,
+                )
+
+        self._execute_in_transaction(_insert)
 
     def batch_log_learning_experiences(self, experiences: List[Dict]):
-        """Batch insert multiple learning experiences at once.
+        """Batch insert multiple learning experiences at once."""
 
-        Parameters
-        ----------
-        experiences : List[Dict]
-            List of experience dictionaries containing:
-            - step_number: int
-            - agent_id: int
-            - module_type: str
-            - state_before: str
-            - action_taken: int
-            - reward: float
-            - state_after: str
-            - loss: float
-        """
-        values = [
-            (
-                exp["step_number"],
-                exp["agent_id"],
-                exp["module_type"],
-                exp["state_before"],
-                exp["action_taken"],
-                exp["reward"],
-                exp["state_after"],
-                exp["loss"],
+        def _insert():
+            values = [
+                (
+                    exp["step_number"],
+                    exp["agent_id"],
+                    exp["module_type"],
+                    exp["state_before"],
+                    exp["action_taken"],
+                    exp["reward"],
+                    exp["state_after"],
+                    exp["loss"],
+                )
+                for exp in experiences
+            ]
+
+            self.cursor.executemany(
+                """
+                INSERT INTO LearningExperiences (
+                    step_number, agent_id, module_type, state_before,
+                    action_taken, reward, state_after, loss
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                values,
             )
-            for exp in experiences
-        ]
 
-        self.cursor.executemany(
-            """
-            INSERT INTO LearningExperiences (
-                step_number, agent_id, module_type, state_before,
-                action_taken, reward, state_after, loss
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            values,
-        )
-        self.conn.commit()
+        self._execute_in_transaction(_insert)
 
     def log_agent(
         self,
@@ -1054,85 +1071,55 @@ class SimulationDatabase:
             logger.error(f"Error verifying foreign keys: {e}")
             return False
 
-    def log_health_incident(self, step_number: int, agent_id: int, 
-                           health_before: float, health_after: float,
-                           cause: str, details: Optional[Dict] = None):
-        """Log a health-changing incident for an agent.
-        
-        Parameters
-        ----------
-        step_number : int
-            Current simulation step
-        agent_id : int
-            ID of affected agent
-        health_before : float
-            Health value before incident
-        health_after : float
-            Health value after incident
-        cause : str
-            Cause of health change (e.g., 'attack', 'starvation', 'healing')
-        details : Optional[Dict]
-            Additional details about the incident
-        """
-        import json
-        
-        details_json = json.dumps(details) if details else None
-        
-        self.cursor.execute("""
-            INSERT INTO HealthIncidents (
-                step_number, agent_id, health_before, health_after,
-                cause, details
-            ) VALUES (?, ?, ?, ?, ?, ?)
-        """, (step_number, agent_id, health_before, health_after,
-              cause, details_json))
-        self.conn.commit()
-
     def get_agent_health_incidents(self, agent_id: int) -> List[Dict]:
         """Get all health incidents for an agent.
-        
+
         Parameters
         ----------
         agent_id : int
             ID of the agent
-        
+
         Returns
         -------
         List[Dict]
             List of health incidents with their details
         """
         import json
-        
-        self.cursor.execute("""
+
+        self.cursor.execute(
+            """
             SELECT step_number, health_before, health_after, 
                    cause, details
             FROM HealthIncidents
             WHERE agent_id = ?
             ORDER BY step_number
-        """, (agent_id,))
-        
+        """,
+            (agent_id,),
+        )
+
         incidents = []
         for row in self.cursor.fetchall():
             incident = {
-                'step_number': row[0],
-                'health_before': row[1],
-                'health_after': row[2],
-                'cause': row[3],
-                'details': json.loads(row[4]) if row[4] else None
+                "step_number": row[0],
+                "health_before": row[1],
+                "health_after": row[2],
+                "cause": row[3],
+                "details": json.loads(row[4]) if row[4] else None,
             }
             incidents.append(incident)
-        
+
         return incidents
 
     def get_step_actions(self, agent_id: int, step_number: int) -> Dict:
         """Get detailed action information for an agent at a specific step.
-        
+
         Parameters
         ----------
         agent_id : int
             ID of the agent
         step_number : int
             Simulation step number
-        
+
         Returns
         -------
         Dict
@@ -1145,7 +1132,8 @@ class SimulationDatabase:
             - details: Additional action-specific details
         """
         try:
-            self.cursor.execute("""
+            self.cursor.execute(
+                """
                 SELECT 
                     action_type,
                     action_target_id,
@@ -1157,8 +1145,10 @@ class SimulationDatabase:
                     details
                 FROM AgentActions
                 WHERE agent_id = ? AND step_number = ?
-            """, (agent_id, step_number))
-            
+            """,
+                (agent_id, step_number),
+            )
+
             row = self.cursor.fetchone()
             if row:
                 return {
@@ -1169,10 +1159,10 @@ class SimulationDatabase:
                     "resources_before": row[4],
                     "resources_after": row[5],
                     "reward": row[6],
-                    "details": row[7]
+                    "details": row[7],
                 }
             return None
-            
+
         except Exception as e:
             logger.error(f"Error getting step actions: {e}")
             return None
