@@ -47,31 +47,31 @@ class SimulationChart(ttk.Frame):
         self.ax1 = self.fig.add_subplot(111)
         self.ax2 = self.ax1.twinx()
 
-        # Initialize empty line objects with colors
+        # Initialize line objects with reduced opacity for historical data
         self.lines = {
             "system_agents": self.ax1.plot(
-                [], [], "b-", label="System Agents", alpha=1.0)[0],
+                [], [], "b-", label="System Agents", alpha=0.3)[0],
             "independent_agents": self.ax1.plot(
-                [], [], "r-", label="Independent Agents", alpha=1.0)[0],
+                [], [], "r-", label="Independent Agents", alpha=0.3)[0],
             "control_agents": self.ax1.plot(
-                [], [], color="#FFD700", label="Control Agents", alpha=1.0)[0],
+                [], [], color="#FFD700", label="Control Agents", alpha=0.3)[0],
             "resources": self.ax2.plot(
-                [], [], "g-", label="Resources", alpha=1.0)[0],
+                [], [], "g-", label="Resources", alpha=0.3)[0],
             "current_step": self.ax1.axvline(
                 x=0, color="gray", linestyle="--", alpha=0.5
             )
         }
         
-        # Initialize future data lines (semi-transparent)
+        # Initialize future data lines with full opacity
         self.future_lines = {
             "system_agents": self.ax1.plot(
-                [], [], "b-", alpha=0.3)[0],
+                [], [], "b-", alpha=1.0)[0],
             "independent_agents": self.ax1.plot(
-                [], [], "r-", alpha=0.3)[0],
+                [], [], "r-", alpha=1.0)[0],
             "control_agents": self.ax1.plot(
-                [], [], color="#FFD700", alpha=0.3)[0],
+                [], [], color="#FFD700", alpha=1.0)[0],
             "resources": self.ax2.plot(
-                [], [], "g-", alpha=0.3)[0]
+                [], [], "g-", alpha=1.0)[0]
         }
 
         # Setup axis labels and colors
