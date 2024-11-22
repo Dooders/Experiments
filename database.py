@@ -1122,3 +1122,57 @@ class SimulationDatabase:
             incidents.append(incident)
         
         return incidents
+
+    def get_step_actions(self, agent_id: int, step_number: int) -> Dict:
+        """Get detailed action information for an agent at a specific step.
+        
+        Parameters
+        ----------
+        agent_id : int
+            ID of the agent
+        step_number : int
+            Simulation step number
+        
+        Returns
+        -------
+        Dict
+            Dictionary containing action details including:
+            - action_type: Type of action taken
+            - action_target_id: ID of target agent/resource if applicable
+            - resources_before: Resource level before action
+            - resources_after: Resource level after action
+            - reward: Reward received for action
+            - details: Additional action-specific details
+        """
+        try:
+            self.cursor.execute("""
+                SELECT 
+                    action_type,
+                    action_target_id,
+                    position_before,
+                    position_after,
+                    resources_before,
+                    resources_after,
+                    reward,
+                    details
+                FROM AgentActions
+                WHERE agent_id = ? AND step_number = ?
+            """, (agent_id, step_number))
+            
+            row = self.cursor.fetchone()
+            if row:
+                return {
+                    "action_type": row[0],
+                    "action_target_id": row[1],
+                    "position_before": row[2],
+                    "position_after": row[3],
+                    "resources_before": row[4],
+                    "resources_after": row[5],
+                    "reward": row[6],
+                    "details": row[7]
+                }
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting step actions: {e}")
+            return None

@@ -1,6 +1,7 @@
 import sqlite3
 import tkinter as tk
 from tkinter import messagebox, ttk
+import traceback
 from typing import Dict
 
 import matplotlib.pyplot as plt
@@ -8,6 +9,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
+from database import SimulationDatabase
 from gui.components.tooltips import ToolTip
 
 
@@ -671,30 +673,22 @@ class AgentAnalysisWindow(ttk.Frame):
         try:
             conn = sqlite3.connect(self.db_path)
             agent_id = int(self.agent_var.get().split()[1])
+            
+            # Debug logging
+            print(f"Getting actions for agent {agent_id} between steps {start_step} and {end_step}")
 
-            # First, let's check if there are any actions at all for this agent
-            check_query = """
-                SELECT COUNT(*), MIN(step_number), MAX(step_number)
-                FROM AgentActions 
-                WHERE agent_id = ?
-            """
-            result = pd.read_sql_query(check_query, conn, params=(agent_id,))
-            count, min_step, max_step = result.iloc[0]
-
-            # Handle case where no actions exist
-            if count == 0 or min_step is None or max_step is None:
-                conn.close()
-                return pd.DataFrame(
-                    columns=["step_number", "action_type", "reward", "action_id"]
-                )
-
-            # Main query - use the provided step range but constrained by actual data range
+            # Query for all actions in the step range
             query = """
                 SELECT 
                     aa.step_number,
                     LOWER(aa.action_type) as action_type,
                     aa.reward,
-                    aa.action_id
+                    aa.action_id,
+                    aa.action_target_id,
+                    aa.resources_before,
+                    aa.resources_after,
+                    aa.details,
+                    aa.agent_id  -- Add this for verification
                 FROM AgentActions aa
                 WHERE aa.agent_id = ? 
                 AND aa.step_number >= ?
@@ -702,23 +696,27 @@ class AgentAnalysisWindow(ttk.Frame):
                 ORDER BY aa.step_number
             """
 
-            # Use the intersection of requested range and available data range
-            query_start = max(start_step, min_step)
-            query_end = min(end_step, max_step)
+            df = pd.read_sql_query(query, conn, params=(agent_id, start_step, end_step))
+            
+            # Debug logging
+            if not df.empty:
+                print(f"Found {len(df)} actions")
+                print(f"First action: Step {df.iloc[0]['step_number']}, Type: {df.iloc[0]['action_type']}")
+                print(f"Verifying agent_id matches: {df['agent_id'].unique()}")
+            else:
+                print("No actions found for this agent in the given range")
 
-            df = pd.read_sql_query(
-                query, conn, params=(agent_id, query_start, query_end)
-            )
             conn.close()
             return df
 
         except Exception as e:
             print(f"Error getting action data: {e}")
             import traceback
-
             traceback.print_exc()
             return pd.DataFrame(
-                columns=["step_number", "action_type", "reward", "action_id"]
+                columns=["step_number", "action_type", "reward", "action_id",
+                        "action_target_id", "resources_before", "resources_after", 
+                        "details", "agent_id"]
             )
 
     def _plot_action_timeline(self, ax, df):
@@ -918,8 +916,12 @@ class AgentAnalysisWindow(ttk.Frame):
         """Update the agent information for a specific step."""
         try:
             conn = sqlite3.connect(self.db_path)
+            agent_id = int(self.agent_var.get().split()[1])
             
-            # Query for step-specific agent state
+            # Debug logging
+            print(f"Updating info for agent {agent_id} at step {step}")
+            
+            # Get basic state information
             query = """
                 SELECT 
                     s.current_health,
@@ -927,38 +929,65 @@ class AgentAnalysisWindow(ttk.Frame):
                     s.total_reward,
                     s.age,
                     s.is_defending,
-                    s.position_x || ', ' || s.position_y as current_position
+                    s.position_x || ', ' || s.position_y as current_position,
+                    s.agent_id  -- Add this for verification
                 FROM AgentStates s
                 WHERE s.agent_id = ? AND s.step_number = ?
             """
-            
-            agent_id = int(self.agent_var.get().split()[1])
             df = pd.read_sql_query(query, conn, params=(agent_id, step))
             
             if not df.empty:
                 state = df.iloc[0]
+                print(f"Found state data. Verifying agent_id matches: {state['agent_id']}")
                 
                 # Update stat labels with step-specific data
-                self.stat_labels["health"].config(
-                    text=f"{state['current_health']:.2f}"
-                )
-                self.stat_labels["resources"].config(
-                    text=f"{state['resource_level']:.2f}"
-                )
-                self.stat_labels["total_reward"].config(
-                    text=f"{state['total_reward']:.2f}"
-                )
-                self.stat_labels["age"].config(
-                    text=str(state['age'])
-                )
-                self.stat_labels["is_defending"].config(
-                    text=str(bool(state['is_defending']))
-                )
-                self.stat_labels["current_position"].config(
-                    text=state['current_position']
-                )
+                self.stat_labels["health"].config(text=f"{state['current_health']:.2f}")
+                self.stat_labels["resources"].config(text=f"{state['resource_level']:.2f}")
+                self.stat_labels["total_reward"].config(text=f"{state['total_reward']:.2f}")
+                self.stat_labels["age"].config(text=str(state['age']))
+                self.stat_labels["is_defending"].config(text=str(bool(state['is_defending'])))
+                self.stat_labels["current_position"].config(text=state['current_position'])
+                
+                # Get action details for this step
+                db = SimulationDatabase(self.db_path)
+                action_details = db.get_step_actions(agent_id, step)
+                
+                # Update action details in the UI
+                if action_details:
+                    print(f"Found action at step {step}: {action_details['action_type']}")
+                    action_text = f"""Step {step} Action Details:
+Action Type: {action_details['action_type']}
+Target ID: {action_details['action_target_id'] or 'None'}
+Resources Before: {action_details['resources_before']:.2f}
+Resources After: {action_details['resources_after']:.2f}
+Reward: {action_details['reward']:.2f}
+"""
+                    if action_details['details']:
+                        import json
+                        details = json.loads(action_details['details'])
+                        action_text += "\nAdditional Details:\n"
+                        for key, value in details.items():
+                            action_text += f"{key}: {value}\n"
+                else:
+                    print(f"No action found at step {step}")
+                    action_text = f"No action recorded for step {step}"
+                
+                # Create or update action details label
+                if not hasattr(self, 'action_details_label'):
+                    self.action_details_label = ttk.Label(
+                        self.scrollable_info,
+                        text=action_text,
+                        style="InfoValue.TLabel",
+                        justify=tk.LEFT
+                    )
+                    self.action_details_label.pack(fill="x", pady=(10, 0), padx=5)
+                else:
+                    self.action_details_label.config(text=action_text)
+            else:
+                print(f"No state data found for agent {agent_id} at step {step}")
             
             conn.close()
             
         except Exception as e:
             print(f"Error updating step info: {e}")
+            traceback.print_exc()
