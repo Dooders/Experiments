@@ -494,19 +494,62 @@ class AgentAnalysisWindow(ttk.Frame):
             )[0]
         )
 
-        # Add defense indicators
+        # Add action indicators
+        y_min = ax1.get_ylim()[0] - (ax1.get_ylim()[1] - ax1.get_ylim()[0]) * 0.02  # 2% below bottom
+        
+        # Get steps for each action type
         defense_steps = df[df["is_defending"] == 1]["step_number"]
+        
+        # Query attack and reproduction steps
+        action_data = self._get_action_data(df["step_number"].min(), df["step_number"].max())
+        attack_steps = action_data[action_data["action_type"] == "attack"]["step_number"]
+        reproduce_steps = action_data[action_data["action_type"] == "reproduce"]["step_number"]
+        
+        # Add markers for each action type
         if not defense_steps.empty:
             lines.append(
                 ax1.scatter(
                     defense_steps,
-                    [0] * len(defense_steps),
-                    marker="^",
+                    [y_min] * len(defense_steps),
+                    marker="^",  # Upward pointing triangle
                     color="red",
                     label="Defending",
                     alpha=0.5,
+                    zorder=3,
+                    clip_on=False
                 )
             )
+            
+        if not attack_steps.empty:
+            lines.append(
+                ax1.scatter(
+                    attack_steps,
+                    [y_min] * len(attack_steps),
+                    marker="^",  # Upward pointing triangle
+                    color="orange",  # Different color for attacks
+                    label="Attack",
+                    alpha=0.5,
+                    zorder=3,
+                    clip_on=False
+                )
+            )
+            
+        if not reproduce_steps.empty:
+            lines.append(
+                ax1.scatter(
+                    reproduce_steps,
+                    [y_min] * len(reproduce_steps),
+                    marker="^",  # Upward pointing triangle
+                    color="purple",  # Different color for reproduction
+                    label="Reproduce",
+                    alpha=0.5,
+                    zorder=3,
+                    clip_on=False
+                )
+            )
+        
+        # Adjust bottom margin to make room for markers
+        ax1.set_ylim(bottom=y_min - (ax1.get_ylim()[1] - ax1.get_ylim()[0]) * 0.01)  # Add 1% padding
 
         # Improve plot styling
         ax1.set_xlabel("")
@@ -536,9 +579,16 @@ class AgentAnalysisWindow(ttk.Frame):
         ax2.set_yticks([])
         ax2.grid(True, alpha=0.3, axis="x")
 
-        # Set x-axis limits
-        ax1.set_xlim(df["step_number"].min(), df["step_number"].max())
+        # Set x-axis limits with padding
+        x_min = df["step_number"].min()
+        x_max = df["step_number"].max()
+        x_padding = (x_max - x_min) * 0.02  # 2% padding
+        
+        ax1.set_xlim(x_min, x_max + x_padding)  # Add padding only to right side
         ax1.set_xticks([])  # Remove x-ticks from top plot
+        
+        # Ensure bottom plot shares the same x-axis limits
+        ax2.set_xlim(x_min, x_max + x_padding)
 
         # Use subplots_adjust instead of tight_layout
         fig.subplots_adjust(
