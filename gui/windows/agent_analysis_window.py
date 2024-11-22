@@ -286,6 +286,43 @@ class AgentAnalysisWindow(ttk.Frame):
             )
             self.metric_labels[key].pack(side=tk.LEFT)
 
+        # Add Children Table Section
+        children_frame = ttk.LabelFrame(info_frame, text="Children", padding=(5, 2))
+        children_frame.pack(fill="x", pady=(5, 0))
+
+        # Create Treeview for children
+        self.children_tree = ttk.Treeview(
+            children_frame,
+            columns=("child_id", "birth_time", "age"),
+            show="headings",
+            height=5  # Show 5 rows at a time
+        )
+
+        # Configure columns
+        self.children_tree.heading("child_id", text="Child ID")
+        self.children_tree.heading("birth_time", text="Birth")
+        self.children_tree.heading("age", text="Age")
+
+        # Configure column widths
+        self.children_tree.column("child_id", width=90)
+        self.children_tree.column("birth_time", width=90)
+        self.children_tree.column("age", width=90)
+
+        # Add scrollbar
+        children_scrollbar = ttk.Scrollbar(
+            children_frame,
+            orient="vertical",
+            command=self.children_tree.yview
+        )
+        self.children_tree.configure(yscrollcommand=children_scrollbar.set)
+
+        # Pack tree and scrollbar
+        self.children_tree.pack(side="left", fill="x", expand=True)
+        children_scrollbar.pack(side="right", fill="y")
+
+        # Add tooltip
+        ToolTip(children_frame, "List of agent's children")
+
     def _load_agents(self):
         """Load available agents from database."""
         try:
@@ -334,7 +371,7 @@ class AgentAnalysisWindow(ttk.Frame):
             self._update_stat_labels(self._load_agent_stats(conn, agent_id))
             self._update_metric_labels(self._load_performance_metrics(conn, agent_id))
             self._update_metrics_chart(conn, agent_id)
-            self._update_actions_chart(conn, agent_id)
+            self._update_children_table(agent_id)
 
             conn.close()
 
@@ -446,6 +483,10 @@ class AgentAnalysisWindow(ttk.Frame):
             self._create_metrics_plot(df)
 
     def _create_metrics_plot(self, df):
+        """Create the metrics plot."""
+        # Store DataFrame for event handlers
+        self.df = df
+        
         # Clear previous plot
         for widget in self.metrics_frame.winfo_children():
             widget.destroy()
@@ -513,7 +554,7 @@ class AgentAnalysisWindow(ttk.Frame):
                 ax1.scatter(
                     defense_steps,
                     [y_min] * len(defense_steps),
-                    marker="^",  # Upward pointing triangle
+                    marker="^",
                     color="red",
                     label="Defending",
                     alpha=0.5,
@@ -527,8 +568,8 @@ class AgentAnalysisWindow(ttk.Frame):
                 ax1.scatter(
                     attack_steps,
                     [y_min] * len(attack_steps),
-                    marker="^",  # Upward pointing triangle
-                    color="orange",  # Different color for attacks
+                    marker="^",
+                    color="orange",
                     label="Attack",
                     alpha=0.5,
                     zorder=3,
@@ -541,8 +582,8 @@ class AgentAnalysisWindow(ttk.Frame):
                 ax1.scatter(
                     reproduce_steps,
                     [y_min] * len(reproduce_steps),
-                    marker="^",  # Upward pointing triangle
-                    color="purple",  # Different color for reproduction
+                    marker="^",
+                    color="purple",
                     label="Reproduce",
                     alpha=0.5,
                     zorder=3,
@@ -551,7 +592,7 @@ class AgentAnalysisWindow(ttk.Frame):
             )
         
         # Adjust bottom margin to make room for markers
-        ax1.set_ylim(bottom=y_min - (ax1.get_ylim()[1] - ax1.get_ylim()[0]) * 0.01)  # Add 1% padding
+        ax1.set_ylim(bottom=y_min - (ax1.get_ylim()[1] - ax1.get_ylim()[0]) * 0.01)
 
         # Improve plot styling
         ax1.set_xlabel("")
@@ -566,20 +607,20 @@ class AgentAnalysisWindow(ttk.Frame):
             lines, [l.get_label() for l in lines], loc="center", frameon=True
         )
 
-        # Action timeline plot (bottom)
+        # Population and Resources plot (bottom)
         ax2 = fig.add_subplot(gs[1, 0])  # Bottom-left position
         ax2.sharex(ax1)
 
-        # Get and plot action data
-        action_data = self._get_action_data(
+        # Get and plot population/resource data
+        pop_data = self._get_population_data(
             df["step_number"].min(), df["step_number"].max()
         )
-        self._plot_action_timeline(ax2, action_data)
+        self._plot_population_timeline(ax2, pop_data)
 
-        # Style the action timeline
+        # Style the population timeline
         ax2.set_xlabel("Time Step", fontsize=10)
-        ax2.set_yticks([])
-        ax2.grid(True, alpha=0.3, axis="x")
+        ax2.set_ylabel("Count", fontsize=10)
+        ax2.grid(True, alpha=0.3)
 
         # Set x-axis limits with padding
         x_min = df["step_number"].min()
@@ -594,88 +635,113 @@ class AgentAnalysisWindow(ttk.Frame):
 
         # Use subplots_adjust instead of tight_layout
         fig.subplots_adjust(
-            left=0.1,  # Left margin
-            right=0.85,  # Right margin (make room for legend)
-            bottom=0.1,  # Bottom margin
-            top=0.9,  # Top margin
-            hspace=0.1,  # Height spacing between subplots
+            left=0.1,
+            right=0.85,
+            bottom=0.1,
+            top=0.9,
+            hspace=0.1,
         )
 
         # Add vertical line for current step
         self.current_step_line = ax1.axvline(
-            x=df["step_number"].iloc[0],  # Start at first step
+            x=df["step_number"].iloc[0],
             color="gray",
             linestyle="--",
             alpha=0.5
         )
 
-        # Track dragging state
-        self.is_dragging = False
-        self.was_playing = False
-        
-        def _on_click(event):
-            if event.inaxes in [ax1, ax2]:
-                self.is_dragging = True
-                step = int(round(event.xdata))
-                # Constrain step to valid range
-                step = max(df["step_number"].min(), min(step, df["step_number"].max()))
-                self._update_step_info(step)
-                self.current_step_line.set_xdata([step, step])
-                canvas.draw()
-
-        def _on_release(event):
-            self.is_dragging = False
-
-        def _on_drag(event):
-            if self.is_dragging and event.inaxes in [ax1, ax2]:
-                step = int(round(event.xdata))
-                # Constrain step to valid range
-                step = max(df["step_number"].min(), min(step, df["step_number"].max()))
-                self._update_step_info(step)
-                self.current_step_line.set_xdata([step, step])
-                canvas.draw()
-
-        def _on_key(event):
-            """Handle keyboard navigation."""
-            if event.inaxes in [ax1, ax2]:  # Only if mouse is over the plot
-                current_x = self.current_step_line.get_xdata()[0]
-                step = int(current_x)
-                
-                # Handle left/right arrow keys
-                if event.key == 'left':
-                    step = max(df["step_number"].min(), step - 1)
-                elif event.key == 'right':
-                    step = min(df["step_number"].max(), step + 1)
-                else:
-                    return
-                
-                # Update line position and info
-                self._update_step_info(step)
-                self.current_step_line.set_xdata([step, step])
-                canvas.draw()
-
         # Create canvas with all event connections
         canvas = FigureCanvasTkAgg(fig, master=self.metrics_frame)
-        canvas.mpl_connect('button_press_event', _on_click)
-        canvas.mpl_connect('button_release_event', _on_release)
-        canvas.mpl_connect('motion_notify_event', _on_drag)
-        canvas.mpl_connect('key_press_event', _on_key)  # Add keyboard event
-        
-        # Enable keyboard focus on the canvas
-        canvas.get_tk_widget().config(takefocus=1)
-        canvas.get_tk_widget().bind('<FocusIn>', lambda e: canvas.get_tk_widget().focus_set())
+        canvas.mpl_connect('button_press_event', lambda e: self._on_click(e))
+        canvas.mpl_connect('button_release_event', lambda e: self._on_release(e))
+        canvas.mpl_connect('motion_notify_event', lambda e: self._on_drag(e))
+        canvas.mpl_connect('key_press_event', lambda e: self._on_key(e))
         
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # Store axes for event handlers
+        self.ax1 = ax1
+        self.ax2 = ax2
+
+    def _get_population_data(self, start_step, end_step):
+        """Get total population and resource data for the timeline."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            query = """
+                SELECT 
+                    step_number,
+                    total_agents,
+                    total_resources
+                FROM SimulationSteps
+                WHERE step_number >= ? AND step_number <= ?
+                ORDER BY step_number
+            """
+            df = pd.read_sql_query(query, conn, params=(start_step, end_step))
+            conn.close()
+            return df
+        except Exception as e:
+            print(f"Error getting population data: {e}")
+            return pd.DataFrame(columns=[
+                "step_number", "total_agents", "total_resources"
+            ])
+
+    def _plot_population_timeline(self, ax, df):
+        """Plot total population and resource metrics."""
+        if df.empty:
+            ax.text(0.5, 0.5, "No data available", ha="center", va="center")
+            return
+
+        # Create two y-axes
+        ax2 = ax.twinx()
+
+        # Plot total population data on left axis
+        l1 = ax.plot(df["step_number"], df["total_agents"], 
+                     color="blue", label="Total Agents", alpha=0.7, linewidth=2)
+
+        # Plot resources on right axis
+        l2 = ax2.plot(df["step_number"], df["total_resources"], 
+                      color="green", label="Resources", alpha=0.7, linewidth=2)
+
+        # Add legends
+        lines = l1 + l2
+        labels = [l.get_label() for l in lines]
+        ax.legend(lines, labels, loc='upper left', bbox_to_anchor=(1.15, 1.0))
+
+        # Set labels
+        ax.set_ylabel("Population", color="black")
+        ax2.set_ylabel("Resources", color="green", rotation=270, labelpad=15)
+
+        # Add padding to y-axes (10% padding)
+        y1_min, y1_max = ax.get_ylim()
+        y2_min, y2_max = ax2.get_ylim()
+        
+        y1_padding = (y1_max - y1_min) * 0.1
+        y2_padding = (y2_max - y2_min) * 0.1
+        
+        ax.set_ylim(max(0, y1_min - y1_padding), y1_max + y1_padding)
+        ax2.set_ylim(max(0, y2_min - y2_padding), y2_max + y2_padding)
+
+        # Set colors for tick labels
+        ax.tick_params(axis='y', labelcolor="black")
+        ax2.tick_params(axis='y', labelcolor="green")
+
+        # Add grid
+        ax.grid(True, alpha=0.2)
+
+        # Add synchronized vertical line
+        self.population_step_line = ax.axvline(
+            x=self.df["step_number"].iloc[0],  # Start at first step
+            color="gray",
+            linestyle="--",
+            alpha=0.5
+        )
 
     def _get_action_data(self, start_step, end_step):
         """Get action data for the timeline."""
         try:
             conn = sqlite3.connect(self.db_path)
             agent_id = int(self.agent_var.get().split()[1])
-            
-            # Debug logging
-            print(f"Getting actions for agent {agent_id} between steps {start_step} and {end_step}")
 
             # Query for all actions in the step range
             query = """
@@ -688,7 +754,7 @@ class AgentAnalysisWindow(ttk.Frame):
                     aa.resources_before,
                     aa.resources_after,
                     aa.details,
-                    aa.agent_id  -- Add this for verification
+                    aa.agent_id
                 FROM AgentActions aa
                 WHERE aa.agent_id = ? 
                 AND aa.step_number >= ?
@@ -697,21 +763,11 @@ class AgentAnalysisWindow(ttk.Frame):
             """
 
             df = pd.read_sql_query(query, conn, params=(agent_id, start_step, end_step))
-            
-            # Debug logging
-            if not df.empty:
-                print(f"Found {len(df)} actions")
-                print(f"First action: Step {df.iloc[0]['step_number']}, Type: {df.iloc[0]['action_type']}")
-                print(f"Verifying agent_id matches: {df['agent_id'].unique()}")
-            else:
-                print("No actions found for this agent in the given range")
-
             conn.close()
             return df
 
         except Exception as e:
             print(f"Error getting action data: {e}")
-            import traceback
             traceback.print_exc()
             return pd.DataFrame(
                 columns=["step_number", "action_type", "reward", "action_id",
@@ -918,9 +974,6 @@ class AgentAnalysisWindow(ttk.Frame):
             conn = sqlite3.connect(self.db_path)
             agent_id = int(self.agent_var.get().split()[1])
             
-            # Debug logging
-            print(f"Updating info for agent {agent_id} at step {step}")
-            
             # Get basic state information
             query = """
                 SELECT 
@@ -930,7 +983,7 @@ class AgentAnalysisWindow(ttk.Frame):
                     s.age,
                     s.is_defending,
                     s.position_x || ', ' || s.position_y as current_position,
-                    s.agent_id  -- Add this for verification
+                    s.agent_id
                 FROM AgentStates s
                 WHERE s.agent_id = ? AND s.step_number = ?
             """
@@ -938,7 +991,6 @@ class AgentAnalysisWindow(ttk.Frame):
             
             if not df.empty:
                 state = df.iloc[0]
-                print(f"Found state data. Verifying agent_id matches: {state['agent_id']}")
                 
                 # Update stat labels with step-specific data
                 self.stat_labels["health"].config(text=f"{state['current_health']:.2f}")
@@ -954,7 +1006,6 @@ class AgentAnalysisWindow(ttk.Frame):
                 
                 # Update action details in the UI
                 if action_details:
-                    print(f"Found action at step {step}: {action_details['action_type']}")
                     action_text = f"""Step {step} Action Details:
 Action Type: {action_details['action_type']}
 Target ID: {action_details['action_target_id'] or 'None'}
@@ -969,7 +1020,6 @@ Reward: {action_details['reward']:.2f}
                         for key, value in details.items():
                             action_text += f"{key}: {value}\n"
                 else:
-                    print(f"No action found at step {step}")
                     action_text = f"No action recorded for step {step}"
                 
                 # Create or update action details label
@@ -983,11 +1033,119 @@ Reward: {action_details['reward']:.2f}
                     self.action_details_label.pack(fill="x", pady=(10, 0), padx=5)
                 else:
                     self.action_details_label.config(text=action_text)
-            else:
-                print(f"No state data found for agent {agent_id} at step {step}")
             
             conn.close()
             
         except Exception as e:
             print(f"Error updating step info: {e}")
+            traceback.print_exc()
+
+    def _on_click(self, event):
+        """Handle mouse click on the chart."""
+        if event.inaxes in [self.ax1, self.ax2]:
+            try:
+                self.is_dragging = True
+                step = int(round(event.xdata))
+                # Constrain step to valid range
+                step = max(self.df["step_number"].min(), min(step, self.df["step_number"].max()))
+                self._update_step_info(step)
+                # Update both vertical lines
+                self.current_step_line.set_xdata([step, step])
+                self.population_step_line.set_xdata([step, step])
+                event.canvas.draw()
+            except Exception as e:
+                print(f"Error in click handler: {e}")
+
+    def _on_release(self, event):
+        """Handle mouse release."""
+        self.is_dragging = False
+
+    def _on_drag(self, event):
+        """Handle mouse drag on the chart."""
+        if hasattr(self, 'is_dragging') and self.is_dragging and event.inaxes:
+            try:
+                step = int(round(event.xdata))
+                # Constrain step to valid range
+                if hasattr(self, 'df'):
+                    step = max(self.df["step_number"].min(), min(step, self.df["step_number"].max()))
+                    self._update_step_info(step)
+                    # Update both vertical lines
+                    self.current_step_line.set_xdata([step, step])
+                    self.population_step_line.set_xdata([step, step])
+                    event.canvas.draw()
+            except Exception as e:
+                print(f"Error in drag handler: {e}")
+
+    def _on_key(self, event):
+        """Handle keyboard navigation."""
+        if event.inaxes:  # Only if mouse is over the plot
+            try:
+                current_x = self.current_step_line.get_xdata()[0]
+                step = int(current_x)
+                
+                # Handle left/right arrow keys
+                if event.key == 'left':
+                    step = max(self.df["step_number"].min(), step - 1)
+                elif event.key == 'right':
+                    step = min(self.df["step_number"].max(), step + 1)
+                else:
+                    return
+                
+                # Update line positions and info
+                self._update_step_info(step)
+                self.current_step_line.set_xdata([step, step])
+                self.population_step_line.set_xdata([step, step])
+                event.canvas.draw()
+            except Exception as e:
+                print(f"Error in key handler: {e}")
+
+    def _update_children_table(self, agent_id: int):
+        """Update the children table for the given agent."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            
+            # Query for children data
+            query = """
+                SELECT 
+                    a.agent_id as child_id,
+                    a.birth_time,
+                    CASE 
+                        WHEN a.death_time IS NULL THEN 
+                            (SELECT MAX(step_number) FROM AgentStates WHERE agent_id = a.agent_id) - a.birth_time
+                        ELSE a.death_time - a.birth_time 
+                    END as age
+                FROM Agents a
+                WHERE a.parent_id = ?
+                ORDER BY a.birth_time DESC
+            """
+            
+            df = pd.read_sql_query(query, conn, params=(agent_id,))
+            conn.close()
+
+            # Clear existing items
+            for item in self.children_tree.get_children():
+                self.children_tree.delete(item)
+
+            # Add new data
+            for _, row in df.iterrows():
+                self.children_tree.insert(
+                    "",
+                    "end",
+                    values=(
+                        row["child_id"],
+                        row["birth_time"],
+                        row["age"]
+                    )
+                )
+
+            # Update table visibility based on whether there are children
+            if df.empty:
+                self.children_tree.insert(
+                    "",
+                    "end",
+                    values=("No children", "-", "-")
+                )
+
+        except Exception as e:
+            print(f"Error updating children table: {e}")
             traceback.print_exc()

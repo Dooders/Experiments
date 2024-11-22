@@ -35,7 +35,11 @@ class EnvironmentView(ttk.Frame):
         self.previous_agent_states = []
         self.birth_animations = {}
         self.death_animations = {}
-
+        
+        # Add selection tracking
+        self.selected_agent_id = None
+        self.on_agent_selected = None  # Callback for agent selection
+        
         self._setup_canvas()
 
     def _setup_canvas(self):
@@ -55,8 +59,52 @@ class EnvironmentView(ttk.Frame):
         )
         self.canvas.pack(fill="both", expand=True)
 
-        # Bind resize event
+        # Bind resize event and click event
         self.canvas.bind("<Configure>", self._on_canvas_resize)
+        self.canvas.bind("<Button-1>", self._on_canvas_click)
+
+    def set_agent_selected_callback(self, callback):
+        """Set callback for agent selection."""
+        self.on_agent_selected = callback
+
+    def select_agent(self, agent_id):
+        """Select an agent by ID."""
+        self.selected_agent_id = agent_id
+        self.update()  # Redraw with selection
+
+    def _on_canvas_click(self, event):
+        """Handle canvas click events."""
+        if not hasattr(self, 'last_agent_positions'):
+            return
+
+        # Convert click coordinates to simulation coordinates
+        click_x = event.x
+        click_y = event.y
+        
+        # Calculate click radius for selection (in pixels)
+        click_radius = max(5, int(VC["AGENT_RADIUS_SCALE"] * 2))
+        
+        # Check each agent position
+        for agent_id, (x, y) in self.last_agent_positions.items():
+            # Convert simulation coordinates to screen coordinates
+            screen_x, screen_y = self._transform_coords(x, y, self.last_transform_params)
+            
+            # Calculate distance
+            distance = ((screen_x - click_x) ** 2 + (screen_y - click_y) ** 2) ** 0.5
+            
+            # If click is within radius of agent
+            if distance <= click_radius:
+                self.selected_agent_id = agent_id
+                if self.on_agent_selected:
+                    self.on_agent_selected(agent_id)
+                self.update()
+                return
+
+        # If no agent was clicked, deselect
+        self.selected_agent_id = None
+        if self.on_agent_selected:
+            self.on_agent_selected(None)
+        self.update()
 
     def _on_canvas_resize(self, event):
         """Handle canvas resize events."""
@@ -212,11 +260,34 @@ class EnvironmentView(ttk.Frame):
 
     def _draw_agents(self, draw: ImageDraw, agent_states: List, params: Dict):
         """Draw agents as colored circles."""
+        # Store agent positions for click detection
+        self.last_agent_positions = {}
+        self.last_transform_params = params
+
         for agent in agent_states:
+            agent_id = agent[0]
             x, y = self._transform_coords(agent[2], agent[3], params)
-            color = AGENT_COLORS.get(agent[1], "white")  # Default to white if unknown type
+            color = AGENT_COLORS.get(agent[1], "white")
+            
+            # Store position for click detection
+            self.last_agent_positions[agent_id] = (agent[2], agent[3])
 
             radius = max(1, int(VC["AGENT_RADIUS_SCALE"] * params["scale"]))
+            
+            # Draw selection glow if this agent is selected
+            if agent_id == self.selected_agent_id:
+                # Draw outer glow
+                glow_radius = radius + 3
+                glow_color = (255, 255, 255, 128)  # Semi-transparent white
+                draw.ellipse(
+                    [(x - glow_radius, y - glow_radius),
+                     (x + glow_radius, y + glow_radius)],
+                    fill=None,
+                    outline=glow_color,
+                    width=2
+                )
+
+            # Draw agent
             draw.ellipse(
                 [(x - radius, y - radius), (x + radius, y + radius)],
                 fill=color
