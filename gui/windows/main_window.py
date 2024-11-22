@@ -324,6 +324,21 @@ class SimulationGUI:
         # Bind tab change event
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
+        # Connect environment view to agent analysis
+        def on_agent_selected(agent_id):
+            if agent_id is not None:
+                # Switch to agent analysis tab
+                self.notebook.select(1)  # Select agent analysis tab
+                
+                # Find the agent in the combobox
+                for i, value in enumerate(self.components["agent_analysis"].agent_combobox["values"]):
+                    if f"Agent {agent_id}" in value:
+                        self.components["agent_analysis"].agent_combobox.current(i)
+                        self.components["agent_analysis"]._on_agent_selected(None)
+                        break
+
+        self.components["environment"].set_agent_selected_callback(on_agent_selected)
+
     def _on_tab_changed(self, event):
         """Handle tab change events."""
         current_tab = self.notebook.select()
