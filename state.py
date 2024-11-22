@@ -737,11 +737,14 @@ class SimulationState(BaseState):
         # Since we're not using system agents yet, set performance to 0
         system_performance = 0.0
 
+        # Add clamping to ensure normalized_resource_efficiency doesn't exceed 1.0
+        normalized_resource_efficiency = min(resource_efficiency, 1.0)
+
         return cls(
             normalized_time_progress=time_progress,
             normalized_population_size=min(current_population / max_population, 1.0),
             normalized_survival_rate=survival_rate,
-            normalized_resource_efficiency=resource_efficiency,
+            normalized_resource_efficiency=normalized_resource_efficiency,
             normalized_system_performance=system_performance
         )
 

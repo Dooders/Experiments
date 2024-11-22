@@ -24,20 +24,66 @@ class SimulationGUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("Agent-Based Simulation")
-        self.root.geometry("1200x800")
-
+        
+        # Maximize the window
+        self.root.state('zoomed')  # For Windows
+        # Alternative for Linux/Mac:
+        # self.root.attributes('-zoomed', True)  # For Linux
+        # self.root.attributes('-fullscreen', True)  # For Mac
+        
         # Initialize variables
         self.current_db_path = None
         self.current_step = 0
         self.components = {}
+        self.playback_timer = None
         
         # Configure styles
+        self._configure_styles()
         configure_ttk_styles()
 
         # Setup main components
         self._setup_menu()
         self._setup_main_frame()
         self._show_welcome_screen()
+
+    def _configure_styles(self):
+        """Configure custom styles for the application."""
+        style = ttk.Style()
+        
+        # Configure Notebook (Tab) styles
+        style.configure(
+            "Custom.TNotebook", 
+            background="#f0f0f0",    # Light gray background
+            borderwidth=0,           # Remove border
+            padding=5                # Add some padding
+        )
+        
+        # Configure tab styles
+        style.configure(
+            "Custom.TNotebook.Tab",
+            padding=(15, 8),         # Wider tabs with more vertical padding
+            font=("Arial", 10, "bold")
+        )
+        
+        # Map colors for different tab states
+        style.map("Custom.TNotebook.Tab",
+            background=[
+                ("selected", "#c2e6f7"),     # Selected simulation tab
+                ("!selected", "#e8f4f9")     # Unselected simulation tab
+            ],
+            foreground=[
+                ("selected", "#1a5276"),     # Selected text color
+                ("!selected", "#2c3e50")     # Unselected text color
+            ],
+            expand=[("selected", (0, 0, 0, 2))]
+        )
+        
+        # Configure frame styles for tab content
+        style.configure(
+            "TabContent.TFrame",
+            background="#ffffff",    # White background
+            relief="flat"           # No border
+        )
 
     def _setup_main_frame(self) -> None:
         """Setup the main container frame."""
@@ -198,17 +244,50 @@ class SimulationGUI:
         for widget in self.main_frame.winfo_children():
             widget.destroy()
 
+        # Create notebook for tabs with custom style
+        self.notebook = ttk.Notebook(
+            self.main_frame, 
+            style="Custom.TNotebook"
+        )
+        self.notebook.pack(fill="both", expand=True, padx=5, pady=5)
+
+        # Create main simulation tab with styled frame
+        sim_tab = ttk.Frame(
+            self.notebook, 
+            style="TabContent.TFrame",
+            padding=10
+        )
+        self.notebook.add(
+            sim_tab, 
+            text="Simulation View"
+        )
+
+        # Create agent analysis tab with styled frame
+        agent_tab = ttk.Frame(
+            self.notebook, 
+            style="TabContent.TFrame",
+            padding=10
+        )
+        self.notebook.add(
+            agent_tab, 
+            text="Agent Analysis"
+        )
+
+        # After adding tabs, configure their colors using tag_configure
+        self.notebook.configure(style="Custom.TNotebook")
+        
+        # Setup simulation components in sim_tab
         # Create left and right panes
-        left_pane = ttk.Frame(self.main_frame, style="SimPane.TFrame")
-        right_pane = ttk.Frame(self.main_frame, style="SimPane.TFrame")
+        left_pane = ttk.Frame(sim_tab, style="SimPane.TFrame")
+        right_pane = ttk.Frame(sim_tab, style="SimPane.TFrame")
         
         left_pane.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
         right_pane.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
 
         # Configure weights for resizing
-        self.main_frame.grid_columnconfigure(0, weight=2)  # Left pane
-        self.main_frame.grid_columnconfigure(1, weight=3)  # Right pane
-        self.main_frame.grid_rowconfigure(0, weight=1)
+        sim_tab.grid_columnconfigure(0, weight=2)  # Left pane
+        sim_tab.grid_columnconfigure(1, weight=3)  # Right pane
+        sim_tab.grid_rowconfigure(0, weight=1)
 
         # Left pane components
         self.components["stats"] = StatsPanel(left_pane)
@@ -222,7 +301,7 @@ class SimulationGUI:
         self.components["chart"].pack(fill="both", expand=True, padx=5, pady=5)
 
         # Bottom controls - spans both panes
-        controls_frame = ttk.Frame(self.main_frame, style="Controls.TFrame")
+        controls_frame = ttk.Frame(sim_tab, style="Controls.TFrame")
         controls_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
         
         self.components["controls"] = ControlPanel(
@@ -233,10 +312,27 @@ class SimulationGUI:
         )
         self.components["controls"].pack(fill="x", expand=True)
 
+        # Setup agent analysis in agent_tab
+        self.components["agent_analysis"] = AgentAnalysisWindow(agent_tab, self.current_db_path)
+        self.components["agent_analysis"].pack(fill="both", expand=True)
+
         # Configure component frames
         for component in self.components.values():
             if isinstance(component, (StatsPanel, EnvironmentView, SimulationChart)):
                 component.configure(relief="solid", borderwidth=1)
+
+        # Bind tab change event
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+
+    def _on_tab_changed(self, event):
+        """Handle tab change events."""
+        current_tab = self.notebook.select()
+        tab_text = self.notebook.tab(current_tab, "text")
+        
+        if tab_text == "Agent Analysis":
+            # Pause simulation if it's playing
+            if self.components["controls"].playing:
+                self.components["controls"].set_playing(False)
 
     def _new_simulation(self) -> None:
         """Start a new simulation with current configuration."""
@@ -434,17 +530,24 @@ class SimulationGUI:
             initial_data = db.get_simulation_data(0)
             self.current_step = 0
             
-            # Set up timeline interaction callbacks first
+            # Set up timeline interaction callbacks
             logging.debug("Setting up timeline callbacks")
             self.components["chart"].set_timeline_callback(self._step_to)
             self.components["chart"].set_playback_callback(
                 lambda: self.components["controls"].set_playing(True)
             )
+            # Add toggle callback for double-click behavior
+            self.components["chart"].set_playback_toggle_callback(
+                lambda: self.components["controls"].set_playing(
+                    not self.components["controls"].playing
+                )
+            )
             
-            # Update components with initial data
-            for name, component in self.components.items():
-                if name != "controls" and hasattr(component, "update"):
-                    component.update(initial_data)
+            # Update visualization components
+            updatable_components = ["stats", "environment", "chart"]
+            for name in updatable_components:
+                if name in self.components and hasattr(self.components[name], "update"):
+                    self.components[name].update(initial_data)
 
         except Exception as e:
             logging.error(f"Error starting visualization: {str(e)}", exc_info=True)
@@ -479,11 +582,18 @@ class SimulationGUI:
         messagebox.showinfo("Not Implemented", "Statistics view not yet implemented.")
 
     def _open_agent_analysis_window(self) -> None:
-        """Open agent analysis window."""
+        """Switch to agent analysis tab."""
         if not self.current_db_path:
             messagebox.showwarning("No Data", "Please open or run a simulation first.")
             return
-        AgentAnalysisWindow(self.root, self.current_db_path)
+        
+        # Switch to agent analysis tab
+        self.notebook.select(1)  # Select second tab
+
+    def _return_to_simulation(self) -> None:
+        """Return to simulation view from agent analysis."""
+        self._setup_simulation_view()
+        self._start_visualization()
 
     def _show_documentation(self) -> None:
         """Show documentation window."""
@@ -536,6 +646,11 @@ class SimulationGUI:
             return
         
         try:
+            # Cancel any existing timer
+            if self.playback_timer:
+                self.root.after_cancel(self.playback_timer)
+                self.playback_timer = None
+
             db = SimulationDatabase(self.current_db_path)
             data = db.get_simulation_data(self.current_step + 1)
             
@@ -561,7 +676,7 @@ class SimulationGUI:
             # Schedule next update if still playing
             if self.components["controls"].playing:
                 delay = self.components["controls"].get_delay()
-                self.root.after(delay, self._play_simulation)
+                self.playback_timer = self.root.after(delay, self._play_simulation)
                 
         except Exception as e:
             self.show_error("Playback Error", f"Failed to update simulation: {str(e)}")
@@ -569,8 +684,9 @@ class SimulationGUI:
 
     def _stop_simulation(self):
         """Stop simulation playback."""
-        # Nothing needs to be done here since we're using after() for timing
-        pass
+        if self.playback_timer:
+            self.root.after_cancel(self.playback_timer)
+            self.playback_timer = None
 
     def _step_to(self, step: int) -> None:
         """Move to specific simulation step."""
@@ -600,13 +716,11 @@ class SimulationGUI:
             # Reset chart history to current step
             self.components["chart"].reset_history_to_step(step)
             
-            # Update other components
-            for name, component in self.components.items():
-                if name not in ["controls", "chart"] and hasattr(component, "update"):
-                    try:
-                        component.update(data)
-                    except Exception as comp_error:
-                        logging.error(f"Error updating {name}: {str(comp_error)}")
+            # Update only visualization components that have an update method
+            updatable_components = ["stats", "environment", "chart"]
+            for name in updatable_components:
+                if name in self.components and hasattr(self.components[name], "update"):
+                    self.components[name].update(data)
                     
         except Exception as e:
             self.show_error("Navigation Error", f"Failed to move to step {step}: {str(e)}")

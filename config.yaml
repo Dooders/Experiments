@@ -3,9 +3,9 @@ width: 100
 height: 100
 
 # Agent settings
-system_agents: 0
+system_agents: 10
 independent_agents: 10
-control_agents: 0
+control_agents: 10
 initial_resource_level: 5
 max_population: 300
 starvation_threshold: 0
@@ -187,5 +187,3 @@ agent_parameters:
     min_resource_threshold: 0.125
     share_weight: 0.15
     attack_weight: 0.15
-
-# ... rest of existing configuration ... 
