@@ -676,10 +676,15 @@ class SimulationGUI:
                 return
             
             self.current_step += 1
+            
             # Update each component with the data, except controls
             for name, component in self.components.items():
                 if name != "controls" and hasattr(component, "update"):
                     try:
+                        # Skip agent_analysis updates during playback
+                        if name == "agent_analysis":
+                            continue
+                            
                         # Ensure data is passed as a dictionary
                         if not isinstance(data, dict):
                             logging.warning(f"Invalid data format for {name}: {type(data)}")

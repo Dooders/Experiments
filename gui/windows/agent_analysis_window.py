@@ -286,6 +286,43 @@ class AgentAnalysisWindow(ttk.Frame):
             )
             self.metric_labels[key].pack(side=tk.LEFT)
 
+        # Add Children Table Section
+        children_frame = ttk.LabelFrame(info_frame, text="Children", padding=(5, 2))
+        children_frame.pack(fill="x", pady=(5, 0))
+
+        # Create Treeview for children
+        self.children_tree = ttk.Treeview(
+            children_frame,
+            columns=("child_id", "birth_time", "age"),
+            show="headings",
+            height=5  # Show 5 rows at a time
+        )
+
+        # Configure columns
+        self.children_tree.heading("child_id", text="Child ID")
+        self.children_tree.heading("birth_time", text="Birth")
+        self.children_tree.heading("age", text="Age")
+
+        # Configure column widths
+        self.children_tree.column("child_id", width=90)
+        self.children_tree.column("birth_time", width=90)
+        self.children_tree.column("age", width=90)
+
+        # Add scrollbar
+        children_scrollbar = ttk.Scrollbar(
+            children_frame,
+            orient="vertical",
+            command=self.children_tree.yview
+        )
+        self.children_tree.configure(yscrollcommand=children_scrollbar.set)
+
+        # Pack tree and scrollbar
+        self.children_tree.pack(side="left", fill="x", expand=True)
+        children_scrollbar.pack(side="right", fill="y")
+
+        # Add tooltip
+        ToolTip(children_frame, "List of agent's children")
+
     def _load_agents(self):
         """Load available agents from database."""
         try:
@@ -334,7 +371,7 @@ class AgentAnalysisWindow(ttk.Frame):
             self._update_stat_labels(self._load_agent_stats(conn, agent_id))
             self._update_metric_labels(self._load_performance_metrics(conn, agent_id))
             self._update_metrics_chart(conn, agent_id)
-            self._update_actions_chart(conn, agent_id)
+            self._update_children_table(agent_id)
 
             conn.close()
 
@@ -705,9 +742,6 @@ class AgentAnalysisWindow(ttk.Frame):
         try:
             conn = sqlite3.connect(self.db_path)
             agent_id = int(self.agent_var.get().split()[1])
-            
-            # Debug logging
-            print(f"Getting actions for agent {agent_id} between steps {start_step} and {end_step}")
 
             # Query for all actions in the step range
             query = """
@@ -720,7 +754,7 @@ class AgentAnalysisWindow(ttk.Frame):
                     aa.resources_before,
                     aa.resources_after,
                     aa.details,
-                    aa.agent_id  -- Add this for verification
+                    aa.agent_id
                 FROM AgentActions aa
                 WHERE aa.agent_id = ? 
                 AND aa.step_number >= ?
@@ -729,21 +763,11 @@ class AgentAnalysisWindow(ttk.Frame):
             """
 
             df = pd.read_sql_query(query, conn, params=(agent_id, start_step, end_step))
-            
-            # Debug logging
-            if not df.empty:
-                print(f"Found {len(df)} actions")
-                print(f"First action: Step {df.iloc[0]['step_number']}, Type: {df.iloc[0]['action_type']}")
-                print(f"Verifying agent_id matches: {df['agent_id'].unique()}")
-            else:
-                print("No actions found for this agent in the given range")
-
             conn.close()
             return df
 
         except Exception as e:
             print(f"Error getting action data: {e}")
-            import traceback
             traceback.print_exc()
             return pd.DataFrame(
                 columns=["step_number", "action_type", "reward", "action_id",
@@ -950,9 +974,6 @@ class AgentAnalysisWindow(ttk.Frame):
             conn = sqlite3.connect(self.db_path)
             agent_id = int(self.agent_var.get().split()[1])
             
-            # Debug logging
-            print(f"Updating info for agent {agent_id} at step {step}")
-            
             # Get basic state information
             query = """
                 SELECT 
@@ -962,7 +983,7 @@ class AgentAnalysisWindow(ttk.Frame):
                     s.age,
                     s.is_defending,
                     s.position_x || ', ' || s.position_y as current_position,
-                    s.agent_id  -- Add this for verification
+                    s.agent_id
                 FROM AgentStates s
                 WHERE s.agent_id = ? AND s.step_number = ?
             """
@@ -970,7 +991,6 @@ class AgentAnalysisWindow(ttk.Frame):
             
             if not df.empty:
                 state = df.iloc[0]
-                print(f"Found state data. Verifying agent_id matches: {state['agent_id']}")
                 
                 # Update stat labels with step-specific data
                 self.stat_labels["health"].config(text=f"{state['current_health']:.2f}")
@@ -986,7 +1006,6 @@ class AgentAnalysisWindow(ttk.Frame):
                 
                 # Update action details in the UI
                 if action_details:
-                    print(f"Found action at step {step}: {action_details['action_type']}")
                     action_text = f"""Step {step} Action Details:
 Action Type: {action_details['action_type']}
 Target ID: {action_details['action_target_id'] or 'None'}
@@ -1001,7 +1020,6 @@ Reward: {action_details['reward']:.2f}
                         for key, value in details.items():
                             action_text += f"{key}: {value}\n"
                 else:
-                    print(f"No action found at step {step}")
                     action_text = f"No action recorded for step {step}"
                 
                 # Create or update action details label
@@ -1015,8 +1033,6 @@ Reward: {action_details['reward']:.2f}
                     self.action_details_label.pack(fill="x", pady=(10, 0), padx=5)
                 else:
                     self.action_details_label.config(text=action_text)
-            else:
-                print(f"No state data found for agent {agent_id} at step {step}")
             
             conn.close()
             
@@ -1082,3 +1098,54 @@ Reward: {action_details['reward']:.2f}
                 event.canvas.draw()
             except Exception as e:
                 print(f"Error in key handler: {e}")
+
+    def _update_children_table(self, agent_id: int):
+        """Update the children table for the given agent."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            
+            # Query for children data
+            query = """
+                SELECT 
+                    a.agent_id as child_id,
+                    a.birth_time,
+                    CASE 
+                        WHEN a.death_time IS NULL THEN 
+                            (SELECT MAX(step_number) FROM AgentStates WHERE agent_id = a.agent_id) - a.birth_time
+                        ELSE a.death_time - a.birth_time 
+                    END as age
+                FROM Agents a
+                WHERE a.parent_id = ?
+                ORDER BY a.birth_time DESC
+            """
+            
+            df = pd.read_sql_query(query, conn, params=(agent_id,))
+            conn.close()
+
+            # Clear existing items
+            for item in self.children_tree.get_children():
+                self.children_tree.delete(item)
+
+            # Add new data
+            for _, row in df.iterrows():
+                self.children_tree.insert(
+                    "",
+                    "end",
+                    values=(
+                        row["child_id"],
+                        row["birth_time"],
+                        row["age"]
+                    )
+                )
+
+            # Update table visibility based on whether there are children
+            if df.empty:
+                self.children_tree.insert(
+                    "",
+                    "end",
+                    values=("No children", "-", "-")
+                )
+
+        except Exception as e:
+            print(f"Error updating children table: {e}")
+            traceback.print_exc()
