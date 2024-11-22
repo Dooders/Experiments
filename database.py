@@ -22,6 +22,12 @@ class SimulationDatabase:
         self.db_path = db_path
         self._setup_connection()
 
+        # Add batch operation buffers
+        self._action_buffer = []
+        self._learning_exp_buffer = []
+        self._health_incident_buffer = []
+        self._buffer_size = 1000  # Adjust based on your needs
+
         # Create tables only once in a thread-safe manner
         with SimulationDatabase._tables_creation_lock:
             if not SimulationDatabase._tables_created:
@@ -621,8 +627,12 @@ class SimulationDatabase:
         df.to_csv(filepath, index=False)
 
     def flush_all_buffers(self):
-        """Flush all database buffers and ensure data is written to disk."""
+        """Flush all data buffers and ensure data is written to disk."""
         try:
+            self.flush_action_buffer()
+            self.flush_learning_buffer()
+            self.flush_health_buffer()
+
             # Only commit if we're not already in a transaction
             if not self.conn.in_transaction:
                 self.conn.commit()
@@ -635,7 +645,7 @@ class SimulationDatabase:
         """Close the database connection for the current thread."""
         if hasattr(self._thread_local, "conn"):
             try:
-                self.flush_all_buffers()
+                self.flush_all_buffers()  # Ensure all buffered data is written
                 self._thread_local.conn.close()
                 del self._thread_local.conn
                 del self._thread_local.cursor
@@ -764,38 +774,124 @@ class SimulationDatabase:
         reward: Optional[float] = None,
         details: Optional[Dict] = None,
     ):
-        """Log an agent's action during the simulation."""
-        import json
+        """Buffer an agent action for batch processing."""
+        action_data = {
+            "step_number": step_number,
+            "agent_id": agent_id,
+            "action_type": action_type,
+            "action_target_id": action_target_id,
+            "position_before": position_before,
+            "position_after": position_after,
+            "resources_before": resources_before,
+            "resources_after": resources_after,
+            "reward": reward,
+            "details": details,
+        }
+        self._action_buffer.append(action_data)
 
-        # Convert positions to string representation if provided
-        pos_before_str = str(position_before) if position_before is not None else None
-        pos_after_str = str(position_after) if position_after is not None else None
+        # Flush buffer if it reaches the size limit
+        if len(self._action_buffer) >= self._buffer_size:
+            self.flush_action_buffer()
 
-        # Convert details dict to JSON string if provided
-        details_json = json.dumps(details) if details is not None else None
+    def flush_action_buffer(self):
+        """Flush the action buffer by batch inserting all buffered actions."""
+        if self._action_buffer:
+            self.batch_log_agent_actions(self._action_buffer)
+            self._action_buffer.clear()
 
-        self.cursor.execute(
-            """
-            INSERT INTO AgentActions (
-                step_number, agent_id, action_type, action_target_id,
-                position_before, position_after, resources_before,
-                resources_after, reward, details
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                step_number,
-                agent_id,
-                action_type,
-                action_target_id,
-                pos_before_str,
-                pos_after_str,
-                resources_before,
-                resources_after,
-                reward,
-                details_json,
-            ),
+    def log_learning_experience(
+        self,
+        step_number: int,
+        agent_id: int,
+        module_type: str,
+        state_before: str,
+        action_taken: int,
+        reward: float,
+        state_after: str,
+        loss: float,
+    ):
+        """Buffer a learning experience for batch processing."""
+        self._learning_exp_buffer.append(
+            {
+                "step_number": step_number,
+                "agent_id": agent_id,
+                "module_type": module_type,
+                "state_before": state_before,
+                "action_taken": action_taken,
+                "reward": reward,
+                "state_after": state_after,
+                "loss": loss,
+            }
         )
-        # Remove the commit from here - we'll commit in batches instead
+
+        if len(self._learning_exp_buffer) >= self._buffer_size:
+            self.flush_learning_buffer()
+
+    def flush_learning_buffer(self):
+        """Flush the learning experience buffer."""
+        if self._learning_exp_buffer:
+            self.batch_log_learning_experiences(self._learning_exp_buffer)
+            self._learning_exp_buffer.clear()
+
+    def log_health_incident(
+        self,
+        step_number: int,
+        agent_id: int,
+        health_before: float,
+        health_after: float,
+        cause: str,
+        details: Optional[Dict] = None,
+    ):
+        """Buffer a health incident for batch processing."""
+        self._health_incident_buffer.append(
+            {
+                "step_number": step_number,
+                "agent_id": agent_id,
+                "health_before": health_before,
+                "health_after": health_after,
+                "cause": cause,
+                "details": details,
+            }
+        )
+
+        if len(self._health_incident_buffer) >= self._buffer_size:
+            self.flush_health_buffer()
+
+    def flush_health_buffer(self):
+        """Flush the health incident buffer."""
+        if self._health_incident_buffer:
+
+            def _batch_insert():
+                import json
+
+                values = [
+                    (
+                        incident["step_number"],
+                        incident["agent_id"],
+                        incident["health_before"],
+                        incident["health_after"],
+                        incident["cause"],
+                        (
+                            json.dumps(incident["details"])
+                            if incident.get("details")
+                            else None
+                        ),
+                    )
+                    for incident in self._health_incident_buffer
+                ]
+
+                self.cursor.executemany(
+                    """
+                    INSERT INTO HealthIncidents (
+                        step_number, agent_id, health_before, health_after,
+                        cause, details
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    values,
+                )
+
+            self._execute_in_transaction(_batch_insert)
+            self._health_incident_buffer.clear()
 
     def batch_log_agent_actions(self, actions: List[Dict]):
         """Batch insert multiple agent actions at once."""
@@ -813,61 +909,6 @@ class SimulationDatabase:
                     """,
                     values,
                 )
-
-        self._execute_in_transaction(_insert)
-
-    def log_learning_experience(
-        self,
-        step_number: int,
-        agent_id: int,
-        module_type: str,
-        state_before: str,
-        action_taken: int,
-        reward: float,
-        state_after: str,
-        loss: float,
-    ):
-        """Log a single learning experience during the simulation.
-
-        Parameters
-        ----------
-        step_number : int
-            Current simulation step number
-        agent_id : int
-            ID of the agent that had the learning experience
-        module_type : str
-            Type of learning module (e.g., 'movement', 'combat', etc.)
-        state_before : str
-            String representation of the state before action
-        action_taken : int
-            Integer representing the action chosen
-        reward : float
-            Reward received for the action
-        state_after : str
-            String representation of the state after action
-        loss : float
-            Loss value from the learning update
-        """
-
-        def _insert():
-            self.cursor.execute(
-                """
-                INSERT INTO LearningExperiences (
-                    step_number, agent_id, module_type, state_before,
-                    action_taken, reward, state_after, loss
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    step_number,
-                    agent_id,
-                    module_type,
-                    state_before,
-                    action_taken,
-                    reward,
-                    state_after,
-                    loss,
-                ),
-            )
 
         self._execute_in_transaction(_insert)
 
@@ -1029,41 +1070,6 @@ class SimulationDatabase:
         except Exception as e:
             logger.error(f"Error verifying foreign keys: {e}")
             return False
-
-    def log_health_incident(
-        self,
-        step_number: int,
-        agent_id: int,
-        health_before: float,
-        health_after: float,
-        cause: str,
-        details: Optional[Dict] = None,
-    ):
-        """Log a health-changing incident for an agent."""
-
-        def _insert():
-            import json
-
-            details_json = json.dumps(details) if details else None
-
-            self.cursor.execute(
-                """
-                INSERT INTO HealthIncidents (
-                    step_number, agent_id, health_before, health_after,
-                    cause, details
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    step_number,
-                    agent_id,
-                    health_before,
-                    health_after,
-                    cause,
-                    details_json,
-                ),
-            )
-
-        self._execute_in_transaction(_insert)
 
     def get_agent_health_incidents(self, agent_id: int) -> List[Dict]:
         """Get all health incidents for an agent.
