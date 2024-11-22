@@ -530,14 +530,20 @@ class SimulationGUI:
             initial_data = db.get_simulation_data(0)
             self.current_step = 0
             
-            # Set up timeline interaction callbacks first
+            # Set up timeline interaction callbacks
             logging.debug("Setting up timeline callbacks")
             self.components["chart"].set_timeline_callback(self._step_to)
             self.components["chart"].set_playback_callback(
                 lambda: self.components["controls"].set_playing(True)
             )
+            # Add toggle callback for double-click behavior
+            self.components["chart"].set_playback_toggle_callback(
+                lambda: self.components["controls"].set_playing(
+                    not self.components["controls"].playing
+                )
+            )
             
-            # Update only visualization components that have an update method
+            # Update visualization components
             updatable_components = ["stats", "environment", "chart"]
             for name in updatable_components:
                 if name in self.components and hasattr(self.components[name], "update"):

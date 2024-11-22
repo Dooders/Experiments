@@ -5,6 +5,7 @@ from typing import Dict, Optional
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+import time
 
 
 class SimulationChart(ttk.Frame):
@@ -14,6 +15,8 @@ class SimulationChart(ttk.Frame):
         super().__init__(parent)
         self.is_dragging = False
         self.was_playing = False
+        self.last_click_time = 0  # Track time of last click
+        self.double_click_delay = 300  # Milliseconds to detect double click
         
         # Store historical data
         self.history = {
@@ -162,12 +165,27 @@ class SimulationChart(ttk.Frame):
         """Handle mouse click on the chart."""
         if event.inaxes in [self.ax1, self.ax2] and event.xdata is not None:
             try:
+                current_time = int(time.time() * 1000)  # Current time in milliseconds
                 step = int(round(event.xdata))
+                
                 if hasattr(self, 'max_step'):
                     step = max(0, min(step, self.max_step))
-                    if hasattr(self, "on_timeline_click"):
-                        self.on_timeline_click(step)
-                        self.is_dragging = True
+                    
+                    # Check if this is a double click
+                    if current_time - self.last_click_time < self.double_click_delay:
+                        # Double click - toggle playback
+                        if hasattr(self, "on_timeline_click"):
+                            self.on_timeline_click(step)
+                            if hasattr(self, "on_playback_toggle"):
+                                self.on_playback_toggle()  # Will toggle between play/pause
+                    else:
+                        # Single click - move to step but maintain playback state
+                        if hasattr(self, "on_timeline_click"):
+                            self.on_timeline_click(step)
+                            self.is_dragging = True
+                    
+                    self.last_click_time = current_time
+                    
             except Exception as e:
                 pass
 
@@ -321,3 +339,11 @@ class SimulationChart(ttk.Frame):
 
         # Force redraw
         self.canvas.draw()
+
+    def set_playback_stop_callback(self, callback):
+        """Set callback for stopping playback."""
+        self.on_playback_stop = callback
+
+    def set_playback_toggle_callback(self, callback):
+        """Set callback for toggling playback."""
+        self.on_playback_toggle = callback
