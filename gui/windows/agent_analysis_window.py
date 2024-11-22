@@ -549,8 +549,70 @@ class AgentAnalysisWindow(ttk.Frame):
             hspace=0.1,  # Height spacing between subplots
         )
 
-        # Create canvas and pack
+        # Add vertical line for current step
+        self.current_step_line = ax1.axvline(
+            x=df["step_number"].iloc[0],  # Start at first step
+            color="gray",
+            linestyle="--",
+            alpha=0.5
+        )
+
+        # Track dragging state
+        self.is_dragging = False
+        self.was_playing = False
+        
+        def _on_click(event):
+            if event.inaxes in [ax1, ax2]:
+                self.is_dragging = True
+                step = int(round(event.xdata))
+                # Constrain step to valid range
+                step = max(df["step_number"].min(), min(step, df["step_number"].max()))
+                self._update_step_info(step)
+                self.current_step_line.set_xdata([step, step])
+                canvas.draw()
+
+        def _on_release(event):
+            self.is_dragging = False
+
+        def _on_drag(event):
+            if self.is_dragging and event.inaxes in [ax1, ax2]:
+                step = int(round(event.xdata))
+                # Constrain step to valid range
+                step = max(df["step_number"].min(), min(step, df["step_number"].max()))
+                self._update_step_info(step)
+                self.current_step_line.set_xdata([step, step])
+                canvas.draw()
+
+        def _on_key(event):
+            """Handle keyboard navigation."""
+            if event.inaxes in [ax1, ax2]:  # Only if mouse is over the plot
+                current_x = self.current_step_line.get_xdata()[0]
+                step = int(current_x)
+                
+                # Handle left/right arrow keys
+                if event.key == 'left':
+                    step = max(df["step_number"].min(), step - 1)
+                elif event.key == 'right':
+                    step = min(df["step_number"].max(), step + 1)
+                else:
+                    return
+                
+                # Update line position and info
+                self._update_step_info(step)
+                self.current_step_line.set_xdata([step, step])
+                canvas.draw()
+
+        # Create canvas with all event connections
         canvas = FigureCanvasTkAgg(fig, master=self.metrics_frame)
+        canvas.mpl_connect('button_press_event', _on_click)
+        canvas.mpl_connect('button_release_event', _on_release)
+        canvas.mpl_connect('motion_notify_event', _on_drag)
+        canvas.mpl_connect('key_press_event', _on_key)  # Add keyboard event
+        
+        # Enable keyboard focus on the canvas
+        canvas.get_tk_widget().config(takefocus=1)
+        canvas.get_tk_widget().bind('<FocusIn>', lambda e: canvas.get_tk_widget().focus_set())
+        
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
@@ -801,3 +863,52 @@ class AgentAnalysisWindow(ttk.Frame):
         canvas = FigureCanvasTkAgg(fig, master=self.actions_frame)
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+    def _update_step_info(self, step: int):
+        """Update the agent information for a specific step."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            
+            # Query for step-specific agent state
+            query = """
+                SELECT 
+                    s.current_health,
+                    s.resource_level,
+                    s.total_reward,
+                    s.age,
+                    s.is_defending,
+                    s.position_x || ', ' || s.position_y as current_position
+                FROM AgentStates s
+                WHERE s.agent_id = ? AND s.step_number = ?
+            """
+            
+            agent_id = int(self.agent_var.get().split()[1])
+            df = pd.read_sql_query(query, conn, params=(agent_id, step))
+            
+            if not df.empty:
+                state = df.iloc[0]
+                
+                # Update stat labels with step-specific data
+                self.stat_labels["health"].config(
+                    text=f"{state['current_health']:.2f}"
+                )
+                self.stat_labels["resources"].config(
+                    text=f"{state['resource_level']:.2f}"
+                )
+                self.stat_labels["total_reward"].config(
+                    text=f"{state['total_reward']:.2f}"
+                )
+                self.stat_labels["age"].config(
+                    text=str(state['age'])
+                )
+                self.stat_labels["is_defending"].config(
+                    text=str(bool(state['is_defending']))
+                )
+                self.stat_labels["current_position"].config(
+                    text=state['current_position']
+                )
+            
+            conn.close()
+            
+        except Exception as e:
+            print(f"Error updating step info: {e}")
