@@ -61,34 +61,38 @@ class DiamondMazeEnv(gym.Env):
         return np.array(self.state, dtype=np.int32)
 
     def step(self, action):
-        x, y = self.state
+        old_state = self.state
+        x, y = old_state
         old_distance = np.linalg.norm(np.array(self.end) - np.array(self.state))
-        
-        # Update position based on action (only move if the new position is a path (0))
-        if action == 0 and y > 0 and self.maze[y - 1, x] == 0:  # Up
-            y -= 1
-        elif action == 1 and y < self.maze.shape[0] - 1 and self.maze[y + 1, x] == 0:  # Down
-            y += 1
-        elif action == 2 and x > 0 and self.maze[y, x - 1] == 0:  # Left
-            x -= 1
-        elif action == 3 and x < self.maze.shape[1] - 1 and self.maze[y, x + 1] == 0:  # Right
-            x += 1
 
-        self.state = (x, y)
+        # Update position based on action
+        new_x, new_y = x, y
+        if action == 0 and y > 0 and self.maze[y - 1, x] == 0:  # Up
+            new_y -= 1
+        elif (
+            action == 1 and y < self.maze.shape[0] - 1 and self.maze[y + 1, x] == 0
+        ):  # Down
+            new_y += 1
+        elif action == 2 and x > 0 and self.maze[y, x - 1] == 0:  # Left
+            new_x -= 1
+        elif (
+            action == 3 and x < self.maze.shape[1] - 1 and self.maze[y, x + 1] == 0
+        ):  # Right
+            new_x += 1
+
+        self.state = (new_x, new_y)
         new_distance = np.linalg.norm(np.array(self.end) - np.array(self.state))
 
-        # Reward structure
+        # Modified reward structure
         if self.state == self.end:
-            reward = 100  # Reduced from 1000 to better scale with step penalties
+            reward = 100
             done = True
         else:
-            # Stronger reward/penalty for distance changes
-            reward = 5 * (old_distance - new_distance)
-            # Smaller step penalty
-            reward -= 0.05
-            # Additional penalty for hitting walls (when position doesn't change)
-            if (x, y) == self.state:
-                reward -= 1
+            # Increase the distance-based reward and reduce penalties
+            reward = 10 * (old_distance - new_distance)  # Increased from 5 to 10
+            reward -= 0.01  # Reduced from 0.05
+            if self.state == old_state:
+                reward -= 0.1  # Reduced from 1
             done = False
 
         return np.array(self.state, dtype=np.int32), reward, done, False, {}
@@ -105,11 +109,11 @@ class DQNAgent:
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.epsilon = 1.0
-        self.epsilon_decay = 0.995
-        self.epsilon_min = 0.1
+        self.epsilon_decay = 0.99  # Slower decay (was 0.995)
+        self.epsilon_min = 0.01  # Lower minimum (was 0.1)
         self.gamma = 0.99
-        self.learning_rate = 0.0005
-        self.batch_size = 64
+        self.learning_rate = 0.001  # Increased from 0.0005
+        self.batch_size = 32  # Reduced from 64
         self.memory = deque(maxlen=10000)
         self.steps_done = 0
 
@@ -121,13 +125,11 @@ class DQNAgent:
 
     def _build_model(self):
         return nn.Sequential(
-            nn.Linear(self.state_dim, 256),
+            nn.Linear(self.state_dim, 64),  # Simplified architecture
             nn.ReLU(),
-            nn.Linear(256, 256),
+            nn.Linear(64, 64),
             nn.ReLU(),
-            nn.Linear(256, 128),
-            nn.ReLU(),
-            nn.Linear(128, self.action_dim),
+            nn.Linear(64, self.action_dim),
         )
 
     def update_target_network(self):
@@ -164,11 +166,20 @@ class DQNAgent:
         dones = torch.from_numpy(dones).float().to(self.device)
 
         # Get current Q values
-        current_q_values = self.model(states).gather(1, actions.unsqueeze(-1)).squeeze(-1)
-        
-        # Get next Q values
+        current_q_values = (
+            self.model(states).gather(1, actions.unsqueeze(-1)).squeeze(-1)
+        )
+
+        # Double DQN implementation
         with torch.no_grad():
-            next_q_values = self.target_model(next_states).max(1)[0]
+            # Use online network to select actions
+            next_actions = self.model(next_states).argmax(1)
+            # Use target network to evaluate actions
+            next_q_values = (
+                self.target_model(next_states)
+                .gather(1, next_actions.unsqueeze(-1))
+                .squeeze(-1)
+            )
             target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
 
         # Update model
@@ -197,32 +208,34 @@ action_dim = 4  # Up, Down, Left, Right
 agent = DQNAgent(state_dim, action_dim)
 
 # Simplified training loop
-episodes = 2000
-max_steps = 200
-print_freq = 50
+episodes = 500
+max_steps = 100  # Reduced from 200
+print_freq = 10  # More frequent printing
 
 for e in range(episodes):
     state = env.reset()
     total_reward = 0
-    
+
     for step in range(max_steps):
         action = agent.act(state)
         next_state, reward, done, truncated, info = env.step(action)
-        
+
         # Store experience
         agent.remember(state, action, reward, next_state, done)
-        
-        # Train every 4 steps if we have enough samples
-        if len(agent.memory) >= agent.batch_size and step % 4 == 0:
+
+        # Train every step if we have enough samples
+        if len(agent.memory) >= agent.batch_size:  # Removed step % 4 condition
             agent.replay()
-            
+
         state = next_state
         total_reward += reward
-        
+
         if done:
             break
-    
+
     if (e + 1) % print_freq == 0:
-        print(f"Episode {e+1}/{episodes}, Reward: {total_reward:.2f}, Epsilon: {agent.epsilon:.2f}")
+        print(
+            f"Episode {e+1}/{episodes}, Reward: {total_reward:.2f}, Epsilon: {agent.epsilon:.2f}"
+        )
 
 print("Training Complete!")
