@@ -485,22 +485,7 @@ class SimulationDatabase:
         )
 
     def get_simulation_data(self, step_number: int) -> Dict:
-        """Retrieve all simulation data for a specific time step.
-
-        Parameters
-        ----------
-        step_number : int
-            The simulation step to retrieve data for
-
-        Returns
-        -------
-        Dict
-            Dictionary containing:
-            - agent_states: List of tuples (agent_id, type, x, y, resources, health, max_health,
-                                          starvation_threshold, is_defending, total_reward, age)
-            - resource_states: List of tuples (resource_id, amount, x, y)
-            - metrics: Dict of aggregate metrics for the step
-        """
+        """Retrieve all simulation data for a specific time step."""
         # Get agent states
         self.cursor.execute(
             """
@@ -530,11 +515,11 @@ class SimulationDatabase:
         self.cursor.execute(
             """
             SELECT total_agents, system_agents, independent_agents, control_agents,
-                   total_resources, average_agent_resources
+                   total_resources, average_agent_resources, births, deaths
             FROM SimulationSteps
             WHERE step_number = ?
         """,
-            (step_number,),
+            (step_number,)
         )
         metrics_row = self.cursor.fetchone()
 
@@ -545,42 +530,33 @@ class SimulationDatabase:
             "control_agents": metrics_row[3] if metrics_row else 0,
             "total_resources": metrics_row[4] if metrics_row else 0,
             "average_agent_resources": metrics_row[5] if metrics_row else 0,
+            "births": metrics_row[6] if metrics_row else 0,
+            "deaths": metrics_row[7] if metrics_row else 0
         }
 
         return {
             "agent_states": agent_states,
             "resource_states": resource_states,
-            "metrics": metrics,
+            "metrics": metrics
         }
 
     def get_historical_data(self) -> Dict:
-        """Retrieve historical metrics for the entire simulation.
-
-        Returns
-        -------
-        Dict
-            Dictionary containing:
-            - steps: List of step numbers
-            - metrics: Dict of metric lists including:
-                - total_agents
-                - system_agents
-                - independent_agents
-                - control_agents
-                - total_resources
-                - average_agent_resources
-
-        Notes
-        -----
-        This method is useful for generating time series plots of simulation metrics.
-        The returned lists are ordered by step number.
-        """
+        """Retrieve historical metrics for the entire simulation."""
         self.cursor.execute(
             """
-            SELECT step_number, total_agents, system_agents, independent_agents,
-                   control_agents, total_resources, average_agent_resources
+            SELECT 
+                step_number, 
+                total_agents, 
+                system_agents, 
+                independent_agents,
+                control_agents, 
+                total_resources, 
+                average_agent_resources,
+                births,    -- Add births
+                deaths     -- Add deaths
             FROM SimulationSteps
             ORDER BY step_number
-        """
+            """
         )
         rows = self.cursor.fetchall()
 
@@ -593,7 +569,9 @@ class SimulationDatabase:
                 "control_agents": [row[4] for row in rows],
                 "total_resources": [row[5] for row in rows],
                 "average_agent_resources": [row[6] for row in rows],
-            },
+                "births": [row[7] for row in rows],      # Add births
+                "deaths": [row[8] for row in rows]       # Add deaths
+            }
         }
 
     def export_data(self, filepath: str):

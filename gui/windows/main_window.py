@@ -2,6 +2,8 @@ import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from dataclasses import replace
+import json
+import os.path
 
 from gui.components.charts import SimulationChart
 from gui.components.controls import ControlPanel
@@ -38,6 +40,7 @@ class SimulationGUI:
         self.current_step = 0
         self.components = {}
         self.playback_timer = None
+        self.last_config_path = "simulations/last_config.json"
         
         # Configure styles
         self._configure_styles()
@@ -97,9 +100,29 @@ class SimulationGUI:
         self.main_frame.grid_columnconfigure(1, weight=3)  # Right pane
         self.main_frame.grid_rowconfigure(0, weight=1)
 
+    def _load_last_config(self) -> dict:
+        """Load the last used configuration if available."""
+        try:
+            if os.path.exists(self.last_config_path):
+                with open(self.last_config_path, 'r') as f:
+                    return json.load(f)
+        except Exception as e:
+            logging.warning(f"Failed to load last config: {e}")
+        return {}
+
+    def _save_last_config(self) -> None:
+        """Save the current configuration."""
+        try:
+            os.makedirs(os.path.dirname(self.last_config_path), exist_ok=True)
+            config = {key: var.get() for key, var in self.config_vars.items()}
+            with open(self.last_config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+        except Exception as e:
+            logging.warning(f"Failed to save config: {e}")
+
     def _show_welcome_screen(self):
         """Show the welcome screen with configuration options."""
-        # Clear any existing components
+        # Clear existing components
         for widget in self.main_frame.winfo_children():
             widget.destroy()
 
@@ -141,9 +164,12 @@ class SimulationGUI:
         # Load default configuration
         try:
             config = SimulationConfig.from_yaml("config.yaml")
+            # Load last used config
+            last_config = self._load_last_config()
         except Exception as e:
             self.show_error("Configuration Error", f"Failed to load configuration: {str(e)}")
-            config = SimulationConfig()  # Use default values if config load fails
+            config = SimulationConfig()
+            last_config = {}
 
         # Configuration section
         config_frame = ttk.LabelFrame(
@@ -210,8 +236,9 @@ class SimulationGUI:
                     style="ConfigLabel.TLabel"
                 ).pack(side=tk.LEFT, padx=(0, 5))
                 
-                # Entry with validation
-                var = tk.StringVar(value=str(default))
+                # Use last config value if available, otherwise use default
+                value = last_config.get(key, str(default))
+                var = tk.StringVar(value=str(value))
                 entry = ttk.Entry(
                     container,
                     textvariable=var,
@@ -384,6 +411,10 @@ class SimulationGUI:
     def _new_simulation(self) -> None:
         """Start a new simulation with current configuration."""
         try:
+            # Close any existing database connections
+            if hasattr(self, 'db') and self.db:
+                self.db.close()
+            
             # Load base config to get default values
             base_config = SimulationConfig.from_yaml("config.yaml")
             
@@ -403,9 +434,16 @@ class SimulationGUI:
             # Create new config by updating base config with new values
             config = replace(base_config, **config_updates)
             
+            # Save the current configuration
+            self._save_last_config()
+
             # Create new database
             self.current_db_path = "simulations/simulation.db"
             os.makedirs("simulations", exist_ok=True)
+            
+            # Remove existing database file if it exists
+            if os.path.exists(self.current_db_path):
+                os.remove(self.current_db_path)
 
             # Show progress screen
             self._show_progress_screen("Running simulation...")
@@ -492,7 +530,7 @@ class SimulationGUI:
         
         file_menu.add_command(
             label="New Simulation",
-            command=self._new_simulation,
+            command=self._show_welcome_screen,
             accelerator="Ctrl+N"
         )
         file_menu.add_command(
@@ -532,7 +570,7 @@ class SimulationGUI:
         help_menu.add_command(label="About", command=self._show_about)
 
         # Bind keyboard shortcuts
-        self.root.bind("<Control-n>", lambda e: self._new_simulation())
+        self.root.bind("<Control-n>", lambda e: self._show_welcome_screen())
         self.root.bind("<Control-o>", lambda e: self._open_simulation())
         self.root.bind("<Control-e>", lambda e: self._export_data())
 
@@ -791,6 +829,10 @@ class SimulationGUI:
     def _simulation_complete(self) -> None:
         """Handle simulation completion."""
         try:
+            # Close any existing database connections
+            if hasattr(self, 'db') and self.db:
+                self.db.close()
+            
             # Clear the progress screen first
             self._clear_progress_screen()
             

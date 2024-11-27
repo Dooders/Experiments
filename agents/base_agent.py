@@ -263,18 +263,10 @@ class BaseAgent:
             mutated_genome, self.agent_id, self.position, self.environment
         )
 
-    def reproduce(self):
-        """Attempt to create offspring if conditions are met.
-
-        Reproduction occurs when:
-        1. Population is below maximum limit
-        2. Agent has sufficient resources (above min_reproduction_resources)
-        3. Agent can afford offspring cost while maintaining survival resources
-
-        The parent agent pays a resource cost for successful reproduction.
-        """
+    def reproduce(self) -> bool:
+        """Attempt reproduction. Returns True if successful."""
         if len(self.environment.agents) >= self.config.max_population:
-            return
+            return False
 
         if self.resource_level >= self.config.min_reproduction_resources:
             if self.resource_level >= self.config.offspring_cost + 2:
@@ -285,6 +277,8 @@ class BaseAgent:
                 logger.info(
                     f"Agent {self.agent_id} reproduced at {self.position} during step {self.environment.time} creating agent {new_agent.agent_id}"
                 )
+                return True
+        return False
 
     def create_offspring(self):
         """Create a new agent as offspring."""

@@ -137,107 +137,107 @@ class Environment:
 
     def _calculate_metrics(self):
         """Calculate various metrics for the current simulation state."""
-        from agents import ControlAgent, IndependentAgent, SystemAgent  # Local import
+        try:
+            # Get alive agents
+            alive_agents = [agent for agent in self.agents if agent.alive]
+            total_agents = len(alive_agents)
 
-        alive_agents = [agent for agent in self.agents if agent.alive]
-        system_agents = [a for a in alive_agents if isinstance(a, SystemAgent)]
-        independent_agents = [
-            a for a in alive_agents if isinstance(a, IndependentAgent)
-        ]
-        control_agents = [a for a in alive_agents if isinstance(a, ControlAgent)]
+            # Calculate agent type counts
+            system_agents = len([a for a in alive_agents if isinstance(a, SystemAgent)])
+            independent_agents = len([a for a in alive_agents if isinstance(a, IndependentAgent)])
+            control_agents = len([a for a in alive_agents if isinstance(a, ControlAgent)])
 
-        # Calculate births (agents created this step)
-        births = len([a for a in alive_agents if self.time - a.birth_time == 0])
+            # Calculate births (agents created this step)
+            births = len([a for a in alive_agents if self.time - a.birth_time == 0])
 
-        # Calculate deaths (difference from previous population)
-        previous_population = getattr(self, "previous_population", len(alive_agents))
-        deaths = max(0, previous_population - len(alive_agents))
-        self.previous_population = len(alive_agents)
+            # Calculate deaths (difference from previous population)
+            previous_population = getattr(self, "previous_population", total_agents)
+            deaths = max(0, previous_population - total_agents)
+            self.previous_population = total_agents
 
-        # Calculate generation metrics
-        current_max_generation = (
-            max([a.generation for a in alive_agents]) if alive_agents else 0
-        )
+            # Calculate generation metrics
+            current_max_generation = max([a.generation for a in alive_agents]) if alive_agents else 0
 
-        # Calculate health and age metrics
-        total_agents = len(alive_agents)
-        average_health = (
-            sum(a.current_health for a in alive_agents) / total_agents
-            if total_agents > 0
-            else 0
-        )
-        average_age = (
-            sum(self.time - a.birth_time for a in alive_agents) / total_agents
-            if total_agents > 0
-            else 0
-        )
-        average_reward = (
-            sum(a.total_reward for a in alive_agents) / total_agents
-            if total_agents > 0
-            else 0
-        )
+            # Calculate health and age metrics
+            average_health = sum(a.current_health for a in alive_agents) / total_agents if total_agents > 0 else 0
+            average_age = sum(self.time - a.birth_time for a in alive_agents) / total_agents if total_agents > 0 else 0
+            average_reward = sum(a.total_reward for a in alive_agents) / total_agents if total_agents > 0 else 0
 
-        # Calculate resource metrics
-        total_resources = sum(r.amount for r in self.resources)
-        resource_efficiency = (
-            total_resources / (len(self.resources) * self.config.max_resource_amount)
-            if self.resources
-            else 0
-        )
+            # Calculate resource metrics
+            total_resources = sum(r.amount for r in self.resources)
+            average_agent_resources = sum(a.resource_level for a in alive_agents) / total_agents if total_agents > 0 else 0
+            resource_efficiency = total_resources / (len(self.resources) * self.config.max_resource_amount) if self.resources else 0
 
-        # Calculate genetic diversity
-        genome_counts = {}
-        for agent in alive_agents:
-            genome_counts[agent.genome_id] = genome_counts.get(agent.genome_id, 0) + 1
-        genetic_diversity = len(genome_counts) / total_agents if total_agents > 0 else 0
-        dominant_genome_ratio = (
-            max(genome_counts.values()) / total_agents if genome_counts else 0
-        )
+            # Calculate genetic diversity
+            genome_counts = {}
+            for agent in alive_agents:
+                genome_counts[agent.genome_id] = genome_counts.get(agent.genome_id, 0) + 1
+            genetic_diversity = len(genome_counts) / total_agents if total_agents > 0 else 0
+            dominant_genome_ratio = max(genome_counts.values()) / total_agents if genome_counts else 0
 
-        # Get combat and sharing metrics from environment attributes
-        combat_encounters = getattr(self, "combat_encounters", 0)
-        successful_attacks = getattr(self, "successful_attacks", 0)
-        resources_shared = getattr(self, "resources_shared", 0)
+            # Get combat and sharing metrics
+            combat_encounters = getattr(self, "combat_encounters", 0)
+            successful_attacks = getattr(self, "successful_attacks", 0)
+            resources_shared = getattr(self, "resources_shared", 0)
 
-        # Calculate resource distribution entropy (simplified)
-        resource_amounts = [r.amount for r in self.resources]
-        if resource_amounts:
-            total = sum(resource_amounts)
-            if total > 0:
-                probabilities = [amt / total for amt in resource_amounts]
-                resource_distribution_entropy = -sum(
-                    p * np.log(p) if p > 0 else 0 for p in probabilities
-                )
+            # Calculate resource distribution entropy
+            resource_amounts = [r.amount for r in self.resources]
+            if resource_amounts:
+                total = sum(resource_amounts)
+                if total > 0:
+                    probabilities = [amt / total for amt in resource_amounts]
+                    resource_distribution_entropy = -sum(p * np.log(p) if p > 0 else 0 for p in probabilities)
+                else:
+                    resource_distribution_entropy = 0.0
             else:
                 resource_distribution_entropy = 0.0
-        else:
-            resource_distribution_entropy = 0.0
 
-        return {
-            "total_agents": total_agents,
-            "system_agents": len(system_agents),
-            "independent_agents": len(independent_agents),
-            "control_agents": len(control_agents),
-            "total_resources": total_resources,
-            "average_agent_resources": (
-                sum(a.resource_level for a in alive_agents) / total_agents
-                if total_agents > 0
-                else 0
-            ),
-            "births": births,
-            "deaths": deaths,
-            "current_max_generation": current_max_generation,
-            "resource_efficiency": resource_efficiency,
-            "resource_distribution_entropy": resource_distribution_entropy,
-            "average_agent_health": average_health,
-            "average_agent_age": average_age,
-            "average_reward": average_reward,
-            "combat_encounters": combat_encounters,
-            "successful_attacks": successful_attacks,
-            "resources_shared": resources_shared,
-            "genetic_diversity": genetic_diversity,
-            "dominant_genome_ratio": dominant_genome_ratio,
-        }
+            # Return all metrics in a dictionary
+            return {
+                "total_agents": total_agents,
+                "system_agents": system_agents,
+                "independent_agents": independent_agents,
+                "control_agents": control_agents,
+                "total_resources": total_resources,
+                "average_agent_resources": average_agent_resources,
+                "births": births,
+                "deaths": deaths,
+                "current_max_generation": current_max_generation,
+                "resource_efficiency": resource_efficiency,
+                "resource_distribution_entropy": resource_distribution_entropy,
+                "average_agent_health": average_health,
+                "average_agent_age": average_age,
+                "average_reward": average_reward,
+                "combat_encounters": combat_encounters,
+                "successful_attacks": successful_attacks,
+                "resources_shared": resources_shared,
+                "genetic_diversity": genetic_diversity,
+                "dominant_genome_ratio": dominant_genome_ratio
+            }
+        except Exception as e:
+            logging.error(f"Error calculating metrics: {e}")
+            # Return default metrics to prevent database errors
+            return {
+                "total_agents": 0,
+                "system_agents": 0,
+                "independent_agents": 0,
+                "control_agents": 0,
+                "total_resources": 0,
+                "average_agent_resources": 0,
+                "births": 0,
+                "deaths": 0,
+                "current_max_generation": 0,
+                "resource_efficiency": 0,
+                "resource_distribution_entropy": 0,
+                "average_agent_health": 0,
+                "average_agent_age": 0,
+                "average_reward": 0,
+                "combat_encounters": 0,
+                "successful_attacks": 0,
+                "resources_shared": 0,
+                "genetic_diversity": 0,
+                "dominant_genome_ratio": 0
+            }
 
     def get_next_agent_id(self):
         agent_id = self.next_agent_id
@@ -490,3 +490,73 @@ class Environment:
     def __del__(self):
         """Ensure cleanup on deletion."""
         self.cleanup()
+
+    def update_metrics(self, metrics: Dict):
+        """Update environment metrics and log to database.
+
+        Parameters
+        ----------
+        metrics : Dict
+            Dictionary containing metrics to update and log
+        """
+        try:
+            # Log metrics to database
+            if self.db:
+                self.db.log_step(
+                    step_number=self.time,
+                    agent_states=[
+                        self._prepare_agent_state(agent) for agent in self.agents if agent.alive
+                    ],
+                    resource_states=[
+                        self._prepare_resource_state(resource) for resource in self.resources
+                    ],
+                    metrics=metrics
+                )
+        except Exception as e:
+            logging.error(f"Error updating metrics: {e}")
+
+    def _prepare_agent_state(self, agent) -> tuple:
+        """Prepare agent state data for database logging.
+        
+        Parameters
+        ----------
+        agent : BaseAgent
+            Agent to prepare state data for
+            
+        Returns
+        -------
+        tuple
+            State data in format expected by database
+        """
+        return (
+            agent.agent_id,
+            agent.position[0],  # x coordinate
+            agent.position[1],  # y coordinate
+            agent.resource_level,
+            agent.current_health,
+            agent.max_health,
+            agent.starvation_threshold,
+            int(agent.is_defending),
+            agent.total_reward,
+            self.time - agent.birth_time  # age
+        )
+
+    def _prepare_resource_state(self, resource) -> tuple:
+        """Prepare resource state data for database logging.
+        
+        Parameters
+        ----------
+        resource : Resource
+            Resource to prepare state data for
+            
+        Returns
+        -------
+        tuple
+            State data in format expected by database
+        """
+        return (
+            resource.resource_id,
+            resource.amount,
+            resource.position[0],  # x coordinate
+            resource.position[1]   # y coordinate
+        )

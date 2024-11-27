@@ -157,10 +157,6 @@ def run_simulation(
         for step in range(num_steps):
             logging.info(f"Starting step {step}/{num_steps}")
 
-            # Get simulation state
-            sim_state = SimulationState.from_environment(environment, num_steps)
-            logging.debug(f"Simulation state: {sim_state.to_dict()}")
-
             # Process agents in batches
             alive_agents = [agent for agent in environment.agents if agent.alive]
             batch_size = 32  # Adjust based on your needs
@@ -172,12 +168,13 @@ def run_simulation(
                     agent.act()
 
                 # Process reproduction in parallel
-                #! Need to sunset this at some point
                 for agent in batch:
                     agent.reproduce()
 
             # Update environment once per step
             environment.update()
+
+            # No need for additional metrics update since it's handled in environment.update()
 
         # Ensure final state is saved
         environment.update()
