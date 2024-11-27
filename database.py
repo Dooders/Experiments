@@ -1202,3 +1202,33 @@ class SimulationDatabase:
             )
 
         self._execute_in_transaction(_insert)
+
+    def get_population_momentum(self) -> float:
+        """Calculate population momentum (death_step * max_count)."""
+        try:
+            query = """
+                WITH PopulationData AS (
+                    SELECT 
+                        step_number,
+                        total_agents
+                    FROM SimulationSteps
+                    WHERE total_agents > 0
+                )
+                SELECT 
+                    MAX(step_number) as death_step,
+                    MAX(total_agents) as max_count
+                FROM PopulationData
+            """
+            
+            self.cursor.execute(query)
+            result = self.cursor.fetchone()
+            
+            if result and result[0] and result[1]:
+                death_step, max_count = result
+                momentum = death_step * max_count
+                return momentum
+            return 0
+            
+        except Exception as e:
+            logging.error(f"Error calculating population momentum: {e}")
+            return 0

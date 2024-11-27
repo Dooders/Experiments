@@ -412,9 +412,21 @@ class SimulationGUI:
         """Start a new simulation with current configuration."""
         try:
             # Close any existing database connections
-            if hasattr(self, 'db') and self.db:
-                self.db.close()
+            if hasattr(self, 'db'):
+                try:
+                    self.db.close()
+                    delattr(self, 'db')
+                except Exception:
+                    pass
             
+            # Close database connections in components
+            for component in self.components.values():
+                if hasattr(component, 'db'):
+                    try:
+                        component.db.close()
+                    except Exception:
+                        pass
+
             # Load base config to get default values
             base_config = SimulationConfig.from_yaml("config.yaml")
             
@@ -443,7 +455,10 @@ class SimulationGUI:
             
             # Remove existing database file if it exists
             if os.path.exists(self.current_db_path):
-                os.remove(self.current_db_path)
+                try:
+                    os.remove(self.current_db_path)
+                except PermissionError:
+                    raise Exception("Cannot overwrite existing simulation - database file is in use. Please restart the application.")
 
             # Show progress screen
             self._show_progress_screen("Running simulation...")
@@ -675,7 +690,13 @@ class SimulationGUI:
 
     def _view_statistics(self) -> None:
         """Show statistics window."""
-        messagebox.showinfo("Not Implemented", "Statistics view not yet implemented.")
+        if not self.current_db_path:
+            messagebox.showwarning("No Data", "Please open or run a simulation first.")
+            return
+        
+        from gui.windows.statistics_window import StatisticsWindow
+        stats_window = StatisticsWindow(self.root, self.current_db_path)
+        stats_window.show()
 
     def _open_agent_analysis_window(self) -> None:
         """Switch to agent analysis tab."""
