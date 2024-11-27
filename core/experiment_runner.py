@@ -16,9 +16,9 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from analysis import SimulationAnalyzer
-from config import SimulationConfig
-from simulation import run_simulation
+from core.analysis import SimulationAnalyzer
+from core.config import SimulationConfig
+from core.simulation import run_simulation
 
 class ExperimentRunner:
     """Manages multiple simulation runs and result analysis."""

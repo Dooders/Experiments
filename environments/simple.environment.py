@@ -5,8 +5,8 @@ import random
 from base_environment import BaseEnvironment
 
 from agents import IndependentAgent
-from database import SimulationDatabase
-from resources import Resource
+from core.database import SimulationDatabase
+from core.resources import Resource
 
 logger = logging.getLogger(__name__)
 

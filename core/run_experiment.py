@@ -5,7 +5,7 @@ Script to run simulation experiments with different configurations.
 import logging
 from pathlib import Path
 
-from config import SimulationConfig
+from core.config import SimulationConfig
 from experiment import ExperimentRunner
 
 # Setup basic logging
@@ -19,7 +19,7 @@ def run_resource_distribution_experiment():
     # Load base configuration
     base_config = SimulationConfig.from_yaml("config.yaml")
     
-    # Create experiment runner
+    # Create experiment runner with database initialization
     experiment = ExperimentRunner(base_config, "resource_distribution_test")
     
     variations = [
@@ -33,9 +33,12 @@ def run_resource_distribution_experiment():
         experiment.run_iterations(num_iterations=3, config_variations=variations)
         # Generate report
         experiment.generate_report()
+    except Exception as e:
+        logging.error(f"Experiment failed: {str(e)}")
     finally:
-        # Ensure cleanup
-        experiment.cleanup()  # You'll need to implement this method in ExperimentRunner
+        # Ensure cleanup even if experiment fails
+        if hasattr(experiment, 'db'):  # Only cleanup if database exists
+            experiment.db.close()  # Replace cleanup() with direct db close
     
     logging.info("Resource distribution experiment completed")
 
@@ -72,9 +75,9 @@ def main():
 
     # Run experiments
     run_resource_distribution_experiment()
-    run_population_experiment()
+    # run_population_experiment()
 
-    print("Experiments completed! Check the experiments directory for results.")
+    # print("Experiments completed! Check the experiments directory for results.")
 
 
 if __name__ == "__main__":

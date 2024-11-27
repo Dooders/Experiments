@@ -7,8 +7,8 @@ from typing import Any, Dict, List
 
 import pandas as pd
 
-from config import SimulationConfig
-from simulation import run_simulation, setup_logging
+from core.config import SimulationConfig
+from core.simulation import run_simulation, setup_logging
 
 
 class BatchRunner:

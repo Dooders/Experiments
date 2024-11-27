@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, validator
 if TYPE_CHECKING:
     from actions.move import MoveModule
     from agents.system_agent import SystemAgent
-    from environment import Environment
+    from core.environment import Environment
 
 
 class BaseState(BaseModel):

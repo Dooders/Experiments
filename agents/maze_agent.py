@@ -7,9 +7,9 @@ import torch.optim as optim
 from collections import deque
 
 if TYPE_CHECKING:
-    from environment import Environment
+    from core.environment import Environment
 
-from action import Action
+from core.action import Action
 from actions.move import move_action
 from .base_agent import BaseAgent
 

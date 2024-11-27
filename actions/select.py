@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, List
 import numpy as np
 import torch
 
-from action import Action
+from core.action import Action
 from actions.base_dqn import BaseDQNConfig, BaseDQNModule, BaseQNetwork
 
 if TYPE_CHECKING:

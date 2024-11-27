@@ -56,8 +56,8 @@ if TYPE_CHECKING:
     from resource import Resource
 
     from agents.base_agent import BaseAgent
-    from environment import Environment
-    from state import ModelState
+    from core.environment import Environment
+    from core.state import ModelState
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +148,7 @@ class MoveModule(BaseDQNModule):
             >>> state = move_module.get_state()
             >>> print(f"Current epsilon: {state.epsilon}")
         """
-        from state import ModelState  # Import locally to avoid circle
+        from core.state import ModelState  # Import locally to avoid circle
 
         return ModelState.from_move_module(self)
 

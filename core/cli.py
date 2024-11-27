@@ -6,10 +6,10 @@ import json
 
 import tkinter as tk
 from agents import main as run_simulation
-from analysis import SimulationAnalyzer
-from visualization import SimulationVisualizer
-from config import SimulationConfig
-from experiment import ExperimentRunner
+from core.analysis import SimulationAnalyzer
+from core.experiment_runner import ExperimentRunner
+from core.visualization import SimulationVisualizer
+from core.config import SimulationConfig
 
 def setup_logging(log_dir='logs'):
     """Setup logging configuration."""

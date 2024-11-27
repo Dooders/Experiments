@@ -4,9 +4,9 @@ import shutil
 from pathlib import Path
 import numpy as np
 
-from config import SimulationConfig
+from core.config import SimulationConfig
 from agents import Environment, SystemAgent, IndependentAgent, Resource
-from database import SimulationDatabase
+from core.database import SimulationDatabase
 
 class TestSimulation(unittest.TestCase):
     def setUp(self):

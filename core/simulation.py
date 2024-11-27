@@ -7,9 +7,8 @@ from typing import List, Optional, Tuple
 import yaml
 
 from agents import IndependentAgent, SystemAgent
-from config import SimulationConfig
-from environment import Environment
-from state import SimulationState
+from core.config import SimulationConfig
+from core.environment import Environment
 
 
 def setup_logging(log_dir: str = "logs") -> None:
