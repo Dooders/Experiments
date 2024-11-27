@@ -11,6 +11,7 @@ from gui.components.tooltips import ToolTip
 from gui.utils.styles import configure_ttk_styles
 from gui.windows.agent_analysis_window import AgentAnalysisWindow
 from gui.components.notes import NotesPanel
+from gui.components.chat_assistant import ChatAssistant
 
 from config import SimulationConfig
 from database import SimulationDatabase
@@ -289,6 +290,21 @@ class SimulationGUI:
         self.components["notes"] = NotesPanel(notes_tab)
         self.components["notes"].pack(fill="both", expand=True)
 
+        # Create chat assistant tab
+        chat_tab = ttk.Frame(
+            self.notebook,
+            style="TabContent.TFrame",
+            padding=10
+        )
+        self.notebook.add(
+            chat_tab,
+            text="AI Assistant"
+        )
+        
+        # Add chat assistant
+        self.components["chat"] = ChatAssistant(chat_tab)
+        self.components["chat"].pack(fill="both", expand=True)
+
         # After adding tabs, configure their colors using tag_configure
         self.notebook.configure(style="Custom.TNotebook")
         
@@ -544,6 +560,9 @@ class SimulationGUI:
             # Get historical data for the chart
             historical_data = db.get_historical_data()
             
+            # Get configuration from database
+            config = db.get_configuration()
+            
             # Store the full data in the chart but don't display it yet
             if historical_data and "metrics" in historical_data:
                 logging.debug("Setting full data in chart")
@@ -579,6 +598,14 @@ class SimulationGUI:
             for name in updatable_components:
                 if name in self.components and hasattr(self.components[name], "update"):
                     self.components[name].update(initial_data)
+
+            # Update chat assistant with simulation data
+            if "chat" in self.components:
+                simulation_data = {
+                    "config": config if config else {},
+                    "metrics": historical_data.get("metrics", {})
+                }
+                self.components["chat"].set_simulation_data(simulation_data)
 
         except Exception as e:
             logging.error(f"Error starting visualization: {str(e)}", exc_info=True)

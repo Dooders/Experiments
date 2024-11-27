@@ -182,6 +182,12 @@ class SimulationDatabase:
 
             CREATE INDEX IF NOT EXISTS idx_health_incidents_step_number 
             ON HealthIncidents(step_number);
+
+            CREATE TABLE IF NOT EXISTS SimulationConfig (
+                config_id INTEGER PRIMARY KEY,
+                timestamp INTEGER NOT NULL,
+                config_data TEXT NOT NULL  -- JSON-encoded configuration
+            );
         """
         )
 
@@ -1170,3 +1176,51 @@ class SimulationDatabase:
         except Exception as e:
             logger.error(f"Error getting step actions: {e}")
             return None
+
+    def get_configuration(self) -> Dict:
+        """Retrieve the simulation configuration from the database.
+
+        Returns
+        -------
+        Dict
+            Dictionary containing simulation configuration parameters
+            If no configuration is found, returns an empty dictionary
+        """
+        try:
+            self.cursor.execute(
+                """
+                SELECT config_data
+                FROM SimulationConfig
+                ORDER BY timestamp DESC
+                LIMIT 1
+                """
+            )
+            row = self.cursor.fetchone()
+            if row and row[0]:
+                import json
+                return json.loads(row[0])
+            return {}
+        except sqlite3.OperationalError:
+            # Table doesn't exist yet
+            return {}
+
+    def save_configuration(self, config: Dict) -> None:
+        """Save simulation configuration to the database.
+
+        Parameters
+        ----------
+        config : Dict
+            Dictionary containing simulation configuration parameters
+        """
+        def _insert():
+            import json
+            import time
+            self.cursor.execute(
+                """
+                INSERT INTO SimulationConfig (timestamp, config_data)
+                VALUES (?, ?)
+                """,
+                (int(time.time()), json.dumps(config))
+            )
+
+        self._execute_in_transaction(_insert)

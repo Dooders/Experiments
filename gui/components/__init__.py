@@ -4,6 +4,7 @@ from gui.components.environment import EnvironmentView
 from gui.components.stats import StatsPanel
 from gui.components.tooltips import ToolTip
 from gui.components.notes import NotesPanel
+from gui.components.chat_assistant import ChatAssistant
 
 __all__ = [
     'SimulationChart',
@@ -11,5 +12,6 @@ __all__ = [
     'EnvironmentView',
     'StatsPanel',
     'ToolTip',
-    'NotesPanel'
+    'NotesPanel',
+    'ChatAssistant'
 ] 
