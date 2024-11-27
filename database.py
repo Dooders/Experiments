@@ -980,6 +980,10 @@ class SimulationDatabase:
         generation : int
             Generation number in evolutionary lineage
         """
+        # Add type validation
+        if parent_id is not None and not isinstance(parent_id, int):
+            logger.warning(f"Invalid parent_id type: {type(parent_id)}. Setting to None.")
+            parent_id = None
 
         def _insert():
             self.cursor.execute(

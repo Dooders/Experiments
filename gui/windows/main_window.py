@@ -10,6 +10,7 @@ from gui.components.stats import StatsPanel
 from gui.components.tooltips import ToolTip
 from gui.utils.styles import configure_ttk_styles
 from gui.windows.agent_analysis_window import AgentAnalysisWindow
+from gui.components.notes import NotesPanel
 
 from config import SimulationConfig
 from database import SimulationDatabase
@@ -272,6 +273,21 @@ class SimulationGUI:
             agent_tab, 
             text="Agent Analysis"
         )
+
+        # Create notes tab
+        notes_tab = ttk.Frame(
+            self.notebook,
+            style="TabContent.TFrame",
+            padding=10
+        )
+        self.notebook.add(
+            notes_tab,
+            text="Notes & Observations"
+        )
+        
+        # Add notes panel
+        self.components["notes"] = NotesPanel(notes_tab)
+        self.components["notes"].pack(fill="both", expand=True)
 
         # After adding tabs, configure their colors using tag_configure
         self.notebook.configure(style="Custom.TNotebook")
@@ -753,6 +769,13 @@ class SimulationGUI:
             
             # Setup and start visualization
             self._setup_simulation_view()
+            
+            # Set simulation ID for notes after view is setup
+            if "notes" in self.components:
+                self.components["notes"].set_simulation(
+                    os.path.basename(self.current_db_path)
+                )
+            
             self._start_visualization()
             
         except Exception as e:
