@@ -1232,3 +1232,80 @@ class SimulationDatabase:
         except Exception as e:
             logging.error(f"Error calculating population momentum: {e}")
             return 0
+
+    def get_population_statistics(self) -> Dict:
+        """Calculate comprehensive population statistics."""
+        try:
+            # Query for population data over time
+            query = """
+                WITH PopulationData AS (
+                    SELECT 
+                        step_number,
+                        total_agents,
+                        total_resources,
+                        (SELECT SUM(resource_level) 
+                         FROM AgentStates 
+                         WHERE step_number = s.step_number) as resources_consumed
+                    FROM SimulationSteps s
+                    WHERE total_agents > 0
+                )
+                SELECT 
+                    -- Basic stats
+                    AVG(total_agents) as avg_population,
+                    MAX(step_number) as death_step,
+                    MAX(total_agents) as peak_population,
+                    
+                    -- Resource stats
+                    SUM(resources_consumed) as total_resources_consumed,
+                    SUM(total_resources) as total_resources_available,
+                    
+                    -- For variance calculation
+                    SUM(CAST(total_agents AS FLOAT) * total_agents) as sum_squared,
+                    COUNT(*) as step_count
+                FROM PopulationData
+            """
+            
+            self.cursor.execute(query)
+            result = self.cursor.fetchone()
+            
+            if result:
+                avg_pop = result[0] or 0
+                death_step = result[1] or 0
+                peak_pop = result[2] or 0
+                resources_consumed = result[3] or 0
+                resources_available = result[4] or 0
+                sum_squared = result[5] or 0
+                step_count = result[6] or 1  # Avoid division by zero
+                
+                # Calculate variance
+                variance = (sum_squared / step_count) - (avg_pop * avg_pop)
+                std_dev = variance ** 0.5
+                
+                # Calculate metrics
+                resource_utilization = (
+                    resources_consumed / resources_available 
+                    if resources_available > 0 else 0
+                )
+                
+                cv = std_dev / avg_pop if avg_pop > 0 else 0
+                
+                return {
+                    "average_population": avg_pop,
+                    "peak_population": peak_pop,
+                    "death_step": death_step,
+                    "resource_utilization": resource_utilization,
+                    "population_variance": variance,
+                    "coefficient_variation": cv,
+                    "resources_consumed": resources_consumed,
+                    "resources_available": resources_available,
+                    "utilization_per_agent": (
+                        resources_consumed / (avg_pop * death_step)
+                        if avg_pop * death_step > 0 else 0
+                    )
+                }
+                
+            return {}
+            
+        except Exception as e:
+            logging.error(f"Error calculating population statistics: {e}")
+            return {}
