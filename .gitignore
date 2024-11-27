@@ -117,3 +117,5 @@ simulation_results.db-journal
 *.csv
 config_*.yaml
 node_modules/
+simulations/last_config.json
+last_config.json

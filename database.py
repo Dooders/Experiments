@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 class SimulationDatabase:
 
     _thread_local = threading.local()
-    _tables_created = False
     _tables_creation_lock = threading.Lock()
 
     def __init__(self, db_path: str) -> None:
@@ -28,10 +27,18 @@ class SimulationDatabase:
         self._health_incident_buffer = []
         self._buffer_size = 1000  # Adjust based on your needs
 
-        # Create tables only once in a thread-safe manner
+        # Create tables in a thread-safe manner
         with SimulationDatabase._tables_creation_lock:
-            if not SimulationDatabase._tables_created:
+            # Always check if tables exist directly in the database
+            self.cursor.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='ResourceStates'
+            """)
+            tables_exist = self.cursor.fetchone() is not None
+            
+            if not tables_exist:
                 self._create_tables()
+                self.conn.commit()  # Ensure tables are committed
                 SimulationDatabase._tables_created = True
 
         # Verify foreign key constraints are working
@@ -1204,7 +1211,15 @@ class SimulationDatabase:
         self._execute_in_transaction(_insert)
 
     def get_population_momentum(self) -> float:
-        """Calculate population momentum (death_step * max_count)."""
+        """Calculate population momentum ((death_step * max_count) / initial_count).
+        
+        Returns
+        -------
+        float
+            Population momentum score. A higher score indicates the population
+            maintained higher numbers for longer relative to its starting size.
+            Returns 0 if there's no data or initial count is 0.
+        """
         try:
             query = """
                 WITH PopulationData AS (
@@ -1216,17 +1231,21 @@ class SimulationDatabase:
                 )
                 SELECT 
                     MAX(step_number) as death_step,
-                    MAX(total_agents) as max_count
+                    MAX(total_agents) as max_count,
+                    FIRST_VALUE(total_agents) OVER (
+                        ORDER BY step_number
+                    ) as initial_count
                 FROM PopulationData
             """
             
             self.cursor.execute(query)
             result = self.cursor.fetchone()
             
-            if result and result[0] and result[1]:
-                death_step, max_count = result
-                momentum = death_step * max_count
-                return momentum
+            if result and all(result):  # Check if all values exist
+                death_step, max_count, initial_count = result
+                if initial_count > 0:  # Avoid division by zero
+                    momentum = (death_step * max_count) / initial_count
+                    return momentum
             return 0
             
         except Exception as e:
