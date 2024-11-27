@@ -14,6 +14,20 @@ class StatisticsWindow(BaseWindow):
         self.db_path = db_path
         self.db = SimulationDatabase(db_path)
         
+        # Initialize tooltips dictionary
+        self.tooltips = {
+            "Population Momentum": "Product of survival time and peak population",
+            "Average Population": "Mean number of agents across all simulation steps",
+            "Peak Population": "Maximum number of agents at any point",
+            "Simulation Length": "Number of steps until last agent died",
+            "Resource Utilization": "Proportion of available resources consumed",
+            "Resources Consumed": "Total resources used by all agents",
+            "Resources Available": "Total resources generated in simulation",
+            "Utilization per Agent": "Average resources consumed per agent per step",
+            "Population Variance": "Measure of population size fluctuation",
+            "Coefficient of Variation": "Standardized measure of population stability"
+        }
+        
         # Now call parent's __init__
         super().__init__(
             parent,
@@ -109,6 +123,70 @@ class StatisticsWindow(BaseWindow):
             f"{stats.get('coefficient_variation', 0):.2%}"
         )
         
+        # Get advanced statistics
+        advanced_stats = self.db.get_advanced_statistics()
+        
+        # Population Dynamics (Additional)
+        self._add_stat_section(scrollable_frame, "Advanced Population Metrics")
+        self._add_stat_row(
+            "Peak-to-End Ratio",
+            f"{advanced_stats.get('peak_to_end_ratio', 0):,.2f}"
+        )
+        self._add_stat_row(
+            "Growth Rate",
+            f"{advanced_stats.get('growth_rate', 0):,.2f} agents/step"
+        )
+        self._add_stat_row(
+            "Extinction Threshold",
+            f"Step {advanced_stats.get('extinction_threshold_time', 'N/A')}"
+        )
+        
+        # Health and Survival
+        self._add_stat_section(scrollable_frame, "Health & Survival")
+        self._add_stat_row(
+            "Average Health",
+            f"{advanced_stats.get('average_health', 0):,.2%}"
+        )
+        self._add_stat_row(
+            "Survivor Ratio",
+            f"{advanced_stats.get('survivor_ratio', 0):,.2%}"
+        )
+        
+        # Diversity and Interaction
+        self._add_stat_section(scrollable_frame, "Diversity & Interaction")
+        self._add_stat_row(
+            "Agent Diversity",
+            f"{advanced_stats.get('agent_diversity', 0):,.3f}"
+        )
+        self._add_stat_row(
+            "Interaction Rate",
+            f"{advanced_stats.get('interaction_rate', 0):,.2f} per agent/step"
+        )
+        self._add_stat_row(
+            "Conflict/Cooperation Ratio",
+            f"{advanced_stats.get('conflict_cooperation_ratio', 0):,.2f}"
+        )
+        
+        # Resource Dynamics
+        self._add_stat_section(scrollable_frame, "Resource Dynamics")
+        self._add_stat_row(
+            "Scarcity Index",
+            f"{advanced_stats.get('scarcity_index', 0):,.2%}"
+        )
+        
+        # Update tooltips dictionary with new metrics
+        self.tooltips.update({
+            "Peak-to-End Ratio": "Ratio of peak population to final population size",
+            "Growth Rate": "Average change in population size per step",
+            "Extinction Threshold": "Step when population fell below 10% of peak",
+            "Average Health": "Mean health level across all agents over time",
+            "Survivor Ratio": "Proportion of created agents that survived to the end",
+            "Agent Diversity": "Shannon entropy of agent type distribution",
+            "Interaction Rate": "Average interactions per agent per step",
+            "Conflict/Cooperation Ratio": "Ratio of hostile to friendly interactions",
+            "Scarcity Index": "Proportion of time resources were scarce"
+        })
+        
         # Add tooltips for each metric
         self._add_tooltips(scrollable_frame)
         
@@ -128,7 +206,16 @@ class StatisticsWindow(BaseWindow):
             "Resources Available": "Total resources generated in simulation",
             "Utilization per Agent": "Average resources consumed per agent per step",
             "Population Variance": "Measure of population size fluctuation",
-            "Coefficient of Variation": "Standardized measure of population stability"
+            "Coefficient of Variation": "Standardized measure of population stability",
+            "Peak-to-End Ratio": "Ratio of peak population to final population size",
+            "Growth Rate": "Average change in population size per step",
+            "Extinction Threshold": "Step when population fell below 10% of peak",
+            "Average Health": "Mean health level across all agents over time",
+            "Survivor Ratio": "Proportion of created agents that survived to the end",
+            "Agent Diversity": "Shannon entropy of agent type distribution",
+            "Interaction Rate": "Average interactions per agent per step",
+            "Conflict/Cooperation Ratio": "Ratio of hostile to friendly interactions",
+            "Scarcity Index": "Proportion of time resources were scarce"
         }
         
         def _find_labels(widget):
