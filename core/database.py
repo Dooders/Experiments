@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 import pandas as pd
 
 if TYPE_CHECKING:
-    from environment import Environment
+    from core.environment import Environment
 
 logger = logging.getLogger(__name__)
 

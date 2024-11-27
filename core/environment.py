@@ -8,9 +8,9 @@ from typing import Dict, List
 import numpy as np
 
 from agents import ControlAgent, IndependentAgent, SystemAgent
-from database import SimulationDatabase
-from resources import Resource
-from state import EnvironmentState
+from core.database import SimulationDatabase
+from core.resources import Resource
+from core.state import EnvironmentState
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ from typing import Dict
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from gui.windows.base_window import BaseWindow
-from database import SimulationDatabase
+from core.database import SimulationDatabase
 
 class StatisticsWindow(BaseWindow):
     """Window for displaying detailed simulation statistics."""

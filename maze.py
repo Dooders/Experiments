@@ -5,7 +5,7 @@ from mazelib import Maze
 from mazelib.generate.Prims import Prims
 
 from agents.maze_agent import MazeAgent
-from config import SimulationConfig
+from core.config import SimulationConfig
 from environments.maze_environment import MazeEnv
 
 # Generate the maze

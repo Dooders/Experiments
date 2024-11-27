@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-from database import SimulationDatabase
+from core.database import SimulationDatabase
 from gui.components.tooltips import ToolTip
 
 

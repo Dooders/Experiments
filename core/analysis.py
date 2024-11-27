@@ -4,7 +4,7 @@ from scipy import stats
 import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple
 
-from database import SimulationDatabase
+from core.database import SimulationDatabase
 
 
 class SimulationAnalyzer:

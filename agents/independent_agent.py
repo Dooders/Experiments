@@ -3,9 +3,9 @@ from typing import TYPE_CHECKING, Optional
 import numpy as np
 
 if TYPE_CHECKING:
-    from environment import Environment
+    from core.environment import Environment
 
-from action import Action
+from core.action import Action
 from actions.attack import attack_action
 from actions.gather import gather_action
 from actions.move import move_action

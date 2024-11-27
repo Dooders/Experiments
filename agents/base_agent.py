@@ -4,18 +4,18 @@ from typing import TYPE_CHECKING, Optional
 import numpy as np
 import torch
 
-from action import *
+from core.action import *
 from actions.attack import AttackActionSpace, AttackModule, attack_action
 from actions.gather import GatherModule, gather_action
 from actions.move import MoveModule, move_action
 from actions.reproduce import ReproduceModule, reproduce_action
 from actions.select import SelectConfig, SelectModule, create_selection_state
 from actions.share import ShareModule, share_action
-from genome import Genome
-from state import AgentState
+from core.genome import Genome
+from core.state import AgentState
 
 if TYPE_CHECKING:
-    from environment import Environment
+    from core.environment import Environment
 
 logger = logging.getLogger(__name__)
 

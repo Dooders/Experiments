@@ -5,7 +5,7 @@ Script to run simulation experiments with different configurations.
 import logging
 from pathlib import Path
 
-from config import SimulationConfig
+from core.config import SimulationConfig
 from experiment import ExperimentRunner
 
 # Setup basic logging
@@ -75,9 +75,9 @@ def main():
 
     # Run experiments
     run_resource_distribution_experiment()
-    run_population_experiment()
+    # run_population_experiment()
 
-    print("Experiments completed! Check the experiments directory for results.")
+    # print("Experiments completed! Check the experiments directory for results.")
 
 
 if __name__ == "__main__":
