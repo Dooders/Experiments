@@ -265,3 +265,19 @@ class SimulationConfig:
     def copy(self):
         """Create a deep copy of the configuration."""
         return copy.deepcopy(self)
+
+    def to_dict(self):
+        """Convert config object to a dictionary for storage"""
+        return {
+            key: getattr(self, key)
+            for key in self.__dict__
+            if not key.startswith('_')
+        }
+    
+    @classmethod
+    def from_dict(cls, data):
+        """Recreate config object from dictionary"""
+        config = cls()
+        for key, value in data.items():
+            setattr(config, key, value)
+        return config

@@ -2,6 +2,8 @@ import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from dataclasses import replace
+import json
+import os.path
 
 from gui.components.charts import SimulationChart
 from gui.components.controls import ControlPanel
@@ -10,6 +12,8 @@ from gui.components.stats import StatsPanel
 from gui.components.tooltips import ToolTip
 from gui.utils.styles import configure_ttk_styles
 from gui.windows.agent_analysis_window import AgentAnalysisWindow
+from gui.components.notes import NotesPanel
+from gui.components.chat_assistant import ChatAssistant
 
 from config import SimulationConfig
 from database import SimulationDatabase
@@ -36,6 +40,7 @@ class SimulationGUI:
         self.current_step = 0
         self.components = {}
         self.playback_timer = None
+        self.last_config_path = "simulations/last_config.json"
         
         # Configure styles
         self._configure_styles()
@@ -95,9 +100,29 @@ class SimulationGUI:
         self.main_frame.grid_columnconfigure(1, weight=3)  # Right pane
         self.main_frame.grid_rowconfigure(0, weight=1)
 
+    def _load_last_config(self) -> dict:
+        """Load the last used configuration if available."""
+        try:
+            if os.path.exists(self.last_config_path):
+                with open(self.last_config_path, 'r') as f:
+                    return json.load(f)
+        except Exception as e:
+            logging.warning(f"Failed to load last config: {e}")
+        return {}
+
+    def _save_last_config(self) -> None:
+        """Save the current configuration."""
+        try:
+            os.makedirs(os.path.dirname(self.last_config_path), exist_ok=True)
+            config = {key: var.get() for key, var in self.config_vars.items()}
+            with open(self.last_config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+        except Exception as e:
+            logging.warning(f"Failed to save config: {e}")
+
     def _show_welcome_screen(self):
         """Show the welcome screen with configuration options."""
-        # Clear any existing components
+        # Clear existing components
         for widget in self.main_frame.winfo_children():
             widget.destroy()
 
@@ -139,9 +164,12 @@ class SimulationGUI:
         # Load default configuration
         try:
             config = SimulationConfig.from_yaml("config.yaml")
+            # Load last used config
+            last_config = self._load_last_config()
         except Exception as e:
             self.show_error("Configuration Error", f"Failed to load configuration: {str(e)}")
-            config = SimulationConfig()  # Use default values if config load fails
+            config = SimulationConfig()
+            last_config = {}
 
         # Configuration section
         config_frame = ttk.LabelFrame(
@@ -208,8 +236,9 @@ class SimulationGUI:
                     style="ConfigLabel.TLabel"
                 ).pack(side=tk.LEFT, padx=(0, 5))
                 
-                # Entry with validation
-                var = tk.StringVar(value=str(default))
+                # Use last config value if available, otherwise use default
+                value = last_config.get(key, str(default))
+                var = tk.StringVar(value=str(value))
                 entry = ttk.Entry(
                     container,
                     textvariable=var,
@@ -272,6 +301,36 @@ class SimulationGUI:
             agent_tab, 
             text="Agent Analysis"
         )
+
+        # Create notes tab
+        notes_tab = ttk.Frame(
+            self.notebook,
+            style="TabContent.TFrame",
+            padding=10
+        )
+        self.notebook.add(
+            notes_tab,
+            text="Notes & Observations"
+        )
+        
+        # Add notes panel
+        self.components["notes"] = NotesPanel(notes_tab)
+        self.components["notes"].pack(fill="both", expand=True)
+
+        # Create chat assistant tab
+        chat_tab = ttk.Frame(
+            self.notebook,
+            style="TabContent.TFrame",
+            padding=10
+        )
+        self.notebook.add(
+            chat_tab,
+            text="AI Assistant"
+        )
+        
+        # Add chat assistant
+        self.components["chat"] = ChatAssistant(chat_tab)
+        self.components["chat"].pack(fill="both", expand=True)
 
         # After adding tabs, configure their colors using tag_configure
         self.notebook.configure(style="Custom.TNotebook")
@@ -352,6 +411,22 @@ class SimulationGUI:
     def _new_simulation(self) -> None:
         """Start a new simulation with current configuration."""
         try:
+            # Close any existing database connections
+            if hasattr(self, 'db'):
+                try:
+                    self.db.close()
+                    delattr(self, 'db')
+                except Exception:
+                    pass
+            
+            # Close database connections in components
+            for component in self.components.values():
+                if hasattr(component, 'db'):
+                    try:
+                        component.db.close()
+                    except Exception:
+                        pass
+
             # Load base config to get default values
             base_config = SimulationConfig.from_yaml("config.yaml")
             
@@ -371,9 +446,19 @@ class SimulationGUI:
             # Create new config by updating base config with new values
             config = replace(base_config, **config_updates)
             
+            # Save the current configuration
+            self._save_last_config()
+
             # Create new database
             self.current_db_path = "simulations/simulation.db"
             os.makedirs("simulations", exist_ok=True)
+            
+            # Remove existing database file if it exists
+            if os.path.exists(self.current_db_path):
+                try:
+                    os.remove(self.current_db_path)
+                except PermissionError:
+                    raise Exception("Cannot overwrite existing simulation - database file is in use. Please restart the application.")
 
             # Show progress screen
             self._show_progress_screen("Running simulation...")
@@ -460,7 +545,7 @@ class SimulationGUI:
         
         file_menu.add_command(
             label="New Simulation",
-            command=self._new_simulation,
+            command=self._show_welcome_screen,
             accelerator="Ctrl+N"
         )
         file_menu.add_command(
@@ -500,7 +585,7 @@ class SimulationGUI:
         help_menu.add_command(label="About", command=self._show_about)
 
         # Bind keyboard shortcuts
-        self.root.bind("<Control-n>", lambda e: self._new_simulation())
+        self.root.bind("<Control-n>", lambda e: self._show_welcome_screen())
         self.root.bind("<Control-o>", lambda e: self._open_simulation())
         self.root.bind("<Control-e>", lambda e: self._export_data())
 
@@ -527,6 +612,9 @@ class SimulationGUI:
             
             # Get historical data for the chart
             historical_data = db.get_historical_data()
+            
+            # Get configuration from database
+            config = db.get_configuration()
             
             # Store the full data in the chart but don't display it yet
             if historical_data and "metrics" in historical_data:
@@ -564,6 +652,14 @@ class SimulationGUI:
                 if name in self.components and hasattr(self.components[name], "update"):
                     self.components[name].update(initial_data)
 
+            # Update chat assistant with simulation data
+            if "chat" in self.components:
+                simulation_data = {
+                    "config": config if config else {},
+                    "metrics": historical_data.get("metrics", {})
+                }
+                self.components["chat"].set_simulation_data(simulation_data)
+
         except Exception as e:
             logging.error(f"Error starting visualization: {str(e)}", exc_info=True)
             self.show_error("Visualization Error", f"Failed to initialize visualization: {str(e)}")
@@ -594,7 +690,13 @@ class SimulationGUI:
 
     def _view_statistics(self) -> None:
         """Show statistics window."""
-        messagebox.showinfo("Not Implemented", "Statistics view not yet implemented.")
+        if not self.current_db_path:
+            messagebox.showwarning("No Data", "Please open or run a simulation first.")
+            return
+        
+        from gui.windows.statistics_window import StatisticsWindow
+        stats_window = StatisticsWindow(self.root, self.current_db_path)
+        stats_window.show()
 
     def _open_agent_analysis_window(self) -> None:
         """Switch to agent analysis tab."""
@@ -748,11 +850,22 @@ class SimulationGUI:
     def _simulation_complete(self) -> None:
         """Handle simulation completion."""
         try:
+            # Close any existing database connections
+            if hasattr(self, 'db') and self.db:
+                self.db.close()
+            
             # Clear the progress screen first
             self._clear_progress_screen()
             
             # Setup and start visualization
             self._setup_simulation_view()
+            
+            # Set simulation ID for notes after view is setup
+            if "notes" in self.components:
+                self.components["notes"].set_simulation(
+                    os.path.basename(self.current_db_path)
+                )
+            
             self._start_visualization()
             
         except Exception as e:

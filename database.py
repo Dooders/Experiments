@@ -182,6 +182,12 @@ class SimulationDatabase:
 
             CREATE INDEX IF NOT EXISTS idx_health_incidents_step_number 
             ON HealthIncidents(step_number);
+
+            CREATE TABLE IF NOT EXISTS SimulationConfig (
+                config_id INTEGER PRIMARY KEY,
+                timestamp INTEGER NOT NULL,
+                config_data TEXT NOT NULL  -- JSON-encoded configuration
+            );
         """
         )
 
@@ -479,22 +485,7 @@ class SimulationDatabase:
         )
 
     def get_simulation_data(self, step_number: int) -> Dict:
-        """Retrieve all simulation data for a specific time step.
-
-        Parameters
-        ----------
-        step_number : int
-            The simulation step to retrieve data for
-
-        Returns
-        -------
-        Dict
-            Dictionary containing:
-            - agent_states: List of tuples (agent_id, type, x, y, resources, health, max_health,
-                                          starvation_threshold, is_defending, total_reward, age)
-            - resource_states: List of tuples (resource_id, amount, x, y)
-            - metrics: Dict of aggregate metrics for the step
-        """
+        """Retrieve all simulation data for a specific time step."""
         # Get agent states
         self.cursor.execute(
             """
@@ -524,11 +515,11 @@ class SimulationDatabase:
         self.cursor.execute(
             """
             SELECT total_agents, system_agents, independent_agents, control_agents,
-                   total_resources, average_agent_resources
+                   total_resources, average_agent_resources, births, deaths
             FROM SimulationSteps
             WHERE step_number = ?
         """,
-            (step_number,),
+            (step_number,)
         )
         metrics_row = self.cursor.fetchone()
 
@@ -539,42 +530,33 @@ class SimulationDatabase:
             "control_agents": metrics_row[3] if metrics_row else 0,
             "total_resources": metrics_row[4] if metrics_row else 0,
             "average_agent_resources": metrics_row[5] if metrics_row else 0,
+            "births": metrics_row[6] if metrics_row else 0,
+            "deaths": metrics_row[7] if metrics_row else 0
         }
 
         return {
             "agent_states": agent_states,
             "resource_states": resource_states,
-            "metrics": metrics,
+            "metrics": metrics
         }
 
     def get_historical_data(self) -> Dict:
-        """Retrieve historical metrics for the entire simulation.
-
-        Returns
-        -------
-        Dict
-            Dictionary containing:
-            - steps: List of step numbers
-            - metrics: Dict of metric lists including:
-                - total_agents
-                - system_agents
-                - independent_agents
-                - control_agents
-                - total_resources
-                - average_agent_resources
-
-        Notes
-        -----
-        This method is useful for generating time series plots of simulation metrics.
-        The returned lists are ordered by step number.
-        """
+        """Retrieve historical metrics for the entire simulation."""
         self.cursor.execute(
             """
-            SELECT step_number, total_agents, system_agents, independent_agents,
-                   control_agents, total_resources, average_agent_resources
+            SELECT 
+                step_number, 
+                total_agents, 
+                system_agents, 
+                independent_agents,
+                control_agents, 
+                total_resources, 
+                average_agent_resources,
+                births,    -- Add births
+                deaths     -- Add deaths
             FROM SimulationSteps
             ORDER BY step_number
-        """
+            """
         )
         rows = self.cursor.fetchall()
 
@@ -587,7 +569,9 @@ class SimulationDatabase:
                 "control_agents": [row[4] for row in rows],
                 "total_resources": [row[5] for row in rows],
                 "average_agent_resources": [row[6] for row in rows],
-            },
+                "births": [row[7] for row in rows],      # Add births
+                "deaths": [row[8] for row in rows]       # Add deaths
+            }
         }
 
     def export_data(self, filepath: str):
@@ -980,6 +964,10 @@ class SimulationDatabase:
         generation : int
             Generation number in evolutionary lineage
         """
+        # Add type validation
+        if parent_id is not None and not isinstance(parent_id, int):
+            logger.warning(f"Invalid parent_id type: {type(parent_id)}. Setting to None.")
+            parent_id = None
 
         def _insert():
             self.cursor.execute(
@@ -1166,3 +1154,292 @@ class SimulationDatabase:
         except Exception as e:
             logger.error(f"Error getting step actions: {e}")
             return None
+
+    def get_configuration(self) -> Dict:
+        """Retrieve the simulation configuration from the database.
+
+        Returns
+        -------
+        Dict
+            Dictionary containing simulation configuration parameters
+            If no configuration is found, returns an empty dictionary
+        """
+        try:
+            self.cursor.execute(
+                """
+                SELECT config_data
+                FROM SimulationConfig
+                ORDER BY timestamp DESC
+                LIMIT 1
+                """
+            )
+            row = self.cursor.fetchone()
+            if row and row[0]:
+                import json
+                return json.loads(row[0])
+            return {}
+        except sqlite3.OperationalError:
+            # Table doesn't exist yet
+            return {}
+
+    def save_configuration(self, config: Dict) -> None:
+        """Save simulation configuration to the database.
+
+        Parameters
+        ----------
+        config : Dict
+            Dictionary containing simulation configuration parameters
+        """
+        def _insert():
+            import json
+            import time
+            self.cursor.execute(
+                """
+                INSERT INTO SimulationConfig (timestamp, config_data)
+                VALUES (?, ?)
+                """,
+                (int(time.time()), json.dumps(config))
+            )
+
+        self._execute_in_transaction(_insert)
+
+    def get_population_momentum(self) -> float:
+        """Calculate population momentum (death_step * max_count)."""
+        try:
+            query = """
+                WITH PopulationData AS (
+                    SELECT 
+                        step_number,
+                        total_agents
+                    FROM SimulationSteps
+                    WHERE total_agents > 0
+                )
+                SELECT 
+                    MAX(step_number) as death_step,
+                    MAX(total_agents) as max_count
+                FROM PopulationData
+            """
+            
+            self.cursor.execute(query)
+            result = self.cursor.fetchone()
+            
+            if result and result[0] and result[1]:
+                death_step, max_count = result
+                momentum = death_step * max_count
+                return momentum
+            return 0
+            
+        except Exception as e:
+            logging.error(f"Error calculating population momentum: {e}")
+            return 0
+
+    def get_population_statistics(self) -> Dict:
+        """Calculate comprehensive population statistics."""
+        try:
+            # Query for population data over time
+            query = """
+                WITH PopulationData AS (
+                    SELECT 
+                        step_number,
+                        total_agents,
+                        total_resources,
+                        (SELECT SUM(resource_level) 
+                         FROM AgentStates 
+                         WHERE step_number = s.step_number) as resources_consumed
+                    FROM SimulationSteps s
+                    WHERE total_agents > 0
+                )
+                SELECT 
+                    -- Basic stats
+                    AVG(total_agents) as avg_population,
+                    MAX(step_number) as death_step,
+                    MAX(total_agents) as peak_population,
+                    
+                    -- Resource stats
+                    SUM(resources_consumed) as total_resources_consumed,
+                    SUM(total_resources) as total_resources_available,
+                    
+                    -- For variance calculation
+                    SUM(CAST(total_agents AS FLOAT) * total_agents) as sum_squared,
+                    COUNT(*) as step_count
+                FROM PopulationData
+            """
+            
+            self.cursor.execute(query)
+            result = self.cursor.fetchone()
+            
+            if result:
+                avg_pop = result[0] or 0
+                death_step = result[1] or 0
+                peak_pop = result[2] or 0
+                resources_consumed = result[3] or 0
+                resources_available = result[4] or 0
+                sum_squared = result[5] or 0
+                step_count = result[6] or 1  # Avoid division by zero
+                
+                # Calculate variance
+                variance = (sum_squared / step_count) - (avg_pop * avg_pop)
+                std_dev = variance ** 0.5
+                
+                # Calculate metrics
+                resource_utilization = (
+                    resources_consumed / resources_available 
+                    if resources_available > 0 else 0
+                )
+                
+                cv = std_dev / avg_pop if avg_pop > 0 else 0
+                
+                return {
+                    "average_population": avg_pop,
+                    "peak_population": peak_pop,
+                    "death_step": death_step,
+                    "resource_utilization": resource_utilization,
+                    "population_variance": variance,
+                    "coefficient_variation": cv,
+                    "resources_consumed": resources_consumed,
+                    "resources_available": resources_available,
+                    "utilization_per_agent": (
+                        resources_consumed / (avg_pop * death_step)
+                        if avg_pop * death_step > 0 else 0
+                    )
+                }
+                
+            return {}
+            
+        except Exception as e:
+            logging.error(f"Error calculating population statistics: {e}")
+            return {}
+
+    def get_advanced_statistics(self) -> Dict:
+        """Calculate advanced simulation statistics."""
+        try:
+            # Population dynamics query
+            query = """
+            WITH PopulationTimeline AS (
+                SELECT 
+                    step_number,
+                    total_agents,
+                    total_resources,
+                    system_agents,
+                    independent_agents,
+                    control_agents,
+                    (SELECT AVG(current_health) 
+                     FROM AgentStates 
+                     WHERE step_number = s.step_number) as avg_health,
+                    (SELECT COUNT(DISTINCT agent_id) 
+                     FROM AgentStates 
+                     WHERE step_number = s.step_number) as unique_agents
+                FROM SimulationSteps s
+                WHERE total_agents > 0
+                ORDER BY step_number
+            ),
+            AgentCounts AS (
+                SELECT COUNT(*) as total_created
+                FROM Agents
+            ),
+            InteractionStats AS (
+                SELECT 
+                    COUNT(*) as total_interactions,
+                    SUM(CASE 
+                        WHEN action_type IN ('attack', 'defend') THEN 1 
+                        ELSE 0 
+                    END) as conflict_count,
+                    SUM(CASE 
+                        WHEN action_type IN ('share', 'help') THEN 1 
+                        ELSE 0 
+                    END) as cooperation_count
+                FROM AgentActions
+            ),
+            AgentTypeData AS (
+                SELECT 
+                    step_number,
+                    CAST(system_agents AS FLOAT) / NULLIF(total_agents, 0) as sys_ratio,
+                    CAST(independent_agents AS FLOAT) / NULLIF(total_agents, 0) as ind_ratio,
+                    CAST(control_agents AS FLOAT) / NULLIF(total_agents, 0) as ctrl_ratio
+                FROM PopulationTimeline
+                WHERE total_agents > 0
+            ),
+            PopStats AS (
+                SELECT
+                    FIRST_VALUE(total_agents) OVER (ORDER BY step_number) as initial_pop,
+                    FIRST_VALUE(total_agents) OVER (ORDER BY step_number DESC) as final_pop,
+                    MAX(total_agents) as peak_pop,
+                    AVG(avg_health) as average_health,
+                    AVG(CASE WHEN total_resources < (total_agents * 0.5) THEN 1 ELSE 0 END) as scarcity_index,
+                    COUNT(*) as total_steps
+                FROM PopulationTimeline
+            )
+            SELECT 
+                p.*,
+                -- Interaction metrics
+                (SELECT CAST(total_interactions AS FLOAT) / p.total_steps / p.peak_pop 
+                 FROM InteractionStats) as interaction_rate,
+                (SELECT CAST(conflict_count AS FLOAT) / NULLIF(cooperation_count, 0) 
+                 FROM InteractionStats) as conflict_cooperation_ratio,
+                
+                -- Agent type ratios (for diversity calculation)
+                AVG(a.sys_ratio) as avg_system_ratio,
+                AVG(a.ind_ratio) as avg_independent_ratio,
+                AVG(a.ctrl_ratio) as avg_control_ratio,
+                
+                -- Survivor metrics
+                (SELECT CAST(p.final_pop AS FLOAT) / total_created FROM AgentCounts) as survivor_ratio,
+                
+                -- Critical thresholds
+                MIN(CASE 
+                    WHEN pt.total_agents <= (p.peak_pop * 0.1) THEN pt.step_number 
+                    ELSE NULL 
+                END) as extinction_threshold_time
+                
+            FROM PopStats p
+            CROSS JOIN PopulationTimeline pt
+            LEFT JOIN AgentTypeData a ON pt.step_number = a.step_number
+            GROUP BY p.initial_pop, p.final_pop, p.peak_pop, p.average_health, 
+                     p.scarcity_index, p.total_steps
+            """
+            
+            self.cursor.execute(query)
+            result = self.cursor.fetchone()
+            
+            if result:
+                initial_pop = result[0] or 0
+                final_pop = result[1] or 0
+                peak_pop = result[2] or 0
+                total_steps = result[5] or 1  # Avoid division by zero
+                
+                # Calculate diversity using Python's math.log
+                import math
+                
+                # Get agent type ratios
+                ratios = [result[8], result[9], result[10]]  # sys, ind, ctrl ratios
+                
+                # Calculate Shannon entropy
+                diversity = 0
+                for ratio in ratios:
+                    if ratio and ratio > 0:
+                        diversity -= ratio * math.log(ratio)
+                
+                return {
+                    # Population dynamics
+                    "peak_to_end_ratio": peak_pop / final_pop if final_pop > 0 else float('inf'),
+                    "growth_rate": (final_pop - initial_pop) / total_steps if total_steps > 0 else 0,
+                    "extinction_threshold_time": result[12],
+                    
+                    # Health and survival
+                    "average_health": result[3],
+                    "survivor_ratio": result[11],
+                    
+                    # Diversity and interaction
+                    "agent_diversity": diversity,
+                    "interaction_rate": result[6] if result[6] is not None else 0,
+                    "conflict_cooperation_ratio": result[7] if result[7] is not None else 0,
+                    
+                    # Resource dynamics
+                    "scarcity_index": result[4] if result[4] is not None else 0
+                }
+                
+            return {}
+            
+        except Exception as e:
+            logging.error(f"Error calculating advanced statistics: {e}")
+            return {}
