@@ -4,51 +4,52 @@ from scipy import stats
 import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple
 
-from core.database import SimulationDatabase
+from core.database import SimulationDatabase, Agent, AgentState, SimulationStep
+from sqlalchemy.orm import aliased
+from sqlalchemy.sql import func
 
 
 class SimulationAnalyzer:
     def __init__(self, db_path: str = "simulation_results.db"):
         self.db = SimulationDatabase(db_path)
 
-    def calculate_survival_rates(self) -> Dict[str, float]:
+    def calculate_survival_rates(self) -> pd.DataFrame:
         """Calculate survival rates for different agent types over time."""
-        query = """
-            SELECT s.step_number,
-                   COUNT(CASE WHEN a.agent_type = 'SystemAgent' AND st.alive = 1 THEN 1 END) as system_alive,
-                   COUNT(CASE WHEN a.agent_type = 'IndependentAgent' AND st.alive = 1 THEN 1 END) as independent_alive
-            FROM SimulationSteps s
-            LEFT JOIN AgentStates st ON s.step_id = st.step_id
-            LEFT JOIN Agents a ON st.agent_id = a.agent_id
-            GROUP BY s.step_number
-            ORDER BY s.step_number
-        """
-        self.db.cursor.execute(query)
-        results = self.db.cursor.fetchall()
-
-        return pd.DataFrame(
-            results, columns=["step", "system_alive", "independent_alive"]
+        session = self.db.session
+        AgentAlias = aliased(Agent)
+        query = (
+            session.query(
+                SimulationStep.step_number,
+                func.count(func.case([(Agent.agent_type == 'SystemAgent', 1)])).label('system_alive'),
+                func.count(func.case([(Agent.agent_type == 'IndependentAgent', 1)])).label('independent_alive')
+            )
+            .join(AgentState, SimulationStep.step_number == AgentState.step_number)
+            .join(Agent, AgentState.agent_id == Agent.agent_id)
+            .group_by(SimulationStep.step_number)
+            .order_by(SimulationStep.step_number)
         )
+        results = query.all()
+        return pd.DataFrame(results, columns=["step", "system_alive", "independent_alive"])
 
     def analyze_resource_distribution(self) -> pd.DataFrame:
         """Analyze resource accumulation and distribution patterns."""
-        query = """
-            SELECT s.step_number,
-                   a.agent_type,
-                   AVG(st.resource_level) as avg_resources,
-                   MIN(st.resource_level) as min_resources,
-                   MAX(st.resource_level) as max_resources,
-                   COUNT(*) as agent_count
-            FROM SimulationSteps s
-            JOIN AgentStates st ON s.step_id = st.step_id
-            JOIN Agents a ON st.agent_id = a.agent_id
-            WHERE st.alive = 1
-            GROUP BY s.step_number, a.agent_type
-            ORDER BY s.step_number
-        """
-        self.db.cursor.execute(query)
-        results = self.db.cursor.fetchall()
-
+        session = self.db.session
+        query = (
+            session.query(
+                SimulationStep.step_number,
+                Agent.agent_type,
+                func.avg(AgentState.resource_level).label('avg_resources'),
+                func.min(AgentState.resource_level).label('min_resources'),
+                func.max(AgentState.resource_level).label('max_resources'),
+                func.count(AgentState.agent_id).label('agent_count')
+            )
+            .join(AgentState, SimulationStep.step_number == AgentState.step_number)
+            .join(Agent, AgentState.agent_id == Agent.agent_id)
+            .filter(AgentState.current_health > 0)
+            .group_by(SimulationStep.step_number, Agent.agent_type)
+            .order_by(SimulationStep.step_number)
+        )
+        results = query.all()
         return pd.DataFrame(
             results,
             columns=[
@@ -63,29 +64,33 @@ class SimulationAnalyzer:
 
     def analyze_competitive_interactions(self) -> pd.DataFrame:
         """Analyze patterns in competitive interactions."""
-        query = """
-            SELECT s.step_number,
-                   m.metric_value as competitive_interactions
-            FROM SimulationSteps s
-            JOIN Metrics m ON s.step_id = m.step_id
-            WHERE m.metric_name = 'competitive_interactions'
-            ORDER BY s.step_number
-        """
-        self.db.cursor.execute(query)
-        results = self.db.cursor.fetchall()
-
+        session = self.db.session
+        query = (
+            session.query(
+                SimulationStep.step_number,
+                SimulationStep.combat_encounters.label('competitive_interactions')
+            )
+            .order_by(SimulationStep.step_number)
+        )
+        results = query.all()
         return pd.DataFrame(results, columns=["step", "competitive_interactions"])
 
     def generate_report(self, output_file: str = "simulation_report.html"):
         """Generate an HTML report with analysis results."""
         survival_rates = self.calculate_survival_rates()
-        efficiency_data = self.analyze_resource_efficiency()
+        resource_distribution = self.analyze_resource_distribution()
+        competitive_interactions = self.analyze_competitive_interactions()
 
         # Create plots
         plt.figure(figsize=(10, 6))
-        plt.plot(efficiency_data["step"], efficiency_data["efficiency"])
-        plt.title("Resource Efficiency Over Time")
-        plt.savefig("efficiency_plot.png")
+        plt.plot(resource_distribution["step"], resource_distribution["avg_resources"])
+        plt.title("Average Resource Distribution Over Time")
+        plt.savefig("resource_distribution_plot.png")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(competitive_interactions["step"], competitive_interactions["competitive_interactions"])
+        plt.title("Competitive Interactions Over Time")
+        plt.savefig("competitive_interactions_plot.png")
 
         # Generate HTML report
         html = f"""
@@ -96,16 +101,19 @@ class SimulationAnalyzer:
             
             <h2>Survival Rates</h2>
             <table>
-                <tr><th>Agent Type</th><th>Survival Rate</th></tr>
-                {''.join(f"<tr><td>{k}</td><td>{v:.2%}</td></tr>" 
-                        for k, v in survival_rates.items())}
+                <tr><th>Step</th><th>System Agents Alive</th><th>Independent Agents Alive</th></tr>
+                {''.join(f"<tr><td>{row['step']}</td><td>{row['system_alive']}</td><td>{row['independent_alive']}</td></tr>" 
+                        for _, row in survival_rates.iterrows())}
             </table>
             
-            <h2>Resource Efficiency</h2>
-            <img src="efficiency_plot.png" />
+            <h2>Resource Distribution</h2>
+            <img src="resource_distribution_plot.png" />
+            
+            <h2>Competitive Interactions</h2>
+            <img src="competitive_interactions_plot.png" />
             
             <h2>Summary Statistics</h2>
-            <pre>{efficiency_data.describe().to_string()}</pre>
+            <pre>{resource_distribution.describe().to_string()}</pre>
         </body>
         </html>
         """

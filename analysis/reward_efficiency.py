@@ -1,9 +1,8 @@
-import sqlite3
-
 import matplotlib.pyplot as plt
 import pandas as pd
 
 from core.database import SimulationDatabase
+from sqlalchemy.orm import sessionmaker
 
 
 def fetch_reward_efficiency_data(db: SimulationDatabase) -> pd.DataFrame:
@@ -12,23 +11,17 @@ def fetch_reward_efficiency_data(db: SimulationDatabase) -> pd.DataFrame:
     :param db: SimulationDatabase instance
     :return: DataFrame with reward efficiency by action type and agent group
     """
-    query = """
-    SELECT
-        aa.action_type,
-        a.agent_type,
-        COUNT(aa.action_id) AS frequency,
-        SUM(aa.reward) AS total_reward,
-        (SUM(aa.reward) * 1.0 / COUNT(aa.action_id)) AS reward_efficiency
-    FROM
-        AgentActions AS aa
-    JOIN
-        Agents AS a
-    ON
-        aa.agent_id = a.agent_id
-    GROUP BY
-        aa.action_type, a.agent_type;
-    """
-    data = pd.read_sql_query(query, db.conn)
+    session = db.session
+    query = session.query(
+        AgentAction.action_type,
+        Agent.agent_type,
+        func.count(AgentAction.action_id).label("frequency"),
+        func.sum(AgentAction.reward).label("total_reward"),
+        (func.sum(AgentAction.reward) * 1.0 / func.count(AgentAction.action_id)).label("reward_efficiency")
+    ).join(Agent, AgentAction.agent_id == Agent.agent_id).group_by(
+        AgentAction.action_type, Agent.agent_type
+    )
+    data = pd.read_sql(query.statement, session.bind)
     return data
 
 

@@ -4,8 +4,6 @@ import pandas as pd
 
 from core.database import SimulationDatabase
 
-#! Table not populating currently
-
 
 def analyze_learning_experiences(db_path: str):
     """Analyze learning experiences from the simulation database.
@@ -18,43 +16,20 @@ def analyze_learning_experiences(db_path: str):
     # Initialize database connection
     db = SimulationDatabase(db_path)
 
-    # First, let's verify the table exists and check its structure
-    verify_query = """
-    SELECT name FROM sqlite_master 
-    WHERE type='table' AND name='LearningExperiences';
-    """
-    
-    print("Verifying database structure:")
-    verification_result = pd.read_sql_query(verify_query, db.conn)
-    print(verification_result)
-
-    # Let's also check if there are any rows at all
-    count_query = """
-    SELECT COUNT(*) as count 
-    FROM LearningExperiences;
-    """
-    
-    count_result = pd.read_sql_query(count_query, db.conn)
-    print("\nNumber of learning experiences:", count_result['count'].iloc[0])
-
     # Query RL data using the existing schema
-    query = """
-    SELECT 
-        le.step_number,
-        le.agent_id,
-        le.module_type,
-        le.state_before,
-        le.action_taken,
-        CAST(le.reward AS FLOAT) as reward,
-        le.state_after,
-        CAST(le.loss AS FLOAT) as loss
-    FROM 
-        LearningExperiences le
-    ORDER BY 
-        le.agent_id, le.step_number;
-    """
+    session = db.session
+    query = session.query(
+        LearningExperience.step_number,
+        LearningExperience.agent_id,
+        LearningExperience.module_type,
+        LearningExperience.state_before,
+        LearningExperience.action_taken,
+        LearningExperience.reward,
+        LearningExperience.state_after,
+        LearningExperience.loss,
+    ).order_by(LearningExperience.agent_id, LearningExperience.step_number)
 
-    rl_data = pd.read_sql_query(query, db.conn)
+    rl_data = pd.read_sql(query.statement, session.bind)
 
     # Show data preview
     print("\nData Preview:")

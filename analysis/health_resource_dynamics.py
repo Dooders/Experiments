@@ -26,25 +26,27 @@ def fetch_health_resource_data(db: SimulationDatabase) -> pd.DataFrame:
     - age
     - agent_type
     """
-    query = """
-    SELECT 
-        as1.step_number,
-        as1.agent_id,
-        as1.current_health,
-        as1.resource_level,
-        as1.age,
-        a.agent_type,
+    session = db.session
+    query = session.query(
+        AgentState.step_number,
+        AgentState.agent_id,
+        AgentState.current_health,
+        AgentState.resource_level,
+        AgentState.age,
+        Agent.agent_type,
         (
-            SELECT COUNT(*)
-            FROM AgentActions aa 
-            WHERE aa.agent_id = as1.agent_id 
-            AND aa.step_number BETWEEN as1.step_number - 10 AND as1.step_number
-        ) as recent_actions
-    FROM AgentStates as1
-    JOIN Agents a ON as1.agent_id = a.agent_id
-    ORDER BY as1.step_number, as1.agent_id
-    """
-    return pd.read_sql_query(query, db.conn)
+            session.query(func.count(AgentAction.action_id))
+            .filter(
+                AgentAction.agent_id == AgentState.agent_id,
+                AgentAction.step_number.between(
+                    AgentState.step_number - 10, AgentState.step_number
+                ),
+            )
+            .label("recent_actions")
+        ),
+    ).join(Agent, AgentState.agent_id == Agent.agent_id)
+    df = pd.read_sql(query.statement, session.bind)
+    return df
 
 
 def calculate_cross_correlation(
