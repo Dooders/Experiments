@@ -135,15 +135,8 @@ def attack_action(agent: "BaseAgent") -> None:
     target_pos = agent.calculate_attack_position(action)
     initial_resources = agent.resource_level
 
-    # Find potential targets
-    targets = [
-        other
-        for other in agent.environment.agents
-        if other != agent
-        and other.alive
-        and np.sqrt(((np.array(other.position) - np.array(target_pos)) ** 2).sum())
-        < agent.config.attack_range
-    ]
+    # Find potential targets using KD-tree
+    targets = agent.environment.get_nearby_agents(target_pos, agent.config.attack_range)
 
     if not targets:
         # Collect failed attack action
@@ -160,7 +153,7 @@ def attack_action(agent: "BaseAgent") -> None:
         )
         return
 
-    # Select and attack target
+    # Select closest target
     target = min(
         targets,
         key=lambda t: np.sqrt(

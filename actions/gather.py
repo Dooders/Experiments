@@ -181,22 +181,18 @@ class GatherModule(BaseDQNModule):
         if closest_resource is None:
             return torch.zeros(6, device=self.device)
 
-        # Calculate resource density in the area
-        resources_in_range = [
-            r
-            for r in agent.environment.resources
-            if np.linalg.norm(np.array(r.position) - np.array(agent.position))
-            <= agent.config.gathering_range
-        ]
+        # Calculate resource density using KD-tree
+        resources_in_range = agent.environment.get_nearby_resources(
+            agent.position,
+            agent.config.gathering_range
+        )
         resource_density = len(resources_in_range) / (
             np.pi * agent.config.gathering_range**2
         )
 
         state = torch.tensor(
             [
-                np.linalg.norm(
-                    np.array(closest_resource.position) - np.array(agent.position)
-                ),
+                np.sqrt(((np.array(closest_resource.position) - np.array(agent.position)) ** 2).sum()),
                 closest_resource.amount,
                 agent.resource_level,
                 resource_density,
@@ -211,18 +207,16 @@ class GatherModule(BaseDQNModule):
 
     def _find_best_resource(self, agent: "BaseAgent") -> Optional["Resource"]:
         """Find the most promising resource to gather from."""
-        if not agent.environment.resources:
-            return None
-
-        # Get resources within gathering range
+        # Get resources within gathering range using KD-tree
+        resources_in_range = agent.environment.get_nearby_resources(
+            agent.position, 
+            agent.config.gathering_range
+        )
+        
+        # Filter depleted resources
         resources_in_range = [
-            r
-            for r in agent.environment.resources
-            if (
-                np.linalg.norm(np.array(r.position) - np.array(agent.position))
-                <= agent.config.gathering_range
-                and r.amount >= self.config.min_resource_threshold
-            )
+            r for r in resources_in_range
+            if r.amount >= self.config.min_resource_threshold
         ]
 
         if not resources_in_range:
@@ -230,8 +224,8 @@ class GatherModule(BaseDQNModule):
 
         # Score each resource based on amount and distance
         def score_resource(resource):
-            distance = np.linalg.norm(
-                np.array(resource.position) - np.array(agent.position)
+            distance = np.sqrt(
+                ((np.array(resource.position) - np.array(agent.position)) ** 2).sum()
             )
             return (
                 resource.amount * self.config.gather_efficiency_multiplier

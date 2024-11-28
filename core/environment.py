@@ -6,6 +6,7 @@ import time
 from typing import Dict, List
 
 import numpy as np
+from scipy.spatial import cKDTree
 
 from agents import ControlAgent, IndependentAgent, SystemAgent
 from core.database import SimulationDatabase
@@ -61,9 +62,97 @@ class Environment:
         self.initial_agent_count = 0
         self.pending_actions = []  # Initialize pending_actions list
 
+        # Add KD-tree attributes
+        self.agent_kdtree = None
+        self.resource_kdtree = None
+        self.agent_positions = None
+        self.resource_positions = None
+
         # Initialize environment
         self.initialize_resources(resource_distribution)
         self._initialize_agents()
+        self._update_kdtrees()
+
+    def _update_kdtrees(self):
+        """Update KD-trees for efficient spatial queries."""
+        # Update agent KD-tree
+        alive_agents = [agent for agent in self.agents if agent.alive]
+        if alive_agents:
+            self.agent_positions = np.array([agent.position for agent in alive_agents])
+            self.agent_kdtree = cKDTree(self.agent_positions)
+        else:
+            self.agent_kdtree = None
+            self.agent_positions = None
+
+        # Update resource KD-tree
+        if self.resources:
+            self.resource_positions = np.array([resource.position for resource in self.resources])
+            self.resource_kdtree = cKDTree(self.resource_positions)
+        else:
+            self.resource_kdtree = None
+            self.resource_positions = None
+
+    def get_nearby_agents(self, position, radius):
+        """Find all agents within radius of position.
+        
+        Parameters
+        ----------
+        position : tuple
+            (x, y) coordinates to search around
+        radius : float
+            Search radius
+            
+        Returns
+        -------
+        list
+            List of agents within radius
+        """
+        if self.agent_kdtree is None:
+            return []
+            
+        indices = self.agent_kdtree.query_ball_point(position, radius)
+        return [agent for i, agent in enumerate(self.agents) 
+                if agent.alive and i in indices]
+
+    def get_nearby_resources(self, position, radius):
+        """Find all resources within radius of position.
+        
+        Parameters
+        ----------
+        position : tuple
+            (x, y) coordinates to search around
+        radius : float
+            Search radius
+            
+        Returns
+        -------
+        list
+            List of resources within radius
+        """
+        if self.resource_kdtree is None:
+            return []
+            
+        indices = self.resource_kdtree.query_ball_point(position, radius)
+        return [self.resources[i] for i in indices]
+
+    def get_nearest_resource(self, position):
+        """Find nearest resource to position.
+        
+        Parameters
+        ----------
+        position : tuple
+            (x, y) coordinates to search from
+            
+        Returns
+        -------
+        Resource or None
+            Nearest resource if any exist
+        """
+        if self.resource_kdtree is None:
+            return None
+            
+        distance, index = self.resource_kdtree.query(position)
+        return self.resources[index]
 
     def get_next_resource_id(self):
         resource_id = self.next_resource_id
@@ -114,6 +203,9 @@ class Environment:
                         resource.amount + self.config.resource_regen_amount,
                         self.max_resource or float("inf"),
                     )
+
+            # Update KD-trees after any position changes
+            self._update_kdtrees()
 
             # Calculate metrics
             metrics = self._calculate_metrics()
