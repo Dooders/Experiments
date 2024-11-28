@@ -155,14 +155,10 @@ class ShareModule(BaseDQNModule):
 
     def _get_nearby_agents(self, agent: "BaseAgent") -> List["BaseAgent"]:
         """Find agents within sharing range."""
-        return [
-            a
-            for a in agent.environment.agents
-            if a != agent
-            and a.alive
-            and np.sqrt(((np.array(a.position) - np.array(agent.position)) ** 2).sum())
-            < self.config.share_range
-        ]
+        return agent.environment.get_nearby_agents(
+            agent.position, 
+            self.config.share_range
+        )
 
     def _select_target(
         self, agent: "BaseAgent", nearby_agents: List["BaseAgent"]
@@ -276,14 +272,10 @@ def share_action(agent: "BaseAgent") -> None:
 
 def _get_share_state(agent: "BaseAgent") -> List[float]:
     """Create state representation for sharing decisions."""
-    nearby_agents = [
-        a
-        for a in agent.environment.agents
-        if a != agent
-        and a.alive
-        and np.sqrt(((np.array(a.position) - np.array(agent.position)) ** 2).sum())
-        < DEFAULT_SHARE_CONFIG.share_range
-    ]
+    nearby_agents = agent.environment.get_nearby_agents(
+        agent.position,
+        DEFAULT_SHARE_CONFIG.share_range
+    )
 
     neighbor_resources = (
         [a.resource_level for a in nearby_agents] if nearby_agents else [0]
