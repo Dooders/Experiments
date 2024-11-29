@@ -166,49 +166,34 @@ class BaseDQNModule:
         agent_id: Optional[int] = None,
         module_type: Optional[str] = None,
     ) -> None:
-        """Store experience in replay memory and optionally log to database.
-        Parameters
-        ----------
-        state : torch.Tensor
-            State before action
-        action : int
-            Action taken
-        reward : float
-            Reward received
-        next_state : torch.Tensor
-            State after action
-        done : bool
-            Whether episode ended
-        step_number : Optional[int]
-            Current simulation step for logging
-        agent_id : Optional[int]
-            ID of the agent for logging
-        module_type : Optional[str]
-            Type of DQN module for logging
-        """
+        """Store experience in replay memory and optionally log to database."""
         self.memory.append((state, action, reward, next_state, done))
         self.episode_rewards.append(reward)
 
         # Collect experiences for batch logging
         if all(x is not None for x in [step_number, agent_id, module_type]):
-            self.pending_experiences.append(
-                {
-                    "step_number": step_number,
-                    "agent_id": agent_id,
-                    "module_type": module_type,
-                    "state_before": str(state.tolist()),
-                    "action_taken": action,
-                    "reward": reward,
-                    "state_after": str(next_state.tolist()),
-                    "loss": None,
-                }
-            )
-
-            # Batch log if we have enough experiences
-            if len(self.pending_experiences) >= 32:  # Use same batch size as training
-                if self.db is not None:
-                    self.db.batch_log_learning_experiences(self.pending_experiences)
-                self.pending_experiences = []
+            experience_data = {
+                "step_number": step_number,
+                "agent_id": agent_id,
+                "module_type": module_type,
+                "state_before": str(state.tolist()),
+                "action_taken": action,
+                "reward": reward,
+                "state_after": str(next_state.tolist()),
+                "loss": None
+            }
+            
+            if self.db is not None:
+                self.db.log_learning_experience(
+                    step_number=experience_data["step_number"],
+                    agent_id=experience_data["agent_id"],
+                    module_type=experience_data["module_type"],
+                    state_before=experience_data["state_before"],
+                    action_taken=experience_data["action_taken"],
+                    reward=experience_data["reward"],
+                    state_after=experience_data["state_after"],
+                    loss=0.0
+                )
 
     def train(
         self,

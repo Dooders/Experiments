@@ -125,16 +125,16 @@ class StatsPanel(ttk.Frame):
         if "tooltip" in config:
             ToolTip(label, config["tooltip"])
 
-    def update(self, data: Dict):
-        """Update statistics with new data."""
-        if not data or "metrics" not in data:
-            return
-
-        metrics = data["metrics"]
-        for stat_id, stat_info in self.stats_vars.items():
-            value = metrics.get(stat_id, 0)
-            formatted_value = f"{value:.1f}" if isinstance(value, float) else str(value)
-            stat_info["var"].set(formatted_value)
+    def update(self, data=None):
+        """Update the stats component with new data."""
+        if data:
+            # Update stats variables with new data
+            for stat_id, value in data.items():
+                if stat_id in self.stats_vars:
+                    self.stats_vars[stat_id]["var"].set(str(value))
+        
+        # Call the widget's update method without arguments
+        ttk.Frame.update(self)
 
     def log_message(self, message: str):
         """Add a message to the log display."""

@@ -183,49 +183,57 @@ class Environment:
 
     def collect_action(self, **action_data):
         """Collect an action for batch processing."""
-        self.pending_actions.append(action_data)
+        if self.db is not None:
+            self.db.log_agent_action(
+                step_number=action_data["step_number"],
+                agent_id=action_data["agent_id"],
+                action_type=action_data["action_type"],
+                action_target_id=action_data.get("action_target_id"),
+                position_before=action_data.get("position_before"),
+                position_after=action_data.get("position_after"),
+                resources_before=action_data.get("resources_before"),
+                resources_after=action_data.get("resources_after"),
+                reward=action_data.get("reward"),
+                details=action_data.get("details")
+            )
 
     def update(self):
         """Update environment state with batch processing."""
         self.time += 1
 
-        # Process all database operations in a single transaction
-        def _process_updates():
-            # Process resource regeneration
-            regen_mask = (
-                np.random.random(len(self.resources)) < self.config.resource_regen_rate
-            )
-            for resource, should_regen in zip(self.resources, regen_mask):
-                if should_regen and (
-                    self.max_resource is None or resource.amount < self.max_resource
-                ):
-                    resource.amount = min(
-                        resource.amount + self.config.resource_regen_amount,
-                        self.max_resource or float("inf"),
-                    )
+        # Process resource regeneration
+        regen_mask = (
+            np.random.random(len(self.resources)) < self.config.resource_regen_rate
+        )
+        for resource, should_regen in zip(self.resources, regen_mask):
+            if should_regen and (
+                self.max_resource is None or resource.amount < self.max_resource
+            ):
+                resource.amount = min(
+                    resource.amount + self.config.resource_regen_amount,
+                    self.max_resource or float("inf"),
+                )
 
-            # Update KD-trees after any position changes
-            self._update_kdtrees()
+        # Update KD-trees after any position changes
+        self._update_kdtrees()
 
-            # Calculate metrics
-            metrics = self._calculate_metrics()
+        # Calculate metrics
+        metrics = self._calculate_metrics()
 
-            # Batch process all pending actions
-            if self.pending_actions:
-                self.db.batch_log_agent_actions(self.pending_actions)
-                self.pending_actions = []  # Clear pending actions
-
-            # Log simulation state
-            self.db.log_simulation_step(
+        # Log simulation state using SQLAlchemy
+        if self.db is not None:
+            self.db.log_step(
                 step_number=self.time,
-                agents=self.agents,
-                resources=self.resources,
-                metrics=metrics,
-                environment=self,
+                agent_states=[
+                    self._prepare_agent_state(agent) 
+                    for agent in self.agents if agent.alive
+                ],
+                resource_states=[
+                    self._prepare_resource_state(resource) 
+                    for resource in self.resources
+                ],
+                metrics=metrics
             )
-
-        # Execute all updates in a single transaction
-        self.db._execute_in_transaction(_process_updates)
 
     def _calculate_metrics(self):
         """Calculate various metrics for the current simulation state."""
@@ -528,53 +536,24 @@ class Environment:
             for agent in agents
         ]
 
-        def _add_agents():
-            # Add to environment
-            for agent in agents:
-                self.agents.append(agent)
-                if self.time == 0:
-                    self.initial_agent_count += 1
+        # Add to environment
+        for agent in agents:
+            self.agents.append(agent)
+            if self.time == 0:
+                self.initial_agent_count += 1
 
-            # Batch log to database
+        # Batch log to database using SQLAlchemy
+        if self.db is not None:
             self.db.batch_log_agents(agent_data)
-
-        self.db._execute_in_transaction(_add_agents)
 
     def cleanup(self):
         """Clean up resources before shutdown."""
         if hasattr(self, "db") and self.db is not None:
             try:
-                # Get the current thread's connection
-                current_thread = threading.current_thread()
-
-                # Only cleanup if we're in the same thread that created the connection
-                if hasattr(self.db._thread_local, "conn"):
-                    # Flush any pending actions
-                    if self.pending_actions:
-                        self.db.batch_log_agent_actions(self.pending_actions)
-                        self.pending_actions = []
-
-                    # Flush any pending experiences from DQN modules
-                    for agent in self.agents:
-                        for module in [
-                            agent.move_module,
-                            agent.attack_module,
-                            agent.share_module,
-                            agent.gather_module,
-                            agent.reproduce_module,
-                        ]:
-                            if (
-                                hasattr(module, "pending_experiences")
-                                and module.pending_experiences
-                            ):
-                                self.db.batch_log_learning_experiences(
-                                    module.pending_experiences
-                                )
-                                module.pending_experiences = []
-
-                    # Close database connection
-                    self.db.close()
-
+                # Ensure all pending data is saved
+                self.db.flush_all_buffers()
+                # Close database connection
+                self.db.close()
                 self.db = None
             except Exception as e:
                 logger.error(f"Error during environment cleanup: {e}")

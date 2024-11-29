@@ -8,8 +8,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from sqlalchemy import func
 
-from core.database import SimulationDatabase
+from core.database import Agent, AgentAction, AgentState, SimulationDatabase
 from gui.components.tooltips import ToolTip
 
 
@@ -326,20 +327,22 @@ class AgentAnalysisWindow(ttk.Frame):
     def _load_agents(self):
         """Load available agents from database."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            query = """
-                SELECT a.agent_id, a.agent_type, a.birth_time 
-                FROM Agents a 
-                ORDER BY a.birth_time DESC
-            """
-            df = pd.read_sql_query(query, conn)
-            conn.close()
-
-            # Format combobox values
-            values = [
-                f"Agent {row['agent_id']} ({row['agent_type']}) - Born: {row['birth_time']}"
-                for _, row in df.iterrows()
-            ]
+            db = SimulationDatabase(self.db_path)
+            
+            def _query(session):
+                # Use SQLAlchemy ORM query
+                agents = (session.query(Agent.agent_id, Agent.agent_type, Agent.birth_time)
+                         .order_by(Agent.birth_time.desc())
+                         .all())
+                
+                # Format combobox values
+                values = [
+                    f"Agent {agent.agent_id} ({agent.agent_type}) - Born: {agent.birth_time}"
+                    for agent in agents
+                ]
+                return values
+                
+            values = db._execute_in_transaction(_query)
 
             self.agent_combobox["values"] = values
 
@@ -380,100 +383,139 @@ class AgentAnalysisWindow(ttk.Frame):
 
     def _load_basic_info(self, conn, agent_id) -> Dict:
         """Load basic agent information from database."""
-        query = """
-            SELECT 
-                agent_type,
-                birth_time,
-                death_time,
-                generation,
-                parent_id,
-                initial_resources,
-                max_health,
-                starvation_threshold,
-                genome_id
-            FROM Agents 
-            WHERE agent_id = ?
-        """
-        return pd.read_sql_query(query, conn, params=(agent_id,)).iloc[0].to_dict()
+        db = SimulationDatabase(self.db_path)
+        
+        def _query(session):
+            agent = (session.query(Agent)
+                    .filter(Agent.agent_id == agent_id)
+                    .first())
+            
+            if agent:
+                return {
+                    "agent_type": agent.agent_type,
+                    "birth_time": agent.birth_time,
+                    "death_time": agent.death_time,
+                    "generation": agent.generation,
+                    "parent_id": agent.parent_id,
+                    "initial_resources": agent.initial_resources,
+                    "max_health": agent.max_health,
+                    "starvation_threshold": agent.starvation_threshold,
+                    "genome_id": agent.genome_id
+                }
+            return {}
+            
+        return db._execute_in_transaction(_query)
 
     def _load_agent_stats(self, conn, agent_id) -> Dict:
         """Load current agent statistics from database."""
-        query = """
-            WITH LatestState AS (
-                SELECT 
-                    s.current_health,
-                    s.resource_level,
-                    s.total_reward,
-                    (s.step_number - a.birth_time) as age,
-                    s.is_defending,
-                    s.position_x,
-                    s.position_y,
-                    s.step_number,
-                    ROW_NUMBER() OVER (ORDER BY s.step_number DESC) as rn
-                FROM AgentStates s
-                JOIN Agents a ON s.agent_id = a.agent_id
-                WHERE s.agent_id = ?
+        db = SimulationDatabase(self.db_path)
+        
+        def _query(session):
+            # Get latest state using window function
+            subquery = (session.query(
+                AgentState.current_health,
+                AgentState.resource_level,
+                AgentState.total_reward,
+                AgentState.age,
+                AgentState.is_defending,
+                AgentState.position_x,
+                AgentState.position_y,
+                func.row_number().over(
+                    order_by=AgentState.step_number.desc()
+                ).label('rn')
             )
-            SELECT 
-                current_health,
-                resource_level,
-                total_reward,
-                age,
-                is_defending,
-                position_x || ', ' || position_y as current_position
-            FROM LatestState
-            WHERE rn = 1
-        """
-        try:
-            return pd.read_sql_query(query, conn, params=(agent_id,)).iloc[0].to_dict()
-        except (IndexError, pd.errors.EmptyDataError):
+            .filter(AgentState.agent_id == agent_id)
+            .subquery())
+
+            latest_state = (session.query(subquery)
+                           .filter(subquery.c.rn == 1)
+                           .first())
+            
+            if latest_state:
+                return {
+                    "current_health": latest_state.current_health,
+                    "resource_level": latest_state.resource_level,
+                    "total_reward": latest_state.total_reward,
+                    "age": latest_state.age,
+                    "is_defending": latest_state.is_defending,
+                    "current_position": f"{latest_state.position_x}, {latest_state.position_y}"
+                }
+            
             return {
                 "current_health": 0,
                 "resource_level": 0,
                 "total_reward": 0,
                 "age": 0,
                 "is_defending": 0,
-                "current_position": "0, 0",
+                "current_position": "0, 0"
             }
+            
+        return db._execute_in_transaction(_query)
 
     def _load_performance_metrics(self, conn, agent_id) -> Dict:
         """Load agent performance metrics from database."""
-        query = """
-            SELECT 
-                MAX(s.step_number) - MIN(s.step_number) as survival_time,
-                MAX(s.current_health) as peak_health,
-                MAX(s.resource_level) as peak_resources,
-                COUNT(DISTINCT a.action_id) as total_actions
-            FROM AgentStates s
-            LEFT JOIN AgentActions a ON s.agent_id = a.agent_id 
-                AND s.step_number = a.step_number
-            WHERE s.agent_id = ?
-            GROUP BY s.agent_id
-        """
-        try:
-            return pd.read_sql_query(query, conn, params=(agent_id,)).iloc[0].to_dict()
-        except IndexError:
+        db = SimulationDatabase(self.db_path)
+        
+        def _query(session):
+            from sqlalchemy import func
+            
+            metrics = (session.query(
+                (func.max(AgentState.step_number) - 
+                 func.min(AgentState.step_number)).label('survival_time'),
+                func.max(AgentState.current_health).label('peak_health'),
+                func.max(AgentState.resource_level).label('peak_resources'),
+                func.count(AgentAction.action_id).label('total_actions')
+            )
+            .select_from(AgentState)
+            .outerjoin(AgentAction, 
+                      (AgentAction.agent_id == AgentState.agent_id) & 
+                      (AgentAction.step_number == AgentState.step_number))
+            .filter(AgentState.agent_id == agent_id)
+            .group_by(AgentState.agent_id)
+            .first())
+            
+            if metrics:
+                return {
+                    "survival_time": metrics.survival_time or 0,  # Handle None case
+                    "peak_health": metrics.peak_health or 0,
+                    "peak_resources": metrics.peak_resources or 0,
+                    "total_actions": metrics.total_actions or 0
+                }
+                
             return {
                 "survival_time": 0,
                 "peak_health": 0,
                 "peak_resources": 0,
-                "total_actions": 0,
+                "total_actions": 0
             }
+            
+        return db._execute_in_transaction(_query)
 
     def _update_metrics_chart(self, conn, agent_id):
         """Update the metrics chart with agent's time series data."""
-        query = """
-            SELECT 
-                step_number,
-                current_health,
-                resource_level,
-                total_reward,
-                is_defending
-            FROM AgentStates
-            WHERE agent_id = ?
-            ORDER BY step_number
-        """
-        df = pd.read_sql_query(query, conn, params=(agent_id,))
+        db = SimulationDatabase(self.db_path)
+        
+        def _query(session):
+            states = (session.query(
+                AgentState.step_number,
+                AgentState.current_health,
+                AgentState.resource_level,
+                AgentState.total_reward,
+                AgentState.is_defending
+            )
+            .filter(AgentState.agent_id == agent_id)
+            .order_by(AgentState.step_number)
+            .all())
+            
+            return pd.DataFrame([{
+                'step_number': state.step_number,
+                'current_health': state.current_health,
+                'resource_level': state.resource_level,
+                'total_reward': state.total_reward,
+                'is_defending': state.is_defending
+            } for state in states])
+        
+        df = db._execute_in_transaction(_query)
 
         # Clear previous chart
         for widget in self.metrics_frame.winfo_children():
@@ -667,24 +709,35 @@ class AgentAnalysisWindow(ttk.Frame):
     def _get_population_data(self, start_step, end_step):
         """Get total population and resource data for the timeline."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            query = """
-                SELECT 
-                    step_number,
-                    total_agents,
-                    total_resources
-                FROM SimulationSteps
-                WHERE step_number >= ? AND step_number <= ?
-                ORDER BY step_number
-            """
-            df = pd.read_sql_query(query, conn, params=(start_step, end_step))
-            conn.close()
-            return df
+            db = SimulationDatabase(self.db_path)
+            
+            def _query(session):
+                from core.database import SimulationStep
+                
+                steps = (session.query(
+                    SimulationStep.step_number,
+                    SimulationStep.total_agents,
+                    SimulationStep.total_resources
+                )
+                .filter(
+                    SimulationStep.step_number >= start_step,
+                    SimulationStep.step_number <= end_step
+                )
+                .order_by(SimulationStep.step_number)
+                .all())
+                
+                return pd.DataFrame([{
+                    'step_number': step.step_number,
+                    'total_agents': step.total_agents,
+                    'total_resources': step.total_resources
+                } for step in steps])
+
+            return db._execute_in_transaction(_query)
+
         except Exception as e:
             print(f"Error getting population data: {e}")
-            return pd.DataFrame(columns=[
-                "step_number", "total_agents", "total_resources"
-            ])
+            traceback.print_exc()
+            return pd.DataFrame()
 
     def _plot_population_timeline(self, ax, df):
         """Plot total population and resource metrics."""
@@ -740,40 +793,47 @@ class AgentAnalysisWindow(ttk.Frame):
     def _get_action_data(self, start_step, end_step):
         """Get action data for the timeline."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            db = SimulationDatabase(self.db_path)
             agent_id = int(self.agent_var.get().split()[1])
 
-            # Query for all actions in the step range
-            query = """
-                SELECT 
-                    aa.step_number,
-                    LOWER(aa.action_type) as action_type,
-                    aa.reward,
-                    aa.action_id,
-                    aa.action_target_id,
-                    aa.resources_before,
-                    aa.resources_after,
-                    aa.details,
-                    aa.agent_id
-                FROM AgentActions aa
-                WHERE aa.agent_id = ? 
-                AND aa.step_number >= ?
-                AND aa.step_number <= ?
-                ORDER BY aa.step_number
-            """
+            def _query(session):
+                actions = (session.query(
+                    AgentAction.step_number,
+                    AgentAction.action_type,
+                    AgentAction.reward,
+                    AgentAction.action_id,
+                    AgentAction.action_target_id,
+                    AgentAction.resources_before,
+                    AgentAction.resources_after,
+                    AgentAction.details,
+                    AgentAction.agent_id
+                )
+                .filter(
+                    AgentAction.agent_id == agent_id,
+                    AgentAction.step_number >= start_step,
+                    AgentAction.step_number <= end_step
+                )
+                .order_by(AgentAction.step_number)
+                .all())
+                
+                return pd.DataFrame([{
+                    'step_number': action.step_number,
+                    'action_type': action.action_type.lower() if action.action_type else None,
+                    'reward': action.reward,
+                    'action_id': action.action_id,
+                    'action_target_id': action.action_target_id,
+                    'resources_before': action.resources_before,
+                    'resources_after': action.resources_after,
+                    'details': action.details,
+                    'agent_id': action.agent_id
+                } for action in actions])
 
-            df = pd.read_sql_query(query, conn, params=(agent_id, start_step, end_step))
-            conn.close()
-            return df
+            return db._execute_in_transaction(_query)
 
         except Exception as e:
             print(f"Error getting action data: {e}")
             traceback.print_exc()
-            return pd.DataFrame(
-                columns=["step_number", "action_type", "reward", "action_id",
-                        "action_target_id", "resources_before", "resources_after", 
-                        "details", "agent_id"]
-            )
+            return pd.DataFrame()
 
     def _plot_action_timeline(self, ax, df):
         """Plot actions as evenly distributed slices in a horizontal bar."""
@@ -1102,44 +1162,47 @@ Reward: {action_details['reward']:.2f}
     def _update_children_table(self, agent_id: int):
         """Update the children table for the given agent."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            db = SimulationDatabase(self.db_path)
             
-            # Query for children data
-            query = """
-                SELECT 
-                    a.agent_id as child_id,
-                    a.birth_time,
-                    CASE 
-                        WHEN a.death_time IS NULL THEN 
-                            (SELECT MAX(step_number) FROM AgentStates WHERE agent_id = a.agent_id) - a.birth_time
-                        ELSE a.death_time - a.birth_time 
-                    END as age
-                FROM Agents a
-                WHERE a.parent_id = ?
-                ORDER BY a.birth_time DESC
-            """
-            
-            df = pd.read_sql_query(query, conn, params=(agent_id,))
-            conn.close()
+            def _query(session):
+                from sqlalchemy import case
+                
+                children = (session.query(
+                    Agent.agent_id.label('child_id'),
+                    Agent.birth_time,
+                    case(
+                        (Agent.death_time.is_(None),
+                         func.max(AgentState.age)),
+                        else_=Agent.death_time - Agent.birth_time
+                    ).label('age')
+                )
+                .outerjoin(AgentState)
+                .filter(Agent.parent_id == agent_id)
+                .group_by(Agent.agent_id)
+                .order_by(Agent.birth_time.desc())
+                .all())
+                
+                return children
+                
+            children = db._execute_in_transaction(_query)
 
             # Clear existing items
             for item in self.children_tree.get_children():
                 self.children_tree.delete(item)
 
             # Add new data
-            for _, row in df.iterrows():
-                self.children_tree.insert(
-                    "",
-                    "end",
-                    values=(
-                        row["child_id"],
-                        row["birth_time"],
-                        row["age"]
+            if children:
+                for child in children:
+                    self.children_tree.insert(
+                        "",
+                        "end",
+                        values=(
+                            child.child_id,
+                            child.birth_time,
+                            child.age or 0  # Handle None case
+                        )
                     )
-                )
-
-            # Update table visibility based on whether there are children
-            if df.empty:
+            else:
                 self.children_tree.insert(
                     "",
                     "end",

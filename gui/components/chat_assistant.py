@@ -886,3 +886,13 @@ class ChatAssistant(ttk.Frame):
         if result:
             self._add_message("Assistant", result)
         
+    def update(self, data=None):
+        """Update the chat component with new data."""
+        if data:
+            # Update simulation data
+            self.simulation_data = data
+            self._update_data_tree()
+        
+        # Call the widget's update method without arguments
+        ttk.Frame.update(self)
+        

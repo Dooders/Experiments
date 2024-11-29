@@ -130,22 +130,23 @@ def reproduce_action(agent: "BaseAgent") -> None:
     )
 
     if not should_reproduce or not _check_reproduction_conditions(agent):
-        # Collect skipped reproduction action
-        agent.environment.collect_action(
-            step_number=agent.environment.time,
-            agent_id=agent.agent_id,
-            action_type="reproduce",
-            position_before=agent.position,
-            position_after=agent.position,
-            resources_before=initial_resources,
-            resources_after=initial_resources,
-            reward=0,
-            details={
-                "success": False,
-                "reason": "conditions_not_met",
-                "confidence": confidence,
-            },
-        )
+        # Log skipped reproduction action
+        if agent.environment.db is not None:
+            agent.environment.db.log_agent_action(
+                step_number=agent.environment.time,
+                agent_id=agent.agent_id,
+                action_type="reproduce",
+                position_before=agent.position,
+                position_after=agent.position,
+                resources_before=initial_resources,
+                resources_after=initial_resources,
+                reward=0,
+                details={
+                    "success": False,
+                    "reason": "conditions_not_met",
+                    "confidence": confidence,
+                }
+            )
         return
 
     # Attempt reproduction
@@ -157,38 +158,44 @@ def reproduce_action(agent: "BaseAgent") -> None:
         reward = _calculate_reproduction_reward(agent, offspring)
         agent.total_reward += reward
 
-        # Collect successful reproduction action
-        agent.environment.collect_action(
-            step_number=agent.environment.time,
-            agent_id=agent.agent_id,
-            action_type="reproduce",
-            position_before=agent.position,
-            position_after=agent.position,
-            resources_before=initial_resources,
-            resources_after=agent.resource_level,
-            reward=reward,
-            details={
-                "success": True,
-                "offspring_id": offspring.agent_id,
-                "confidence": confidence,
-                "parent_resources_remaining": agent.resource_level,
-            },
-        )
+        # Log successful reproduction action
+        if agent.environment.db is not None:
+            agent.environment.db.log_agent_action(
+                step_number=agent.environment.time,
+                agent_id=agent.agent_id,
+                action_type="reproduce",
+                position_before=agent.position,
+                position_after=agent.position,
+                resources_before=initial_resources,
+                resources_after=agent.resource_level,
+                reward=reward,
+                details={
+                    "success": True,
+                    "offspring_id": offspring.agent_id,
+                    "confidence": confidence,
+                    "parent_resources_remaining": agent.resource_level,
+                }
+            )
 
     except Exception as e:
         logger.error(f"Reproduction failed for agent {agent.agent_id}: {str(e)}")
-        # Collect failed reproduction action
-        agent.environment.collect_action(
-            step_number=agent.environment.time,
-            agent_id=agent.agent_id,
-            action_type="reproduce",
-            position_before=agent.position,
-            position_after=agent.position,
-            resources_before=initial_resources,
-            resources_after=agent.resource_level,
-            reward=ReproduceConfig.reproduce_fail_penalty,
-            details={"success": False, "reason": "reproduction_error", "error": str(e)},
-        )
+        # Log failed reproduction action
+        if agent.environment.db is not None:
+            agent.environment.db.log_agent_action(
+                step_number=agent.environment.time,
+                agent_id=agent.agent_id,
+                action_type="reproduce",
+                position_before=agent.position,
+                position_after=agent.position,
+                resources_before=initial_resources,
+                resources_after=agent.resource_level,
+                reward=ReproduceConfig.reproduce_fail_penalty,
+                details={
+                    "success": False,
+                    "reason": "reproduction_error",
+                    "error": str(e)
+                }
+            )
 
 
 def _get_reproduce_state(agent: "BaseAgent") -> torch.Tensor:
