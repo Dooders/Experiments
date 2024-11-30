@@ -91,13 +91,13 @@ class Agent(Base):
     agent_id = Column(Integer, primary_key=True)
     birth_time = Column(Integer)
     death_time = Column(Integer)
-    agent_type = Column(String)
-    position_x = Column(Float)
-    position_y = Column(Float)
-    initial_resources = Column(Float)
-    max_health = Column(Float)
+    agent_type = Column(String(50))
+    position_x = Column(Float(precision=6))
+    position_y = Column(Float(precision=6))
+    initial_resources = Column(Float(precision=6))
+    max_health = Column(Float(precision=4))
     starvation_threshold = Column(Integer)
-    genome_id = Column(String)
+    genome_id = Column(String(64))
     parent_id = Column(Integer, ForeignKey("agents.agent_id"))
     generation = Column(Integer)
 
@@ -232,14 +232,14 @@ class AgentAction(Base):
     action_id = Column(Integer, primary_key=True)
     step_number = Column(Integer, nullable=False)
     agent_id = Column(Integer, ForeignKey("agents.agent_id"), nullable=False)
-    action_type = Column(String, nullable=False)
+    action_type = Column(String(20), nullable=False)
     action_target_id = Column(Integer)
-    position_before = Column(String)
-    position_after = Column(String)
-    resources_before = Column(Float)
-    resources_after = Column(Float)
-    reward = Column(Float)
-    details = Column(String)  # JSON-encoded dictionary
+    position_before = Column(String(32))
+    position_after = Column(String(32))
+    resources_before = Column(Float(precision=6))
+    resources_after = Column(Float(precision=6))
+    reward = Column(Float(precision=6))
+    details = Column(String(1024))
 
     agent = relationship("Agent", back_populates="actions")
 
@@ -255,12 +255,12 @@ class LearningExperience(Base):
     experience_id = Column(Integer, primary_key=True)
     step_number = Column(Integer)
     agent_id = Column(Integer, ForeignKey("agents.agent_id"))
-    module_type = Column(String)
-    state_before = Column(String)
+    module_type = Column(String(50))
+    state_before = Column(String(512))
     action_taken = Column(Integer)
-    reward = Column(Float)
-    state_after = Column(String)
-    loss = Column(Float)
+    reward = Column(Float(precision=6))
+    state_after = Column(String(512))
+    loss = Column(Float(precision=6))
 
     agent = relationship("Agent", back_populates="learning_experiences")
 
@@ -275,10 +275,10 @@ class HealthIncident(Base):
     incident_id = Column(Integer, primary_key=True)
     step_number = Column(Integer, nullable=False)
     agent_id = Column(Integer, ForeignKey("agents.agent_id"), nullable=False)
-    health_before = Column(Float, nullable=False)
-    health_after = Column(Float, nullable=False)
-    cause = Column(String, nullable=False)
-    details = Column(String)  # JSON-encoded details
+    health_before = Column(Float(precision=4))
+    health_after = Column(Float(precision=4))
+    cause = Column(String(50), nullable=False)
+    details = Column(String(512))
 
     agent = relationship("Agent", back_populates="health_incidents")
 
@@ -288,7 +288,7 @@ class SimulationConfig(Base):
 
     config_id = Column(Integer, primary_key=True)
     timestamp = Column(Integer, nullable=False)
-    config_data = Column(String, nullable=False)  # JSON-encoded configuration
+    config_data = Column(String(4096), nullable=False)
 
 
 class SimulationDatabase:
