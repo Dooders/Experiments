@@ -1656,3 +1656,43 @@ class SimulationDatabase:
             session.add(config_obj)
 
         self._execute_in_transaction(_insert)
+
+    def log_agents_batch(self, agent_data_list: List[Dict]) -> None:
+        """Batch insert multiple agents for better performance.
+        
+        Parameters
+        ----------
+        agent_data_list : List[Dict]
+            List of dictionaries containing agent data with fields:
+            - agent_id: int
+            - birth_time: int
+            - agent_type: str
+            - position: Tuple[float, float]
+            - initial_resources: float
+            - max_health: float
+            - starvation_threshold: int
+            - genome_id: Optional[str]
+            - parent_id: Optional[int]
+            - generation: int
+        """
+        def _batch_insert(session):
+            # Format data for bulk insert
+            mappings = [
+                {
+                    "agent_id": data["agent_id"],
+                    "birth_time": data["birth_time"],
+                    "agent_type": data["agent_type"],
+                    "position_x": data["position"][0],
+                    "position_y": data["position"][1],
+                    "initial_resources": data["initial_resources"],
+                    "max_health": data["max_health"],
+                    "starvation_threshold": data["starvation_threshold"],
+                    "genome_id": data.get("genome_id"),
+                    "parent_id": data.get("parent_id"),
+                    "generation": data.get("generation", 0),
+                }
+                for data in agent_data_list
+            ]
+            session.bulk_insert_mappings(Agent, mappings)
+            
+        self._execute_in_transaction(_batch_insert)
