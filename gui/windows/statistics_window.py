@@ -74,9 +74,14 @@ class StatisticsWindow(BaseWindow):
         # Population Dynamics section
         self._add_stat_section(scrollable_frame, "Population Dynamics")
         
-        # Get statistics
-        stats = self.db.get_population_statistics()
-        momentum = self.db.get_population_momentum()
+        # Get statistics using SQLAlchemy
+        def _get_stats(session):
+            stats = self.db.get_population_statistics()
+            momentum = self.db.get_population_momentum()
+            advanced_stats = self.db.get_advanced_statistics()
+            return stats, momentum, advanced_stats
+            
+        stats, momentum, advanced_stats = self.db._execute_in_transaction(_get_stats)
         
         # Add population metrics
         self._add_stat_row("Population Momentum", f"{momentum:,.0f}")
@@ -250,10 +255,51 @@ class StatisticsWindow(BaseWindow):
 
     def _setup_population_tab(self, parent):
         """Setup the population statistics tab."""
-        # Add population charts and metrics
-        pass
+        # Create figure and canvas
+        fig = plt.figure(figsize=(10, 6))
+        canvas = FigureCanvasTkAgg(fig, master=parent)
+        
+        def _get_data(session):
+            # Use SQLAlchemy to get population data
+            return self.db.get_historical_data()
+            
+        data = self.db._execute_in_transaction(_get_data)
+        
+        # Plot population trends
+        ax = fig.add_subplot(111)
+        ax.plot(data["steps"], data["metrics"]["total_agents"], label="Total")
+        ax.plot(data["steps"], data["metrics"]["system_agents"], label="System")
+        ax.plot(data["steps"], data["metrics"]["independent_agents"], label="Independent")
+        
+        ax.set_xlabel("Step")
+        ax.set_ylabel("Population")
+        ax.legend()
+        
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
     def _setup_resources_tab(self, parent):
         """Setup the resource statistics tab."""
-        # Add resource usage charts and metrics
-        pass 
+        # Create figure and canvas
+        fig = plt.figure(figsize=(10, 6))
+        canvas = FigureCanvasTkAgg(fig, master=parent)
+        
+        def _get_data(session):
+            # Use SQLAlchemy to get resource data
+            return self.db.get_historical_data()
+            
+        data = self.db._execute_in_transaction(_get_data)
+        
+        # Plot resource trends
+        ax = fig.add_subplot(111)
+        ax.plot(data["steps"], data["metrics"]["total_resources"], label="Total Resources")
+        ax.plot(data["steps"], data["metrics"]["average_agent_resources"], 
+               label="Avg Resources/Agent")
+        
+        ax.set_xlabel("Step")
+        ax.set_ylabel("Resources")
+        ax.legend()
+        
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        

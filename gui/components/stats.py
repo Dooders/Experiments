@@ -9,13 +9,13 @@ from gui.utils.styles import CARD_COLORS
 class StatsPanel(ttk.Frame):
     """
     Panel for displaying simulation statistics and log.
-    
+
     Displays:
     - Agent counts by type
     - Resource metrics
     - Simulation log
     - Progress indicators
-    
+
     Attributes:
         stats_vars (Dict[str, Dict]): Collection of statistics variables and metadata
         log_text (tk.Text): Log display widget
@@ -25,10 +25,10 @@ class StatsPanel(ttk.Frame):
 
     def __init__(self, parent):
         super().__init__(parent)
-        
+
         # Initialize variables
         self.stats_vars = {}
-        
+
         self._setup_ui()
 
     def _setup_ui(self):
@@ -54,46 +54,43 @@ class StatsPanel(ttk.Frame):
                 "label": "Total Agents",
                 "color": CARD_COLORS["total_agents"],
                 "column": left_column,
-                "tooltip": "Total number of agents in the simulation"
+                "tooltip": "Total number of agents in the simulation",
             },
             "system_agents": {
                 "label": "System Agents",
                 "color": CARD_COLORS["system_agents"],
                 "column": right_column,
-                "tooltip": "Number of system-controlled agents"
+                "tooltip": "Number of system-controlled agents",
             },
             "independent_agents": {
                 "label": "Independent Agents",
                 "color": CARD_COLORS["independent_agents"],
                 "column": left_column,
-                "tooltip": "Number of independently-controlled agents"
+                "tooltip": "Number of independently-controlled agents",
             },
             "control_agents": {
                 "label": "Control Agents",
                 "color": CARD_COLORS["control_agents"],
                 "column": right_column,
-                "tooltip": "Number of control group agents"
+                "tooltip": "Number of control group agents",
             },
             "total_resources": {
                 "label": "Total Resources",
                 "color": CARD_COLORS["total_resources"],
                 "column": left_column,
-                "tooltip": "Total resources available in the environment"
+                "tooltip": "Total resources available in the environment",
             },
             "average_agent_resources": {
                 "label": "Avg Resources/Agent",
                 "color": CARD_COLORS["average_agent_resources"],
                 "column": right_column,
-                "tooltip": "Average resources per agent"
-            }
+                "tooltip": "Average resources per agent",
+            },
         }
 
         # Create stat cards
         for stat_id, config in stats_config.items():
-            self.stats_vars[stat_id] = {
-                "var": tk.StringVar(value="0"),
-                **config
-            }
+            self.stats_vars[stat_id] = {"var": tk.StringVar(value="0"), **config}
             self._create_stat_card(stat_id, config)
 
     def _create_stat_card(self, stat_id: str, config: Dict):
@@ -108,9 +105,7 @@ class StatsPanel(ttk.Frame):
 
         # Label with custom style
         label = ttk.Label(
-            padding_frame,
-            text=config["label"],
-            style=f"{stat_id}.CardLabel.TLabel"
+            padding_frame, text=config["label"], style=f"{stat_id}.CardLabel.TLabel"
         )
         label.pack(anchor="w", padx=8, pady=(5, 0))
 
@@ -118,23 +113,42 @@ class StatsPanel(ttk.Frame):
         ttk.Label(
             padding_frame,
             textvariable=self.stats_vars[stat_id]["var"],
-            style=f"{stat_id}.CardValue.TLabel"
+            style=f"{stat_id}.CardValue.TLabel",
         ).pack(anchor="e", padx=8, pady=(0, 5))
 
         # Add tooltip
         if "tooltip" in config:
             ToolTip(label, config["tooltip"])
 
-    def update(self, data: Dict):
-        """Update statistics with new data."""
-        if not data or "metrics" not in data:
-            return
+    def update(self, data=None):
+        """Update the stats component with new data."""
+        if data:
+            # Handle metrics data structure
+            metrics = data.get("metrics", {})
 
-        metrics = data["metrics"]
-        for stat_id, stat_info in self.stats_vars.items():
-            value = metrics.get(stat_id, 0)
-            formatted_value = f"{value:.1f}" if isinstance(value, float) else str(value)
-            stat_info["var"].set(formatted_value)
+            # Map incoming metrics to stat variables
+            stat_mapping = {
+                "total_agents": "total_agents",
+                "system_agents": "system_agents",
+                "independent_agents": "independent_agents",
+                "control_agents": "control_agents",
+                "total_resources": "total_resources",
+                "average_agent_resources": "average_agent_resources",
+            }
+
+            # Update each stat with formatted value
+            for stat_id, metric_key in stat_mapping.items():
+                if stat_id in self.stats_vars and metric_key in metrics:
+                    value = metrics[metric_key]
+                    # Format numbers appropriately
+                    if isinstance(value, float):
+                        formatted_value = f"{value:.2f}"
+                    else:
+                        formatted_value = str(value)
+                    self.stats_vars[stat_id]["var"].set(formatted_value)
+
+        # Call the widget's update method without arguments
+        ttk.Frame.update(self)
 
     def log_message(self, message: str):
         """Add a message to the log display."""
@@ -159,4 +173,4 @@ class StatsPanel(ttk.Frame):
     def reset(self):
         """Reset all statistics to zero."""
         for stat_info in self.stats_vars.values():
-            stat_info["var"].set("0") 
+            stat_info["var"].set("0")

@@ -11,7 +11,6 @@ This module provides functionality to:
 import logging
 import os
 from datetime import datetime
-from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
@@ -39,21 +38,21 @@ class ExperimentRunner:
         self.results: List[Dict] = []
         
         # Setup experiment directories
-        self.experiment_dir = Path(f"experiments/{experiment_name}")
-        self.db_dir = self.experiment_dir / "databases"
-        self.results_dir = self.experiment_dir / "results"
+        self.experiment_dir = os.path.join("experiments", experiment_name)
+        self.db_dir = os.path.join(self.experiment_dir, "databases")
+        self.results_dir = os.path.join(self.experiment_dir, "results")
         
         # Create directories
-        self.experiment_dir.mkdir(parents=True, exist_ok=True)
-        self.db_dir.mkdir(exist_ok=True)
-        self.results_dir.mkdir(exist_ok=True)
+        os.makedirs(self.experiment_dir, exist_ok=True)
+        os.makedirs(self.db_dir, exist_ok=True)
+        os.makedirs(self.results_dir, exist_ok=True)
         
         # Setup logging
         self._setup_logging()
 
     def _setup_logging(self):
         """Configure experiment-specific logging."""
-        log_file = self.experiment_dir / f"{self.experiment_name}.log"
+        log_file = os.path.join(self.experiment_dir, f"{self.experiment_name}.log")
         
         formatter = logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -86,14 +85,14 @@ class ExperimentRunner:
             iteration_config = self._create_iteration_config(i, config_variations)
             
             # Setup database path for this iteration
-            db_path = self.db_dir / f"iteration_{i+1}.db"
+            db_path = os.path.join(self.db_dir, f"iteration_{i+1}.db")
             
             try:
                 # Run simulation
                 run_simulation(
                     num_steps=iteration_config.num_steps,
                     config=iteration_config,
-                    db_path=str(db_path)
+                    db_path=db_path
                 )
                 
                 # Analyze results
@@ -119,13 +118,13 @@ class ExperimentRunner:
                 
         return config
 
-    def _analyze_iteration(self, db_path: Path) -> Dict:
+    def _analyze_iteration(self, db_path: str) -> Dict:
         """
         Extract relevant statistics from simulation database.
 
         Parameters
         ----------
-        db_path : Path
+        db_path : str
             Path to simulation database
 
         Returns
@@ -133,7 +132,7 @@ class ExperimentRunner:
         Dict
             Dictionary containing extracted metrics
         """
-        analyzer = SimulationAnalyzer(str(db_path))
+        analyzer = SimulationAnalyzer(db_path)
         
         # Get survival rates
         survival_data = analyzer.calculate_survival_rates()
@@ -166,12 +165,12 @@ class ExperimentRunner:
         df = pd.DataFrame(self.results)
         
         # Save detailed results
-        results_file = self.results_dir / f"{self.experiment_name}_results.csv"
+        results_file = os.path.join(self.results_dir, f"{self.experiment_name}_results.csv")
         df.to_csv(results_file, index=False)
         
         # Generate summary statistics
         summary = df.describe()
-        summary_file = self.results_dir / f"{self.experiment_name}_summary.csv"
+        summary_file = os.path.join(self.results_dir, f"{self.experiment_name}_summary.csv")
         summary.to_csv(summary_file)
         
         self.logger.info(f"Report generated: {results_file}") 

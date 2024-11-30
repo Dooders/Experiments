@@ -3,10 +3,9 @@ Script to run simulation experiments with different configurations.
 """
 
 import logging
-from pathlib import Path
 
 from core.config import SimulationConfig
-from experiment import ExperimentRunner
+from core.experiment_runner import ExperimentRunner
 
 # Setup basic logging
 logging.basicConfig(level=logging.INFO)
@@ -69,7 +68,7 @@ def run_population_experiment():
 def main():
     """Run selected experiments."""
     # Create experiments directory if it doesn't exist
-    Path("experiments").mkdir(exist_ok=True)
+    # Path("experiments").mkdir(exist_ok=True)
 
     print("Starting experiments...")
 

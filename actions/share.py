@@ -218,22 +218,23 @@ def share_action(agent: "BaseAgent") -> None:
     action, target, share_amount = agent.share_module.get_share_decision(agent, state)
 
     if not target or share_amount <= 0 or agent.resource_level < share_amount:
-        # Collect failed share action
-        agent.environment.collect_action(
-            step_number=agent.environment.time,
-            agent_id=agent.agent_id,
-            action_type="share",
-            position_before=agent.position,
-            position_after=agent.position,
-            resources_before=initial_resources,
-            resources_after=initial_resources,
-            reward=DEFAULT_SHARE_CONFIG.share_failure_penalty,
-            details={
-                "success": False,
-                "reason": "invalid_share_conditions",
-                "attempted_amount": share_amount,
-            },
-        )
+        # Log failed share action
+        if agent.environment.db is not None:
+            agent.environment.db.log_agent_action(
+                step_number=agent.environment.time,
+                agent_id=agent.agent_id,
+                action_type="share",
+                position_before=agent.position,
+                position_after=agent.position,
+                resources_before=initial_resources,
+                resources_after=initial_resources,
+                reward=DEFAULT_SHARE_CONFIG.share_failure_penalty,
+                details={
+                    "success": False,
+                    "reason": "invalid_share_conditions",
+                    "attempted_amount": share_amount,
+                }
+            )
         return
 
     # Execute sharing
@@ -248,26 +249,27 @@ def share_action(agent: "BaseAgent") -> None:
     # Update cooperation history
     agent.share_module.update_cooperation(target.agent_id, True)
 
-    # Collect successful share action
-    agent.environment.collect_action(
-        step_number=agent.environment.time,
-        agent_id=agent.agent_id,
-        action_type="share",
-        action_target_id=target.agent_id,
-        position_before=agent.position,
-        position_after=agent.position,
-        resources_before=initial_resources,
-        resources_after=agent.resource_level,
-        reward=reward,
-        details={
-            "success": True,
-            "amount_shared": share_amount,
-            "target_resources_before": target_initial_resources,
-            "target_resources_after": target.resource_level,
-            "target_was_starving": target_initial_resources
-            < target.config.starvation_threshold,
-        },
-    )
+    # Log successful share action
+    if agent.environment.db is not None:
+        agent.environment.db.log_agent_action(
+            step_number=agent.environment.time,
+            agent_id=agent.agent_id,
+            action_type="share",
+            action_target_id=target.agent_id,
+            position_before=agent.position,
+            position_after=agent.position,
+            resources_before=initial_resources,
+            resources_after=agent.resource_level,
+            reward=reward,
+            details={
+                "success": True,
+                "amount_shared": share_amount,
+                "target_resources_before": target_initial_resources,
+                "target_resources_after": target.resource_level,
+                "target_was_starving": target_initial_resources
+                < target.config.starvation_threshold,
+            }
+        )
 
 
 def _get_share_state(agent: "BaseAgent") -> List[float]:

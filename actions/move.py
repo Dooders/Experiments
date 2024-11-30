@@ -201,18 +201,21 @@ def move_action(agent: "BaseAgent") -> None:
     initial_position = agent.position
     new_position = agent.move_module.get_movement(agent, state)
 
-    # Collect action for batch processing
-    agent.environment.collect_action(
-        step_number=agent.environment.time,
-        agent_id=agent.agent_id,
-        action_type="move",
-        position_before=initial_position,
-        position_after=new_position,
-        resources_before=agent.resource_level,
-        resources_after=agent.resource_level - DEFAULT_MOVE_CONFIG.move_base_cost,
-        reward=DEFAULT_MOVE_CONFIG.move_base_cost,
-        details={"distance_moved": _calculate_distance(initial_position, new_position)},
-    )
+    # Collect action for database
+    if agent.environment.db is not None:
+        agent.environment.db.log_agent_action(
+            step_number=agent.environment.time,
+            agent_id=agent.agent_id,
+            action_type="move",
+            position_before=initial_position,
+            position_after=new_position,
+            resources_before=agent.resource_level,
+            resources_after=agent.resource_level - DEFAULT_MOVE_CONFIG.move_base_cost,
+            reward=DEFAULT_MOVE_CONFIG.move_base_cost,
+            details={
+                "distance_moved": _calculate_distance(initial_position, new_position)
+            }
+        )
 
     # Update position
     agent.position = new_position

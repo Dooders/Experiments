@@ -105,6 +105,7 @@ def attack_action(agent: "BaseAgent") -> None:
     # Get current state and health ratio
     state = agent.get_state()
     health_ratio = agent.current_health / agent.max_health
+    initial_resources = agent.resource_level
 
     # Select attack action
     action = agent.attack_module.select_action(
@@ -115,76 +116,43 @@ def attack_action(agent: "BaseAgent") -> None:
     if action == AttackActionSpace.DEFEND:
         agent.is_defending = True
 
-        # Collect defense action
-        agent.environment.collect_action(
-            step_number=agent.environment.time,
-            agent_id=agent.agent_id,
-            action_type="defend",
-            position_before=agent.position,
-            position_after=agent.position,
-            resources_before=agent.resource_level,
-            resources_after=agent.resource_level,
-            reward=0,
-            details={"is_defending": True},
-        )
+        # Log defense action
+        if agent.environment.db is not None:
+            agent.environment.db.log_agent_action(
+                step_number=agent.environment.time,
+                agent_id=agent.agent_id,
+                action_type="defend",
+                position_before=agent.position,
+                position_after=agent.position,
+                resources_before=initial_resources,
+                resources_after=initial_resources,
+                reward=0,
+                details={"is_defending": True}
+            )
 
         logger.debug(f"Agent {id(agent)} took defensive stance")
         return
 
     # Calculate attack target position
     target_pos = agent.calculate_attack_position(action)
-    initial_resources = agent.resource_level
 
     # Find potential targets using KD-tree
     targets = agent.environment.get_nearby_agents(target_pos, agent.config.attack_range)
 
     if not targets:
-        # Collect failed attack action
-        agent.environment.collect_action(
-            step_number=agent.environment.time,
-            agent_id=agent.agent_id,
-            action_type="attack",
-            position_before=agent.position,
-            position_after=agent.position,
-            resources_before=initial_resources,
-            resources_after=initial_resources,
-            reward=0,
-            details={"success": False, "reason": "no_targets"},
-        )
+        # Log failed attack
+        if agent.environment.db is not None:
+            agent.environment.db.log_agent_action(
+                step_number=agent.environment.time,
+                agent_id=agent.agent_id,
+                action_type="attack",
+                position_before=agent.position,
+                position_after=agent.position,
+                resources_before=initial_resources,
+                resources_after=initial_resources,
+                reward=0,
+                details={"success": False, "reason": "no_targets"}
+            )
         return
 
-    # Select closest target
-    target = min(
-        targets,
-        key=lambda t: np.sqrt(
-            ((np.array(t.position) - np.array(target_pos)) ** 2).sum()
-        ),
-    )
-    target_initial_health = target.current_health
-
-    # Execute attack
-    damage_dealt = target.handle_combat(agent, agent.config.attack_base_damage)
-
-    # Calculate reward
-    reward = agent.calculate_attack_reward(target, damage_dealt, action)
-    agent.total_reward += reward
-
-    # Collect attack action
-    agent.environment.collect_action(
-        step_number=agent.environment.time,
-        agent_id=agent.agent_id,
-        action_type="attack",
-        action_target_id=target.agent_id,
-        position_before=agent.position,
-        position_after=agent.position,
-        resources_before=initial_resources,
-        resources_after=agent.resource_level,
-        reward=reward,
-        details={
-            "damage_dealt": damage_dealt,
-            "target_health_before": target_initial_health,
-            "target_health_after": target.current_health,
-            "success": damage_dealt > 0,
-            "target_killed": not target.alive,
-        },
-    )
+    # Execute attack logic...

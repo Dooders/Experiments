@@ -6,6 +6,9 @@ from typing import Dict
 import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from sqlalchemy import func
+
+from core.database import Agent, AgentAction, AgentState
 
 
 class AgentAnalysis:
@@ -171,19 +174,20 @@ class AgentAnalysis:
     def _load_agents(self):
         """Load available agents from database."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            query = """
-                SELECT a.agent_id, a.agent_type, a.birth_time 
-                FROM Agents a 
-                ORDER BY a.birth_time DESC
-            """
-            df = pd.read_sql_query(query, conn)
-            conn.close()
+            def _query(session):
+                agents = (
+                    session.query(Agent.agent_id, Agent.agent_type, Agent.birth_time)
+                    .order_by(Agent.birth_time.desc())
+                    .all()
+                )
+                return agents
+            
+            agents = self.db._execute_in_transaction(_query)
 
             # Format combobox values to show more info
             self.agent_combobox["values"] = [
-                f"Agent {row['agent_id']} ({row['agent_type']}) - Born: {row['birth_time']}"
-                for _, row in df.iterrows()
+                f"Agent {agent.agent_id} ({agent.agent_type}) - Born: {agent.birth_time}"
+                for agent in agents
             ]
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load agents: {e}")
@@ -231,145 +235,139 @@ class AgentAnalysis:
             messagebox.showerror("Error", f"Failed to load agent data: {e}")
 
     def _load_basic_info(self, conn, agent_id) -> Dict:
-        """Load basic agent information from database.
-
-        Args:
-            conn: SQLite database connection
-            agent_id: ID of the agent to load
-
-        Returns:
-            Dict containing agent's basic information including type, birth time,
-            death time, generation, parent ID, and other configuration values.
-        """
-        query = """
-            SELECT 
-                agent_type,
-                birth_time,
-                death_time,
-                generation,
-                parent_id,
-                initial_resources,
-                max_health,
-                starvation_threshold,
-                genome_id
-            FROM Agents 
-            WHERE agent_id = ?
-        """
-        return pd.read_sql_query(query, conn, params=(agent_id,)).iloc[0].to_dict()
+        """Load basic agent information using SQLAlchemy."""
+        def _query(session):
+            agent = (
+                session.query(Agent)
+                .filter(Agent.agent_id == agent_id)
+                .first()
+            )
+            
+            if agent:
+                return {
+                    "agent_type": agent.agent_type,
+                    "birth_time": agent.birth_time,
+                    "death_time": agent.death_time,
+                    "generation": agent.generation,
+                    "parent_id": agent.parent_id,
+                    "initial_resources": agent.initial_resources,
+                    "max_health": agent.max_health,
+                    "starvation_threshold": agent.starvation_threshold,
+                    "genome_id": agent.genome_id
+                }
+            return {}
+            
+        return self.db._execute_in_transaction(_query)
 
     def _load_agent_stats(self, conn, agent_id) -> Dict:
-        """Load current agent statistics from database.
-
-        Args:
-            conn: SQLite database connection
-            agent_id: ID of the agent to load
-
-        Returns:
-            Dict containing agent's current stats including health, resources,
-            total reward, age, defense status and position. Returns default values
-            if no data is found.
-        """
-        query = """
-            WITH LatestState AS (
-                SELECT 
-                    s.current_health,
-                    s.resource_level,
-                    s.total_reward,
-                    (s.step_number - a.birth_time) as age,
-                    s.is_defending,
-                    s.position_x,
-                    s.position_y,
-                    s.step_number,
-                    ROW_NUMBER() OVER (ORDER BY s.step_number DESC) as rn
-                FROM AgentStates s
-                JOIN Agents a ON s.agent_id = a.agent_id
-                WHERE s.agent_id = ?
+        """Load current agent statistics using SQLAlchemy."""
+        def _query(session):
+            # Get latest state for the agent
+            latest_state = (
+                session.query(
+                    AgentState.current_health,
+                    AgentState.resource_level,
+                    AgentState.total_reward,
+                    (AgentState.step_number - Agent.birth_time).label('age'),
+                    AgentState.is_defending,
+                    AgentState.position_x,
+                    AgentState.position_y
+                )
+                .join(Agent)
+                .filter(AgentState.agent_id == agent_id)
+                .order_by(AgentState.step_number.desc())
+                .first()
             )
-            SELECT 
-                current_health,
-                resource_level,
-                total_reward,
-                age,
-                is_defending,
-                position_x || ', ' || position_y as current_position
-            FROM LatestState
-            WHERE rn = 1
-        """
-        try:
-            return pd.read_sql_query(query, conn, params=(agent_id,)).iloc[0].to_dict()
-        except (IndexError, pd.errors.EmptyDataError):
-            # Return default values if no data found
+            
+            if latest_state:
+                return {
+                    "current_health": latest_state[0],
+                    "resource_level": latest_state[1],
+                    "total_reward": latest_state[2],
+                    "age": latest_state[3],
+                    "is_defending": latest_state[4],
+                    "current_position": f"{latest_state[5]}, {latest_state[6]}"
+                }
+            
             return {
                 "current_health": 0,
                 "resource_level": 0,
                 "total_reward": 0,
                 "age": 0,
                 "is_defending": 0,
-                "current_position": "0, 0",
+                "current_position": "0, 0"
             }
+            
+        return self.db._execute_in_transaction(_query)
 
     def _load_performance_metrics(self, conn, agent_id) -> Dict:
-        """Load agent performance metrics from database.
-
-        Args:
-            conn: SQLite database connection
-            agent_id: ID of the agent to load
-
-        Returns:
-            Dict containing agent's performance metrics including survival time,
-            peak health, peak resources and total actions taken. Returns default
-            values if no data is found.
-        """
-        query = """
-            SELECT 
-                MAX(s.step_number) - MIN(s.step_number) as survival_time,
-                MAX(s.current_health) as peak_health,
-                MAX(s.resource_level) as peak_resources,
-                COUNT(DISTINCT a.action_id) as total_actions
-            FROM AgentStates s
-            LEFT JOIN AgentActions a ON s.agent_id = a.agent_id AND s.step_number = a.step_number
-            WHERE s.agent_id = ?
-            GROUP BY s.agent_id
-        """
-        try:
-            return pd.read_sql_query(query, conn, params=(agent_id,)).iloc[0].to_dict()
-        except IndexError:
-            # Return default values if no data found
+        """Load agent performance metrics using SQLAlchemy."""
+        def _query(session):
+            # Calculate survival time, peak health, peak resources
+            metrics = (
+                session.query(
+                    func.max(AgentState.step_number) - func.min(AgentState.step_number),
+                    func.max(AgentState.current_health),
+                    func.max(AgentState.resource_level),
+                    func.count(func.distinct(AgentAction.action_id))
+                )
+                .select_from(AgentState)
+                .outerjoin(
+                    AgentAction,
+                    (AgentAction.agent_id == AgentState.agent_id) & 
+                    (AgentAction.step_number == AgentState.step_number)
+                )
+                .filter(AgentState.agent_id == agent_id)
+                .group_by(AgentState.agent_id)
+                .first()
+            )
+            
+            if metrics:
+                return {
+                    "survival_time": metrics[0] or 0,
+                    "peak_health": metrics[1] or 0,
+                    "peak_resources": metrics[2] or 0,
+                    "total_actions": metrics[3] or 0
+                }
+            
             return {
                 "survival_time": 0,
                 "peak_health": 0,
                 "peak_resources": 0,
-                "total_actions": 0,
+                "total_actions": 0
             }
+            
+        return self.db._execute_in_transaction(_query)
 
     def _update_metrics_chart(self, conn, agent_id):
-        """Update the metrics chart with agent's time series data.
-
-        Args:
-            conn: SQLite database connection
-            agent_id: ID of the agent to visualize
-
-        Creates a line plot showing health, resources, and reward over time.
-        Also marks points where the agent was defending with red triangles.
-        """
-        query = """
-            SELECT 
-                step_number,
-                current_health,
-                resource_level,
-                total_reward,
-                is_defending
-            FROM AgentStates
-            WHERE agent_id = ?
-            ORDER BY step_number
-        """
-        df = pd.read_sql_query(query, conn, params=(agent_id,))
+        """Update the metrics chart with agent's time series data."""
+        def _query(session):
+            states = (
+                session.query(
+                    AgentState.step_number,
+                    AgentState.current_health,
+                    AgentState.resource_level,
+                    AgentState.total_reward,
+                    AgentState.is_defending
+                )
+                .filter(AgentState.agent_id == agent_id)
+                .order_by(AgentState.step_number)
+                .all()
+            )
+            return states
+        
+        states = self.db._execute_in_transaction(_query)
 
         # Clear previous chart
         for widget in self.metrics_chart_frame.winfo_children():
             widget.destroy()
 
-        if not df.empty:
+        if states:
+            df = pd.DataFrame(states, columns=[
+                "step_number", "current_health", "resource_level", 
+                "total_reward", "is_defending"
+            ])
+            
             fig, ax = plt.subplots(figsize=(8, 4))
             ax.plot(
                 df["step_number"],
@@ -394,7 +392,7 @@ class AgentAnalysis:
             )
 
             # Add defense indicators
-            defense_steps = df[df["is_defending"] == 1]["step_number"]
+            defense_steps = df[df["is_defending"] == True]["step_number"]
             if not defense_steps.empty:
                 ax.scatter(
                     defense_steps,
@@ -416,32 +414,30 @@ class AgentAnalysis:
             canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
     def _update_actions_chart(self, conn, agent_id):
-        """Update the actions distribution and rewards charts.
-
-        Args:
-            conn: SQLite database connection
-            agent_id: ID of the agent to visualize
-
-        Creates two bar charts showing the distribution of actions taken
-        and the average reward received for each action type.
-        """
-        query = """
-            SELECT 
-                action_type,
-                COUNT(*) as count,
-                AVG(CASE WHEN reward IS NOT NULL THEN reward ELSE 0 END) as avg_reward
-            FROM AgentActions
-            WHERE agent_id = ?
-            GROUP BY action_type
-            ORDER BY count DESC
-        """
-        df = pd.read_sql_query(query, conn, params=(agent_id,))
+        """Update the actions distribution and rewards charts."""
+        def _query(session):
+            actions = (
+                session.query(
+                    AgentAction.action_type,
+                    func.count().label('count'),
+                    func.avg(AgentAction.reward).label('avg_reward')
+                )
+                .filter(AgentAction.agent_id == agent_id)
+                .group_by(AgentAction.action_type)
+                .order_by(func.count().desc())
+                .all()
+            )
+            return actions
+        
+        actions = self.db._execute_in_transaction(_query)
 
         # Clear previous chart
         for widget in self.actions_chart_frame.winfo_children():
             widget.destroy()
 
-        if not df.empty:
+        if actions:
+            df = pd.DataFrame(actions, columns=["action_type", "count", "avg_reward"])
+            
             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
 
             # Action counts
