@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    case,
     create_engine,
     event,
     func,
@@ -561,43 +562,61 @@ class SimulationDatabase:
         return self._execute_in_transaction(_query)
 
     def get_agent_lifespan_statistics(self) -> Dict[str, Dict[str, float]]:
-        """Calculate lifespan statistics for different agent types."""
-
+        """Calculate lifespan statistics for different agent types using simpler SQL."""
         def _query(session):
-            from sqlalchemy import case, func
-
-            subquery = (
+            # First get stats for agents that have died
+            dead_stats = (
                 session.query(
                     Agent.agent_type,
-                    case(
-                        [(Agent.death_time.is_(None), func.max(AgentState.age))],
-                        else_=Agent.death_time - Agent.birth_time,
-                    ).label("lifespan"),
+                    func.avg(Agent.death_time - Agent.birth_time).label("avg_lifespan"),
+                    func.max(Agent.death_time - Agent.birth_time).label("max_lifespan"),
+                    func.min(Agent.death_time - Agent.birth_time).label("min_lifespan"),
                 )
-                .outerjoin(AgentState)
-                .group_by(Agent.agent_id)
-                .subquery()
-            )
-
-            stats = (
-                session.query(
-                    subquery.c.agent_type,
-                    func.avg(subquery.c.lifespan),
-                    func.max(subquery.c.lifespan),
-                    func.min(subquery.c.lifespan),
-                )
-                .group_by(subquery.c.agent_type)
+                .filter(Agent.death_time.isnot(None))
+                .group_by(Agent.agent_type)
                 .all()
             )
 
-            return {
-                row[0]: {
-                    "average_lifespan": float(row[1]),
-                    "max_lifespan": float(row[2]),
-                    "min_lifespan": float(row[3]),
-                }
-                for row in stats
-            }
+            # Then get stats for living agents using their current age
+            living_stats = (
+                session.query(
+                    Agent.agent_type,
+                    func.avg(AgentState.age).label("avg_lifespan"),
+                    func.max(AgentState.age).label("max_lifespan"),
+                    func.min(AgentState.age).label("min_lifespan"),
+                )
+                .join(AgentState)
+                .filter(Agent.death_time.is_(None))
+                .group_by(Agent.agent_type)
+                .all()
+            )
+
+            # Combine the results
+            stats_dict = {}
+            for row in dead_stats + living_stats:
+                agent_type = row[0]
+                if agent_type not in stats_dict:
+                    stats_dict[agent_type] = {
+                        "average_lifespan": float(row[1] or 0),
+                        "max_lifespan": float(row[2] or 0),
+                        "min_lifespan": float(row[3] or 0),
+                    }
+                else:
+                    # Update existing stats if needed
+                    stats_dict[agent_type]["average_lifespan"] = max(
+                        stats_dict[agent_type]["average_lifespan"], 
+                        float(row[1] or 0)
+                    )
+                    stats_dict[agent_type]["max_lifespan"] = max(
+                        stats_dict[agent_type]["max_lifespan"], 
+                        float(row[2] or 0)
+                    )
+                    stats_dict[agent_type]["min_lifespan"] = min(
+                        stats_dict[agent_type]["min_lifespan"], 
+                        float(row[3] or 0)
+                    )
+
+            return stats_dict
 
         return self._execute_in_transaction(_query)
 
@@ -677,32 +696,24 @@ class SimulationDatabase:
         self._execute_in_transaction(_query)
 
     def get_population_momentum(self) -> float:
-        """Calculate population momentum using SQLAlchemy."""
-
+        """Calculate population momentum using simpler SQL queries."""
         def _query(session):
-            from sqlalchemy import func
-
-            # Get population data with non-zero agents
-            subquery = (
-                session.query(SimulationStep.step_number, SimulationStep.total_agents)
-                .filter(SimulationStep.total_agents > 0)
-                .subquery()
+            # Get initial population
+            initial = (
+                session.query(SimulationStep.total_agents)
+                .order_by(SimulationStep.step_number)
+                .first()
             )
-
-            # Calculate momentum metrics
-            result = session.query(
-                func.max(subquery.c.step_number).label("death_step"),
-                func.max(subquery.c.total_agents).label("max_count"),
-                func.first_value(subquery.c.total_agents)
-                .over(order_by=subquery.c.step_number)
-                .label("initial_count"),
+            
+            # Get max population and final step
+            stats = session.query(
+                func.max(SimulationStep.total_agents).label("max_count"),
+                func.max(SimulationStep.step_number).label("final_step")
             ).first()
 
-            if result and all(result):
-                death_step, max_count, initial_count = result
-                if initial_count > 0:
-                    return (death_step * max_count) / initial_count
-            return 0
+            if initial and stats and initial[0] > 0:
+                return (float(stats[1]) * float(stats[0])) / float(initial[0])
+            return 0.0
 
         return self._execute_in_transaction(_query)
 
@@ -785,124 +796,70 @@ class SimulationDatabase:
         return self._execute_in_transaction(_query)
 
     def get_advanced_statistics(self) -> Dict:
-        """Calculate advanced simulation statistics using SQLAlchemy."""
-
+        """Calculate advanced simulation statistics using optimized queries."""
         def _query(session):
-            from sqlalchemy import case, func
-
-            # Population timeline subquery
-            pop_timeline = (
-                session.query(
-                    SimulationStep.step_number,
-                    SimulationStep.total_agents,
-                    SimulationStep.total_resources,
-                    SimulationStep.system_agents,
-                    SimulationStep.independent_agents,
-                    SimulationStep.control_agents,
-                    func.avg(AgentState.current_health).label("avg_health"),
-                    func.count(func.distinct(AgentState.agent_id)).label(
-                        "unique_agents"
-                    ),
-                )
-                .outerjoin(AgentState)
-                .filter(SimulationStep.total_agents > 0)
-                .group_by(SimulationStep.step_number)
-                .subquery()
-            )
-
-            # Agent counts
-            agent_counts = session.query(
-                func.count(Agent.agent_id).label("total_created")
-            ).subquery()
-
-            # Interaction statistics
-            interaction_stats = session.query(
-                func.count(AgentAction.action_id).label("total_interactions"),
-                func.sum(
-                    case(
-                        [(AgentAction.action_type.in_(["attack", "defend"]), 1)],
-                        else_=0,
-                    )
-                ).label("conflict_count"),
-                func.sum(
-                    case([(AgentAction.action_type.in_(["share", "help"]), 1)], else_=0)
-                ).label("cooperation_count"),
-            ).subquery()
-
-            # Calculate population stats
+            # Get basic population stats in one query
             pop_stats = session.query(
-                func.first_value(pop_timeline.c.total_agents)
-                .over(order_by=pop_timeline.c.step_number)
-                .label("initial_pop"),
-                func.first_value(pop_timeline.c.total_agents)
-                .over(order_by=pop_timeline.c.step_number.desc())
-                .label("final_pop"),
-                func.max(pop_timeline.c.total_agents).label("peak_pop"),
-                func.avg(pop_timeline.c.avg_health).label("average_health"),
-                func.avg(
-                    case(
-                        [
-                            (
-                                pop_timeline.c.total_resources
-                                < pop_timeline.c.total_agents * 0.5,
-                                1,
-                            )
-                        ],
-                        else_=0,
-                    )
-                ).label("scarcity_index"),
-                func.count().label("total_steps"),
+                func.avg(SimulationStep.total_agents).label("avg_pop"),
+                func.max(SimulationStep.total_agents).label("peak_pop"),
+                func.min(SimulationStep.total_agents).label("min_pop"),
+                func.count(SimulationStep.step_number).label("total_steps"),
+                func.avg(SimulationStep.average_agent_health).label("avg_health"),
             ).first()
 
-            if pop_stats:
-                initial_pop = int(pop_stats[0] or 0)
-                final_pop = int(pop_stats[1] or 0)
-                peak_pop = int(pop_stats[2] or 0)
-                total_steps = int(pop_stats[5] or 1)
+            # Get agent type ratios in a separate query
+            type_stats = session.query(
+                func.avg(SimulationStep.system_agents).label("avg_system"),
+                func.avg(SimulationStep.independent_agents).label("avg_independent"),
+                func.avg(SimulationStep.control_agents).label("avg_control"),
+                func.avg(SimulationStep.total_agents).label("avg_total")
+            ).first()
 
-                # Calculate diversity using agent type ratios
-                agent_ratios = session.query(
-                    func.avg(
-                        pop_timeline.c.system_agents / pop_timeline.c.total_agents
-                    ),
-                    func.avg(
-                        pop_timeline.c.independent_agents / pop_timeline.c.total_agents
-                    ),
-                    func.avg(
-                        pop_timeline.c.control_agents / pop_timeline.c.total_agents
-                    ),
-                ).first()
+            # Get interaction stats
+            interaction_stats = session.query(
+                func.count(AgentAction.action_id).label("total_actions"),
+                func.sum(case(
+                    [(AgentAction.action_type.in_(["attack", "defend"]), 1)],
+                    else_=0
+                )).label("conflicts"),
+                func.sum(case(
+                    [(AgentAction.action_type.in_(["share", "help"]), 1)],
+                    else_=0
+                )).label("cooperation")
+            ).first()
 
-                import math
+            if not all([pop_stats, type_stats, interaction_stats]):
+                return {}
 
-                diversity = sum(
-                    -ratio * math.log(ratio) if ratio and ratio > 0 else 0
-                    for ratio in agent_ratios
+            # Calculate diversity index
+            total = float(type_stats[3] or 1)  # Avoid division by zero
+            ratios = [
+                float(count or 0) / total 
+                for count in type_stats[:3]
+            ]
+            
+            import math
+            diversity = sum(
+                -ratio * math.log(ratio) if ratio > 0 else 0 
+                for ratio in ratios
+            )
+
+            return {
+                "peak_population": int(pop_stats[1] or 0),
+                "average_population": float(pop_stats[0] or 0),
+                "total_steps": int(pop_stats[3] or 0),
+                "average_health": float(pop_stats[4] or 0),
+                "agent_diversity": diversity,
+                "interaction_rate": (
+                    float(interaction_stats[0] or 0) / 
+                    float(pop_stats[3] or 1) / 
+                    float(pop_stats[1] or 1)
+                ),
+                "conflict_cooperation_ratio": (
+                    float(interaction_stats[1] or 0) / 
+                    float(interaction_stats[2] or 1)  # Avoid division by zero
                 )
-
-                # Get interaction metrics
-                interaction_metrics = session.query(interaction_stats).first()
-
-                return {
-                    "peak_to_end_ratio": (
-                        peak_pop / final_pop if final_pop > 0 else float("inf")
-                    ),
-                    "growth_rate": (final_pop - initial_pop) / total_steps,
-                    "average_health": float(pop_stats[3] or 0),
-                    "agent_diversity": diversity,
-                    "interaction_rate": (
-                        float(interaction_metrics[0] or 0) / total_steps / peak_pop
-                        if peak_pop > 0
-                        else 0
-                    ),
-                    "conflict_cooperation_ratio": (
-                        float(interaction_metrics[1] or 0)
-                        / float(interaction_metrics[2] or 1)  # Avoid division by zero
-                    ),
-                    "scarcity_index": float(pop_stats[4] or 0),
-                }
-
-            return {}
+            }
 
         return self._execute_in_transaction(_query)
 
