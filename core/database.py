@@ -1,6 +1,7 @@
 import json
 import logging
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Any, Union
+from datetime import datetime
 
 import pandas as pd
 from sqlalchemy import (
@@ -18,7 +19,7 @@ from sqlalchemy import (
     Index,
 )
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, scoped_session, sessionmaker
+from sqlalchemy.orm import relationship, scoped_session, sessionmaker, joinedload
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError, OperationalError, ProgrammingError
 
 if TYPE_CHECKING:
@@ -81,6 +82,21 @@ class AgentState(Base):
 
     agent = relationship("Agent", back_populates="states")
 
+    def as_dict(self) -> Dict[str, Any]:
+        """Convert agent state to dictionary."""
+        return {
+            "agent_id": self.agent_id,
+            "agent_type": self.agent.agent_type,
+            "position": (self.position_x, self.position_y),
+            "resource_level": self.resource_level,
+            "current_health": self.current_health,
+            "max_health": self.max_health,
+            "starvation_threshold": self.starvation_threshold,
+            "is_defending": self.is_defending,
+            "total_reward": self.total_reward,
+            "age": self.age
+        }
+
 
 # Additional SQLAlchemy Models
 class ResourceState(Base):
@@ -96,6 +112,14 @@ class ResourceState(Base):
     amount = Column(Float)
     position_x = Column(Float)
     position_y = Column(Float)
+
+    def as_dict(self) -> Dict[str, Any]:
+        """Convert resource state to dictionary."""
+        return {
+            "resource_id": self.resource_id,
+            "amount": self.amount,
+            "position": (self.position_x, self.position_y)
+        }
 
 
 class SimulationStep(Base):
@@ -124,6 +148,30 @@ class SimulationStep(Base):
     resources_shared = Column(Float)
     genetic_diversity = Column(Float)
     dominant_genome_ratio = Column(Float)
+
+    def as_dict(self) -> Dict[str, Any]:
+        """Convert simulation step to dictionary."""
+        return {
+            "total_agents": self.total_agents,
+            "system_agents": self.system_agents,
+            "independent_agents": self.independent_agents,
+            "control_agents": self.control_agents,
+            "total_resources": self.total_resources,
+            "average_agent_resources": self.average_agent_resources,
+            "births": self.births,
+            "deaths": self.deaths,
+            "current_max_generation": self.current_max_generation,
+            "resource_efficiency": self.resource_efficiency,
+            "resource_distribution_entropy": self.resource_distribution_entropy,
+            "average_agent_health": self.average_agent_health,
+            "average_agent_age": self.average_agent_age,
+            "average_reward": self.average_reward,
+            "combat_encounters": self.combat_encounters,
+            "successful_attacks": self.successful_attacks,
+            "resources_shared": self.resources_shared,
+            "genetic_diversity": self.genetic_diversity,
+            "dominant_genome_ratio": self.dominant_genome_ratio
+        }
 
 
 class AgentAction(Base):
@@ -277,76 +325,64 @@ class SimulationDatabase:
 
         self._execute_in_transaction(_insert)
 
-    def get_simulation_data(self, step_number: int) -> Dict:
-        """Retrieve simulation data using SQLAlchemy."""
-
+    def get_simulation_data(self, step_number: int) -> Dict[str, Any]:
+        """Retrieve simulation data using SQLAlchemy with optimized queries."""
         def _query(session):
-            # Get agent states
+            # Optimize queries with joins and specific column selection
             agent_states = (
                 session.query(AgentState)
                 .join(Agent)
                 .filter(AgentState.step_number == step_number)
+                .options(joinedload(AgentState.agent))  # Eager load agent relationship
                 .all()
             )
 
-            # Get resource states
             resource_states = (
                 session.query(ResourceState)
                 .filter(ResourceState.step_number == step_number)
                 .all()
             )
 
-            # Get metrics
             metrics = (
                 session.query(SimulationStep)
                 .filter(SimulationStep.step_number == step_number)
                 .first()
             )
 
+            # Convert to tuples for visualization compatibility
+            agent_state_tuples = [
+                (
+                    state.agent_id,
+                    state.agent.agent_type,
+                    state.position_x,
+                    state.position_y,
+                    state.resource_level,
+                    state.current_health,
+                    state.max_health,
+                    state.starvation_threshold,
+                    state.is_defending,
+                    state.total_reward,
+                    state.age,
+                )
+                for state in agent_states
+            ]
+
+            resource_state_tuples = [
+                (
+                    state.resource_id,
+                    state.amount,
+                    state.position_x,
+                    state.position_y,
+                )
+                for state in resource_states
+            ]
+
             return {
-                "agent_states": [
-                    (
-                        state.agent_id,
-                        state.agent.agent_type,
-                        state.position_x,
-                        state.position_y,
-                        state.resource_level,
-                        state.current_health,
-                        state.max_health,
-                        state.starvation_threshold,
-                        state.is_defending,
-                        state.total_reward,
-                        state.age,
-                    )
-                    for state in agent_states
-                ],
-                "resource_states": [
-                    (
-                        state.resource_id,
-                        state.amount,
-                        state.position_x,
-                        state.position_y,
-                    )
-                    for state in resource_states
-                ],
-                "metrics": (
-                    {
-                        "total_agents": metrics.total_agents if metrics else 0,
-                        "system_agents": metrics.system_agents if metrics else 0,
-                        "independent_agents": (
-                            metrics.independent_agents if metrics else 0
-                        ),
-                        "control_agents": metrics.control_agents if metrics else 0,
-                        "total_resources": metrics.total_resources if metrics else 0,
-                        "average_agent_resources": (
-                            metrics.average_agent_resources if metrics else 0
-                        ),
-                        "births": metrics.births if metrics else 0,
-                        "deaths": metrics.deaths if metrics else 0,
-                    }
-                    if metrics
-                    else {}
-                ),
+                "step_number": step_number,
+                "agent_states": agent_state_tuples,
+                "resource_states": resource_state_tuples,
+                "metrics": metrics.as_dict() if metrics else {},
+                "timestamp": datetime.now().isoformat()
             }
 
         return self._execute_in_transaction(_query)
@@ -480,225 +516,75 @@ class SimulationDatabase:
 
     def flush_action_buffer(self):
         """Flush the action buffer by batch inserting all buffered actions."""
-        if self._action_buffer:
-
+        if not self._action_buffer:
+            return
+        
+        buffer_copy = list(self._action_buffer)  # Create a copy of the buffer
+        try:
             def _insert(session):
-                session.bulk_insert_mappings(AgentAction, self._action_buffer)
-
+                session.bulk_insert_mappings(AgentAction, buffer_copy)
             self._execute_in_transaction(_insert)
-            self._action_buffer.clear()
-
-    def log_learning_experience(
-        self,
-        step_number: int,
-        agent_id: int,
-        module_type: str,
-        state_before: str,
-        action_taken: int,
-        reward: float,
-        state_after: str,
-        loss: float,
-    ):
-        """Buffer a learning experience for batch processing."""
-        experience_data = {
-            "step_number": step_number,
-            "agent_id": agent_id,
-            "module_type": module_type,
-            "state_before": state_before,
-            "action_taken": action_taken,
-            "reward": reward,
-            "state_after": state_after,
-            "loss": loss,
-        }
-        self._learning_exp_buffer.append(experience_data)
-
-        if len(self._learning_exp_buffer) >= self._buffer_size:
-            self.flush_learning_buffer()
-
+        except SQLAlchemyError as e:
+            logger.error(f"Failed to flush action buffer: {e}")
+            raise
+        else:
+            self._action_buffer.clear()  # Only clear if successful
+    
     def flush_learning_buffer(self):
-        """Flush the learning experience buffer."""
-        if self._learning_exp_buffer:
-
+        """Flush the learning experience buffer with transaction safety."""
+        if not self._learning_exp_buffer:
+            return
+        
+        buffer_copy = list(self._learning_exp_buffer)
+        try:
             def _insert(session):
-                session.bulk_insert_mappings(
-                    LearningExperience, self._learning_exp_buffer
-                )
-
+                session.bulk_insert_mappings(LearningExperience, buffer_copy)
             self._execute_in_transaction(_insert)
+        except SQLAlchemyError as e:
+            logger.error(f"Failed to flush learning buffer: {e}")
+            raise
+        else:
             self._learning_exp_buffer.clear()
 
-    def log_health_incident(
-        self,
-        step_number: int,
-        agent_id: int,
-        health_before: float,
-        health_after: float,
-        cause: str,
-        details: Optional[Dict] = None,
-    ):
-        """Buffer a health incident for batch processing."""
-        incident_data = {
-            "step_number": step_number,
-            "agent_id": agent_id,
-            "health_before": health_before,
-            "health_after": health_after,
-            "cause": cause,
-            "details": json.dumps(details) if details else None,
-        }
-        self._health_incident_buffer.append(incident_data)
-
-        if len(self._health_incident_buffer) >= self._buffer_size:
-            self.flush_health_buffer()
-
     def flush_health_buffer(self):
-        """Flush the health incident buffer."""
-        if self._health_incident_buffer:
-
+        """Flush the health incident buffer with transaction safety."""
+        if not self._health_incident_buffer:
+            return
+        
+        buffer_copy = list(self._health_incident_buffer)
+        try:
             def _insert(session):
-                session.bulk_insert_mappings(
-                    HealthIncident, self._health_incident_buffer
-                )
-
+                session.bulk_insert_mappings(HealthIncident, buffer_copy)
             self._execute_in_transaction(_insert)
+        except SQLAlchemyError as e:
+            logger.error(f"Failed to flush health buffer: {e}")
+            raise
+        else:
             self._health_incident_buffer.clear()
 
-    def get_agent_health_incidents(self, agent_id: int) -> List[Dict]:
-        """Get all health incidents for an agent."""
-
-        def _query(session):
-            incidents = (
-                session.query(HealthIncident)
-                .filter(HealthIncident.agent_id == agent_id)
-                .order_by(HealthIncident.step_number)
-                .all()
-            )
-
-            return [
-                {
-                    "step_number": incident.step_number,
-                    "health_before": incident.health_before,
-                    "health_after": incident.health_after,
-                    "cause": incident.cause,
-                    "details": (
-                        json.loads(incident.details) if incident.details else None
-                    ),
-                }
-                for incident in incidents
-            ]
-
-        return self._execute_in_transaction(_query)
-
-    def get_agent_lifespan_statistics(self) -> Dict[str, Dict[str, float]]:
-        """Calculate lifespan statistics for different agent types using simpler SQL."""
-        def _query(session):
-            # First get stats for agents that have died
-            dead_stats = (
-                session.query(
-                    Agent.agent_type,
-                    func.avg(Agent.death_time - Agent.birth_time).label("avg_lifespan"),
-                    func.max(Agent.death_time - Agent.birth_time).label("max_lifespan"),
-                    func.min(Agent.death_time - Agent.birth_time).label("min_lifespan"),
-                )
-                .filter(Agent.death_time.isnot(None))
-                .group_by(Agent.agent_type)
-                .all()
-            )
-
-            # Then get stats for living agents using their current age
-            living_stats = (
-                session.query(
-                    Agent.agent_type,
-                    func.avg(AgentState.age).label("avg_lifespan"),
-                    func.max(AgentState.age).label("max_lifespan"),
-                    func.min(AgentState.age).label("min_lifespan"),
-                )
-                .join(AgentState)
-                .filter(Agent.death_time.is_(None))
-                .group_by(Agent.agent_type)
-                .all()
-            )
-
-            # Combine the results
-            stats_dict = {}
-            for row in dead_stats + living_stats:
-                agent_type = row[0]
-                if agent_type not in stats_dict:
-                    stats_dict[agent_type] = {
-                        "average_lifespan": float(row[1] or 0),
-                        "max_lifespan": float(row[2] or 0),
-                        "min_lifespan": float(row[3] or 0),
-                    }
-                else:
-                    # Update existing stats if needed
-                    stats_dict[agent_type]["average_lifespan"] = max(
-                        stats_dict[agent_type]["average_lifespan"], 
-                        float(row[1] or 0)
-                    )
-                    stats_dict[agent_type]["max_lifespan"] = max(
-                        stats_dict[agent_type]["max_lifespan"], 
-                        float(row[2] or 0)
-                    )
-                    stats_dict[agent_type]["min_lifespan"] = min(
-                        stats_dict[agent_type]["min_lifespan"], 
-                        float(row[3] or 0)
-                    )
-
-            return stats_dict
-
-        return self._execute_in_transaction(_query)
-
-    def get_configuration(self) -> Dict:
-        """Retrieve the simulation configuration from the database."""
-
-        def _query(session):
-            config = (
-                session.query(SimulationConfig)
-                .order_by(SimulationConfig.timestamp.desc())
-                .first()
-            )
-
-            if config and config.config_data:
-                return json.loads(config.config_data)
-            return {}
-
-        return self._execute_in_transaction(_query)
-
-    def save_configuration(self, config: Dict) -> None:
-        """Save simulation configuration to the database."""
-
-        def _insert(session):
-            import time
-
-            config_obj = SimulationConfig(
-                timestamp=int(time.time()), config_data=json.dumps(config)
-            )
-            session.add(config_obj)
-
-        self._execute_in_transaction(_insert)
-
     def flush_all_buffers(self) -> None:
-        """Flush all data buffers with enhanced error handling."""
+        """Flush all data buffers with enhanced error handling and transaction safety."""
         buffers = {
-            'action': self.flush_action_buffer,
-            'learning': self.flush_learning_buffer,
-            'health': self.flush_health_buffer
+            'action': (self._action_buffer, self.flush_action_buffer),
+            'learning': (self._learning_exp_buffer, self.flush_learning_buffer),
+            'health': (self._health_incident_buffer, self.flush_health_buffer)
         }
         
-        for buffer_name, flush_func in buffers.items():
-            try:
-                flush_func()
-            except IntegrityError as e:
-                logger.error(f"Data integrity error flushing {buffer_name} buffer: {e}")
-                raise
-            except OperationalError as e:
-                logger.error(f"Database operation error flushing {buffer_name} buffer: {e}")
-                raise
-            except SQLAlchemyError as e:
-                logger.error(f"Database error flushing {buffer_name} buffer: {e}")
-                raise
-            except Exception as e:
-                logger.error(f"Unexpected error flushing {buffer_name} buffer: {e}")
-                raise
+        errors = []
+        for buffer_name, (buffer, flush_func) in buffers.items():
+            if buffer:  # Only attempt flush if buffer has data
+                try:
+                    flush_func()
+                except SQLAlchemyError as e:
+                    logger.error(f"Error flushing {buffer_name} buffer: {e}")
+                    errors.append((buffer_name, str(e)))
+                except Exception as e:
+                    logger.error(f"Unexpected error flushing {buffer_name} buffer: {e}")
+                    errors.append((buffer_name, str(e)))
+        
+        if errors:
+            error_msg = "; ".join(f"{name}: {err}" for name, err in errors)
+            raise SQLAlchemyError(f"Failed to flush buffers: {error_msg}")
 
     def close(self) -> None:
         """Close the database connection with enhanced error handling."""
@@ -1289,3 +1175,33 @@ class SimulationDatabase:
             # Ensure critical resources are released
             if hasattr(self, "Session"):
                 self.Session.remove()
+
+    def get_configuration(self) -> Dict:
+        """Retrieve the simulation configuration from the database."""
+
+        def _query(session):
+            config = (
+                session.query(SimulationConfig)
+                .order_by(SimulationConfig.timestamp.desc())
+                .first()
+            )
+
+            if config and config.config_data:
+                return json.loads(config.config_data)
+            return {}
+
+        return self._execute_in_transaction(_query)
+
+    def save_configuration(self, config: Dict) -> None:
+        """Save simulation configuration to the database."""
+
+        def _insert(session):
+            import time
+
+            config_obj = SimulationConfig(
+                timestamp=int(time.time()), 
+                config_data=json.dumps(config)
+            )
+            session.add(config_obj)
+
+        self._execute_in_transaction(_insert)
