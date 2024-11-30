@@ -69,6 +69,16 @@ from .models import (
     SimulationConfig,
     SimulationStep,
 )
+from .utilities import (
+    as_dict,
+    safe_json_loads,
+    format_position,
+    parse_position,
+    create_database_schema,
+    validate_export_format,
+    format_agent_state,
+    execute_with_retry
+)
 
 logger = logging.getLogger(__name__)
 
@@ -202,29 +212,7 @@ class SimulationDatabase:
         """
         session = self.Session()
         try:
-            result = func(session)
-            session.commit()
-            return result
-        except IntegrityError as e:
-            session.rollback()
-            logger.error(f"Database integrity error: {e}")
-            raise
-        except OperationalError as e:
-            session.rollback()
-            logger.error(f"Database operational error (connection/timeout): {e}")
-            raise
-        except ProgrammingError as e:
-            session.rollback()
-            logger.error(f"Database programming error (SQL syntax/schema): {e}")
-            raise
-        except SQLAlchemyError as e:
-            session.rollback()
-            logger.error(f"General database error: {e}")
-            raise
-        except Exception as e:
-            session.rollback()
-            logger.error(f"Unexpected error during database operation: {e}")
-            raise
+            return execute_with_retry(session, lambda: func(session))
         finally:
             self.Session.remove()
 
@@ -544,6 +532,8 @@ class SimulationDatabase:
         IOError
             If there's an error writing to the file
         """
+        if not validate_export_format(format):
+            raise ValueError(f"Unsupported export format: {format}")
 
         def _query(session):
             data = {}
@@ -1121,13 +1111,14 @@ class SimulationDatabase:
             )
 
             if latest_state:
+                position = (latest_state[5], latest_state[6])
                 return {
                     "current_health": latest_state[0],
                     "resource_level": latest_state[1],
                     "total_reward": latest_state[2],
                     "age": latest_state[3],
                     "is_defending": latest_state[4],
-                    "current_position": f"{latest_state[5]}, {latest_state[6]}",
+                    "current_position": format_position(position),
                 }
 
             return {
@@ -1135,8 +1126,8 @@ class SimulationDatabase:
                 "resource_level": 0,
                 "total_reward": 0,
                 "age": 0,
-                "is_defending": 0,
-                "current_position": "0, 0",
+                "is_defending": False,
+                "current_position": format_position((0.0, 0.0)),
             }
 
         return self._execute_in_transaction(_query)
@@ -1168,23 +1159,8 @@ class SimulationDatabase:
                 logger.error(f"Agent {agent_id} not found")
                 return
 
-            agent_state = AgentState(
-                step_number=step_number,
-                agent_id=agent_id,
-                current_health=state_data["current_health"],
-                max_health=state_data.get(
-                    "max_health", agent.max_health
-                ),  # Get from agent if not provided
-                resource_level=state_data["resource_level"],
-                position_x=state_data["position"][0],
-                position_y=state_data["position"][1],
-                is_defending=state_data["is_defending"],
-                total_reward=state_data["total_reward"],
-                starvation_threshold=state_data.get(
-                    "starvation_threshold", agent.starvation_threshold
-                ),
-                age=step_number,  # Age is calculated from step number
-            )
+            formatted_state = format_agent_state(agent_id, step_number, state_data)
+            agent_state = AgentState(**formatted_state)
             session.add(agent_state)
 
         self._execute_in_transaction(_update)
@@ -1204,9 +1180,8 @@ class SimulationDatabase:
         """
 
         def _create(session):
-            # Create all tables defined in the models
-            Base.metadata.create_all(self.engine)
-
+            create_database_schema(self.engine, Base)
+        
         self._execute_in_transaction(_create)
 
     def update_notes(self, notes_data: Dict):
@@ -1275,7 +1250,7 @@ class SimulationDatabase:
             )
 
             if config and config.config_data:
-                return json.loads(config.config_data)
+                return safe_json_loads(config.config_data) or {}
             return {}
 
         return self._execute_in_transaction(_query)
