@@ -5,7 +5,7 @@ import numpy as np
 
 from core.config import SimulationConfig
 from agents import Environment, SystemAgent, IndependentAgent, Resource
-from core.database import SimulationDatabase
+from database.database import SimulationDatabase
 
 class TestSimulation(unittest.TestCase):
     def setUp(self):

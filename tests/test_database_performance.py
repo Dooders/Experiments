@@ -5,7 +5,7 @@ import os
 import json
 import threading
 from typing import List, Dict, Tuple
-from core.database import SimulationDatabase, AgentState
+from database.database import SimulationDatabase, AgentState
 
 class TestDatabasePerformance(unittest.TestCase):
     """Performance test suite for SimulationDatabase."""

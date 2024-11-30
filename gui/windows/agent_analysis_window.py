@@ -10,7 +10,7 @@ import pandas as pd
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from sqlalchemy import func
 
-from core.database import Agent, AgentAction, AgentState, SimulationDatabase
+from database.database import Agent, AgentAction, AgentState, SimulationDatabase
 from gui.components.tooltips import ToolTip
 
 
@@ -690,7 +690,7 @@ class AgentAnalysisWindow(ttk.Frame):
             db = SimulationDatabase(self.db_path)
             
             def _query(session):
-                from core.database import SimulationStep
+                from database.database import SimulationStep
                 
                 steps = (session.query(
                     SimulationStep.step_number,

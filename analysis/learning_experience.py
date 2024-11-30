@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from core.database import SimulationDatabase
+from database.database import SimulationDatabase
 
 #! Table not populating currently
 

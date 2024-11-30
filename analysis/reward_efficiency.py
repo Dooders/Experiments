@@ -3,7 +3,7 @@ import sqlite3
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from core.database import SimulationDatabase
+from database.database import SimulationDatabase
 
 
 def fetch_reward_efficiency_data(db: SimulationDatabase) -> pd.DataFrame:

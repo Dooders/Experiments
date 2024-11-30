@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 import gymnasium as gym
 
-from core.database import SimulationDatabase
+from database.database import SimulationDatabase
 
 
 class BaseEnvironment(gym.Env, ABC):

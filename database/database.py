@@ -1659,7 +1659,7 @@ class SimulationDatabase:
 
     def log_agents_batch(self, agent_data_list: List[Dict]) -> None:
         """Batch insert multiple agents for better performance.
-        
+
         Parameters
         ----------
         agent_data_list : List[Dict]
@@ -1675,6 +1675,7 @@ class SimulationDatabase:
             - parent_id: Optional[int]
             - generation: int
         """
+
         def _batch_insert(session):
             # Format data for bulk insert
             mappings = [
@@ -1694,5 +1695,5 @@ class SimulationDatabase:
                 for data in agent_data_list
             ]
             session.bulk_insert_mappings(Agent, mappings)
-            
+
         self._execute_in_transaction(_batch_insert)

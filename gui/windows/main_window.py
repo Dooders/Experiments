@@ -7,7 +7,7 @@ from dataclasses import replace
 from tkinter import filedialog, messagebox, ttk
 
 from core.config import SimulationConfig
-from core.database import SimulationDatabase
+from database.database import SimulationDatabase
 from core.simulation import run_simulation
 from gui.components.charts import SimulationChart
 from gui.components.chat_assistant import ChatAssistant

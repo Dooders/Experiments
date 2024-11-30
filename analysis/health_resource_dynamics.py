@@ -11,7 +11,7 @@ from sklearn.cluster import KMeans
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
 
-from core.database import SimulationDatabase
+from database.database import SimulationDatabase
 
 
 def fetch_health_resource_data(db: SimulationDatabase) -> pd.DataFrame:

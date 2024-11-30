@@ -7,7 +7,7 @@ import logging
 from datetime import datetime
 from core.simulation import run_simulation
 from core.config import SimulationConfig
-from core.database import SimulationDatabase
+from database.database import SimulationDatabase
 from core.analysis import analyze_simulation
 
 # Configure logging

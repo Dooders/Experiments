@@ -9,7 +9,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from agents import ControlAgent, IndependentAgent, SystemAgent
-from core.database import SimulationDatabase
+from database.database import SimulationDatabase
 from core.resources import Resource
 from core.state import EnvironmentState
 
