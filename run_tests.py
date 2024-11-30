@@ -1,7 +1,7 @@
 import unittest
 import sys
 import logging
-from pathlib import Path
+import os
 
 def run_tests():
     """Run all tests and return True if all tests pass."""
@@ -10,7 +10,7 @@ def run_tests():
     
     # Discover and run tests
     loader = unittest.TestLoader()
-    start_dir = Path(__file__).parent / 'tests'
+    start_dir = os.path.join(os.path.dirname(__file__), 'tests')
     suite = loader.discover(start_dir)
     
     runner = unittest.TextTestRunner(verbosity=2)
