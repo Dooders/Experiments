@@ -125,14 +125,6 @@ def run_simulation(
     logging.info("Starting simulation")
     logging.info(f"Configuration: {config}")
 
-    # Save configuration if requested
-    if save_config:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        config_file = f"config_{timestamp}.yaml"
-        with open(config_file, "w") as f:
-            yaml.dump(config.to_dict(), f)
-        logging.info(f"Configuration saved to {config_file}")
-
     try:
         # Create environment
         environment = Environment(
@@ -145,6 +137,10 @@ def run_simulation(
             db_path=db_path or "simulation_results.db",
             config=config,
         )
+
+        # Save configuration if requested
+        if save_config and environment.db is not None:
+            environment.db.save_configuration(config.to_dict())
 
         # Create initial agents
         create_initial_agents(
@@ -173,14 +169,12 @@ def run_simulation(
             # Update environment once per step
             environment.update()
 
-            # No need for additional metrics update since it's handled in environment.update()
-
         # Ensure final state is saved
         environment.update()
 
         # Force final flush of database buffers
         if environment.db:
-            environment.db.flush_all_buffers()
+            environment.logger.flush_all_buffers()
             environment.db.close()
 
     except Exception as e:

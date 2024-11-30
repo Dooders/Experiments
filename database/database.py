@@ -57,9 +57,10 @@ from sqlalchemy.exc import (
 )
 from sqlalchemy.orm import joinedload, scoped_session, sessionmaker
 
-from .models import AgentAction
+from .data_logging import DataLogger
 from .models import (
     Agent,
+    AgentAction,
     AgentState,
     Base,
     HealthIncident,
@@ -172,11 +173,8 @@ class SimulationDatabase:
         # Create tables and indexes
         self._create_tables()
 
-        # Add batch operation buffers
-        self._action_buffer = []
-        self._learning_exp_buffer = []
-        self._health_incident_buffer = []
-        self._buffer_size = 1000
+        # Replace buffer initialization with DataLogger
+        self.logger = DataLogger(self, buffer_size=1000)
 
     def _execute_in_transaction(self, func: callable) -> Any:
         """Execute database operations within a transaction with error handling.
@@ -477,154 +475,11 @@ class SimulationDatabase:
 
         return self._execute_in_transaction(_query)
 
-    def log_agent_action(
-        self,
-        step_number: int,
-        agent_id: int,
-        action_type: str,
-        action_target_id: Optional[int] = None,
-        position_before: Optional[Tuple[float, float]] = None,
-        position_after: Optional[Tuple[float, float]] = None,
-        resources_before: Optional[float] = None,
-        resources_after: Optional[float] = None,
-        reward: Optional[float] = None,
-        details: Optional[Dict] = None,
-    ) -> None:
-        """Buffer an agent action with enhanced validation and error handling."""
-        try:
-            # Input validation
-            if step_number < 0:
-                raise ValueError("step_number must be non-negative")
-            if agent_id < 0:
-                raise ValueError("agent_id must be non-negative")
-            if not isinstance(action_type, str):
-                action_type = str(action_type)
-
-            action_data = {
-                "step_number": step_number,
-                "agent_id": agent_id,
-                "action_type": action_type,
-                "action_target_id": action_target_id,
-                "position_before": str(position_before) if position_before else None,
-                "position_after": str(position_after) if position_after else None,
-                "resources_before": resources_before,
-                "resources_after": resources_after,
-                "reward": reward,
-                "details": json.dumps(details) if details else None,
-            }
-
-            self._action_buffer.append(action_data)
-
-            if len(self._action_buffer) >= self._buffer_size:
-                self.flush_action_buffer()
-
-        except ValueError as e:
-            logger.error(f"Invalid input for agent action: {e}")
-            raise
-        except TypeError as e:
-            logger.error(f"Type error in agent action data: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error logging agent action: {e}")
-            raise
-
-    def flush_action_buffer(self):
-        """Flush the action buffer by batch inserting all buffered actions."""
-        if not self._action_buffer:
-            return
-
-        buffer_copy = list(self._action_buffer)  # Create a copy of the buffer
-        try:
-
-            def _insert(session):
-                session.bulk_insert_mappings(AgentAction, buffer_copy)
-
-            self._execute_in_transaction(_insert)
-        except SQLAlchemyError as e:
-            logger.error(f"Failed to flush action buffer: {e}")
-            raise
-        else:
-            self._action_buffer.clear()  # Only clear if successful
-
-    def flush_learning_buffer(self):
-        """Flush the learning experience buffer with transaction safety."""
-        if not self._learning_exp_buffer:
-            return
-
-        buffer_copy = list(self._learning_exp_buffer)
-        try:
-
-            def _insert(session):
-                session.bulk_insert_mappings(LearningExperience, buffer_copy)
-
-            self._execute_in_transaction(_insert)
-        except SQLAlchemyError as e:
-            logger.error(f"Failed to flush learning buffer: {e}")
-            raise
-        else:
-            self._learning_exp_buffer.clear()
-
-    def flush_health_buffer(self):
-        """Flush the health incident buffer with transaction safety."""
-        if not self._health_incident_buffer:
-            return
-
-        buffer_copy = list(self._health_incident_buffer)
-        try:
-
-            def _insert(session):
-                session.bulk_insert_mappings(HealthIncident, buffer_copy)
-
-            self._execute_in_transaction(_insert)
-        except SQLAlchemyError as e:
-            logger.error(f"Failed to flush health buffer: {e}")
-            raise
-        else:
-            self._health_incident_buffer.clear()
-
-    def flush_all_buffers(self) -> None:
-        """Flush all data buffers to the database.
-
-        Safely writes all buffered data (actions, learning experiences, health incidents)
-        to the database in transactions. Maintains data integrity by only clearing
-        buffers after successful writes.
-
-        Raises
-        ------
-        SQLAlchemyError
-            If any buffer flush fails, with details about which buffer(s) failed
-        IntegrityError
-            If there are foreign key or unique constraint violations
-        OperationalError
-            If there are database connection issues
-        """
-        buffers = {
-            "action": (self._action_buffer, self.flush_action_buffer),
-            "learning": (self._learning_exp_buffer, self.flush_learning_buffer),
-            "health": (self._health_incident_buffer, self.flush_health_buffer),
-        }
-
-        errors = []
-        for buffer_name, (buffer, flush_func) in buffers.items():
-            if buffer:  # Only attempt flush if buffer has data
-                try:
-                    flush_func()
-                except SQLAlchemyError as e:
-                    logger.error(f"Error flushing {buffer_name} buffer: {e}")
-                    errors.append((buffer_name, str(e)))
-                except Exception as e:
-                    logger.error(f"Unexpected error flushing {buffer_name} buffer: {e}")
-                    errors.append((buffer_name, str(e)))
-
-        if errors:
-            error_msg = "; ".join(f"{name}: {err}" for name, err in errors)
-            raise SQLAlchemyError(f"Failed to flush buffers: {error_msg}")
-
     def close(self) -> None:
         """Close the database connection with enhanced error handling."""
         try:
-            # Flush pending changes
-            self.flush_all_buffers()
+            # Flush pending changes using DataLogger
+            self.logger.flush_all_buffers()
 
             # Clean up sessions
             self.Session.remove()
@@ -1395,7 +1250,7 @@ class SimulationDatabase:
         """
         try:
             # Flush any pending changes
-            self.flush_all_buffers()
+            self.logger.flush_all_buffers()
 
             # Close database connections
             self.Session.remove()

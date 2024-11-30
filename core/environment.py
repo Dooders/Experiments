@@ -10,6 +10,7 @@ from scipy.spatial import cKDTree
 
 from agents import ControlAgent, IndependentAgent, SystemAgent
 from database.database import SimulationDatabase
+from database.data_logging import DataLogger
 from core.resources import Resource
 from core.state import EnvironmentState
 
@@ -55,6 +56,7 @@ class Environment:
         self.resources = []
         self.time = 0
         self.db = SimulationDatabase(db_path)
+        self.logger = self.db.logger  # Get DataLogger instance
         self.next_agent_id = 0
         self.next_resource_id = 0
         self.max_resource = max_resource
@@ -183,8 +185,8 @@ class Environment:
 
     def collect_action(self, **action_data):
         """Collect an action for batch processing."""
-        if self.db is not None:
-            self.db.log_agent_action(
+        if self.logger is not None:
+            self.logger.log_agent_action(
                 step_number=action_data["step_number"],
                 agent_id=action_data["agent_id"],
                 action_type=action_data["action_type"],

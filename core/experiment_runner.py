@@ -66,16 +66,7 @@ class ExperimentRunner:
         self.logger.addHandler(file_handler)
 
     def run_iterations(self, num_iterations: int, config_variations: Optional[List[Dict]] = None) -> None:
-        """
-        Run multiple iterations of the simulation.
-
-        Parameters
-        ----------
-        num_iterations : int
-            Number of iterations to run
-        config_variations : Optional[List[Dict]]
-            List of configuration parameter variations to apply
-        """
+        """Run multiple iterations of the simulation."""
         self.logger.info(f"Starting experiment with {num_iterations} iterations")
         
         for i in range(num_iterations):
@@ -89,12 +80,16 @@ class ExperimentRunner:
             
             try:
                 # Run simulation
-                run_simulation(
+                env = run_simulation(
                     num_steps=iteration_config.num_steps,
                     config=iteration_config,
                     db_path=db_path
                 )
                 
+                # Ensure all data is flushed
+                if env.db:
+                    env.logger.flush_all_buffers()
+                    
                 # Analyze results
                 results = self._analyze_iteration(db_path)
                 results["iteration"] = i + 1

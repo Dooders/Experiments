@@ -220,7 +220,7 @@ def share_action(agent: "BaseAgent") -> None:
     if not target or share_amount <= 0 or agent.resource_level < share_amount:
         # Log failed share action
         if agent.environment.db is not None:
-            agent.environment.db.log_agent_action(
+            agent.environment.db.logger.log_agent_action(
                 step_number=agent.environment.time,
                 agent_id=agent.agent_id,
                 action_type="share",
@@ -251,7 +251,7 @@ def share_action(agent: "BaseAgent") -> None:
 
     # Log successful share action
     if agent.environment.db is not None:
-        agent.environment.db.log_agent_action(
+        agent.environment.db.logger.log_agent_action(
             step_number=agent.environment.time,
             agent_id=agent.agent_id,
             action_type="share",

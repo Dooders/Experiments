@@ -203,7 +203,7 @@ def move_action(agent: "BaseAgent") -> None:
 
     # Collect action for database
     if agent.environment.db is not None:
-        agent.environment.db.log_agent_action(
+        agent.environment.db.logger.log_agent_action(
             step_number=agent.environment.time,
             agent_id=agent.agent_id,
             action_type="move",

@@ -8,6 +8,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+from database.data_logging import DataLogger
+
 logger = logging.getLogger(__name__)
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -79,6 +81,10 @@ class BaseDQNModule:
         self.device = device
         self.config = config
         self.db = db
+        if db is not None:
+            self.logger = db.logger
+        else:
+            self.logger = None
         self._setup_networks(input_dim, output_dim, config)
         self._setup_training(config)
         self.losses = []
@@ -170,30 +176,18 @@ class BaseDQNModule:
         self.memory.append((state, action, reward, next_state, done))
         self.episode_rewards.append(reward)
 
-        # Collect experiences for batch logging
-        if all(x is not None for x in [step_number, agent_id, module_type]):
-            experience_data = {
-                "step_number": step_number,
-                "agent_id": agent_id,
-                "module_type": module_type,
-                "state_before": str(state.tolist()),
-                "action_taken": action,
-                "reward": reward,
-                "state_after": str(next_state.tolist()),
-                "loss": None
-            }
-            
-            if self.db is not None:
-                self.db.log_learning_experience(
-                    step_number=experience_data["step_number"],
-                    agent_id=experience_data["agent_id"],
-                    module_type=experience_data["module_type"],
-                    state_before=experience_data["state_before"],
-                    action_taken=experience_data["action_taken"],
-                    reward=experience_data["reward"],
-                    state_after=experience_data["state_after"],
-                    loss=0.0
-                )
+        # Log experience if logger is available
+        if self.logger is not None and all(x is not None for x in [step_number, agent_id, module_type]):
+            self.logger.log_learning_experience(
+                step_number=step_number,
+                agent_id=agent_id,
+                module_type=module_type,
+                state_before=str(state.tolist()),
+                action_taken=action,
+                reward=reward,
+                state_after=str(next_state.tolist()),
+                loss=None
+            )
 
     def train(
         self,
