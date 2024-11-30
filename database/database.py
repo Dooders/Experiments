@@ -7,6 +7,8 @@ logging, configuration management, and data analysis.
 Key Components
 -------------
 - SimulationDatabase : Main database interface class
+- DataLogger : Handles buffered data logging operations
+- DataRetriever : Handles data querying operations
 - SQLAlchemy Models : ORM models for different data types
     - Agent : Agent entity data
     - AgentState : Time-series agent state data
@@ -14,23 +16,22 @@ Key Components
     - SimulationStep : Per-step simulation metrics
     - AgentAction : Agent behavior logging
     - HealthIncident : Health-related events
-    - LearningExperience : Agent learning data
+    - SimulationConfig : Configuration management
 
 Features
 --------
-- Efficient batch operations with buffering
+- Efficient batch operations through DataLogger
 - Transaction safety with rollback support
 - Comprehensive error handling
-- Data export in multiple formats
-- Advanced statistical analysis
+- Multi-format data export (CSV, Excel, JSON, Parquet)
 - Configuration management
-- Performance optimized queries
+- Performance optimized queries through DataRetriever
 
 Usage Example
 ------------
 >>> db = SimulationDatabase("simulation_results.db")
 >>> db.save_configuration(config_dict)
->>> db.log_step(step_number, agent_states, resource_states, metrics)
+>>> db.logger.log_step(step_number, agent_states, resource_states, metrics)
 >>> db.export_data("results.csv")
 >>> db.close()
 
@@ -45,17 +46,14 @@ Notes
 import json
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
-from sqlalchemy import case, create_engine, event, func
-from sqlalchemy.exc import (
-    IntegrityError,
-    OperationalError,
-    ProgrammingError,
-    SQLAlchemyError,
-)
+from sqlalchemy import create_engine, event
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload, scoped_session, sessionmaker
+
+from database.data_retrieval import DataRetriever
 
 from .data_logging import DataLogger
 from .models import (
@@ -64,20 +62,17 @@ from .models import (
     AgentState,
     Base,
     HealthIncident,
-    LearningExperience,
     ResourceState,
     SimulationConfig,
     SimulationStep,
 )
 from .utilities import (
-    as_dict,
-    safe_json_loads,
-    format_position,
-    parse_position,
     create_database_schema,
-    validate_export_format,
+    execute_with_retry,
     format_agent_state,
-    execute_with_retry
+    format_position,
+    safe_json_loads,
+    validate_export_format,
 )
 
 logger = logging.getLogger(__name__)
@@ -93,11 +88,11 @@ class SimulationDatabase:
 
     Features
     --------
-    - Buffered batch operations for performance
+    - Buffered batch operations via DataLogger
+    - Data querying via DataRetriever
     - Transaction safety with automatic rollback
     - Comprehensive error handling
     - Multi-format data export
-    - Statistical analysis functions
     - Thread-safe session management
 
     Attributes
@@ -108,36 +103,33 @@ class SimulationDatabase:
         SQLAlchemy database engine instance
     Session : sqlalchemy.orm.scoped_session
         Thread-local session factory
-    _action_buffer : List[Dict]
-        Buffer for agent actions before batch insert
-    _learning_exp_buffer : List[Dict]
-        Buffer for learning experiences before batch insert
-    _health_incident_buffer : List[Dict]
-        Buffer for health incidents before batch insert
-    _buffer_size : int
-        Maximum size of buffers before auto-flush (default: 1000)
+    logger : DataLogger
+        Handles buffered data logging operations
+    query : DataRetriever
+        Handles data querying operations
 
     Methods
     -------
-    log_step(step_number, agent_states, resource_states, metrics)
-        Log complete simulation state for a time step
-    get_simulation_data(step_number)
-        Retrieve comprehensive state data for a time step
-    export_data(filepath, format='csv', ...)
+    update_agent_death(agent_id, death_time, cause)
+        Update agent record with death information
+    update_agent_state(agent_id, step_number, state_data)
+        Update agent state in the database
+    export_data(filepath, format, data_types, ...)
         Export simulation data to various file formats
-    get_advanced_statistics()
-        Calculate advanced simulation metrics
-    flush_all_buffers()
-        Write all buffered data to database
+    save_configuration(config)
+        Save simulation configuration to database
+    get_configuration()
+        Retrieve current simulation configuration
+    cleanup()
+        Clean up database resources
     close()
-        Clean up database connections and resources
+        Close database connections
 
     Example
     -------
     >>> db = SimulationDatabase("simulation_results.db")
     >>> db.save_configuration({"agents": 100, "resources": 1000})
-    >>> db.log_step(1, agent_states, resource_states, metrics)
-    >>> simulation_data = db.get_simulation_data(1)
+    >>> db.logger.log_step(1, agent_states, resource_states, metrics)
     >>> db.export_data("results.csv")
     >>> db.close()
 
@@ -147,8 +139,7 @@ class SimulationDatabase:
     - Implements foreign key constraints
     - Creates required tables automatically
     - Handles concurrent access through thread-local sessions
-    - Buffers operations for better performance
-    - Provides automatic cleanup through context management
+    - Buffers operations through DataLogger for better performance
     """
 
     def __init__(self, db_path: str) -> None:
@@ -185,6 +176,7 @@ class SimulationDatabase:
 
         # Replace buffer initialization with DataLogger
         self.logger = DataLogger(self, buffer_size=1000)
+        self.query = DataRetriever(self)
 
     def _execute_in_transaction(self, func: callable) -> Any:
         """Execute database operations within a transaction with error handling.
@@ -215,253 +207,6 @@ class SimulationDatabase:
             return execute_with_retry(session, lambda: func(session))
         finally:
             self.Session.remove()
-
-    def batch_log_agents(self, agent_data: List[Dict]):
-        """Batch insert multiple agents into the database.
-
-        Parameters
-        ----------
-        agent_data : List[Dict]
-            List of dictionaries containing agent data:
-            - agent_id: int
-            - birth_time: int
-            - agent_type: str
-            - position: Tuple[float, float]
-            - initial_resources: float
-            - max_health: float
-            - starvation_threshold: int
-            - genome_id: Optional[str]
-            - parent_id: Optional[int]
-            - generation: Optional[int]
-
-        Raises
-        ------
-        SQLAlchemyError
-            If there's an error during batch insertion
-        ValueError
-            If agent data is malformed
-        """
-
-        def _insert(session):
-            # Format data as mappings
-            mappings = [
-                {
-                    "agent_id": data["agent_id"],
-                    "birth_time": data["birth_time"],
-                    "agent_type": data["agent_type"],
-                    "position_x": data["position"][0],
-                    "position_y": data["position"][1],
-                    "initial_resources": data["initial_resources"],
-                    "max_health": data["max_health"],
-                    "starvation_threshold": data["starvation_threshold"],
-                    "genome_id": data.get("genome_id"),
-                    "parent_id": data.get("parent_id"),
-                    "generation": data.get("generation", 0),
-                }
-                for data in agent_data
-            ]
-            session.bulk_insert_mappings(Agent, mappings)
-
-        self._execute_in_transaction(_insert)
-
-    def get_simulation_data(self, step_number: int) -> Dict[str, Any]:
-        """Retrieve simulation data for a specific time step.
-
-        Fetches comprehensive state data including agent states, resource states,
-        and simulation metrics for the specified step number.
-
-        Parameters
-        ----------
-        step_number : int
-            The simulation step number to retrieve data for
-
-        Returns
-        -------
-        Dict[str, Any]
-            Dictionary containing:
-            - step_number: int
-            - agent_states: List[Tuple] - Agent state data tuples
-            - resource_states: List[Tuple] - Resource state data tuples
-            - metrics: Dict - Simulation metrics
-            - timestamp: str - ISO format timestamp
-
-        Raises
-        ------
-        SQLAlchemyError
-            If there's a database error
-        ValueError
-            If step_number is invalid
-        """
-
-        def _query(session):
-            # Optimize queries with joins and specific column selection
-            agent_states = (
-                session.query(AgentState)
-                .join(Agent)
-                .filter(AgentState.step_number == step_number)
-                .options(joinedload(AgentState.agent))  # Eager load agent relationship
-                .all()
-            )
-
-            resource_states = (
-                session.query(ResourceState)
-                .filter(ResourceState.step_number == step_number)
-                .all()
-            )
-
-            metrics = (
-                session.query(SimulationStep)
-                .filter(SimulationStep.step_number == step_number)
-                .first()
-            )
-
-            # Convert to tuples for visualization compatibility
-            agent_state_tuples = [
-                (
-                    state.agent_id,
-                    state.agent.agent_type,
-                    state.position_x,
-                    state.position_y,
-                    state.resource_level,
-                    state.current_health,
-                    state.max_health,
-                    state.starvation_threshold,
-                    state.is_defending,
-                    state.total_reward,
-                    state.age,
-                )
-                for state in agent_states
-            ]
-
-            resource_state_tuples = [
-                (
-                    state.resource_id,
-                    state.amount,
-                    state.position_x,
-                    state.position_y,
-                )
-                for state in resource_states
-            ]
-
-            return {
-                "step_number": step_number,
-                "agent_states": agent_state_tuples,
-                "resource_states": resource_state_tuples,
-                "metrics": metrics.as_dict() if metrics else {},
-                "timestamp": datetime.now().isoformat(),
-            }
-
-        return self._execute_in_transaction(_query)
-
-    def log_step(
-        self,
-        step_number: int,
-        agent_states: List[Tuple],
-        resource_states: List[Tuple],
-        metrics: Dict,
-    ) -> None:
-        """Log comprehensive simulation state data for a single time step.
-
-        Records the complete state of the simulation including all agent states,
-        resource states, and aggregate metrics for the given step.
-
-        Parameters
-        ----------
-        step_number : int
-            Current simulation step number
-        agent_states : List[Tuple]
-            List of agent state tuples containing:
-            (agent_id, position_x, position_y, resource_level, current_health,
-             max_health, starvation_threshold, is_defending, total_reward, age)
-        resource_states : List[Tuple]
-            List of resource state tuples containing:
-            (resource_id, amount, position_x, position_y)
-        metrics : Dict
-            Dictionary of simulation metrics including:
-            - total_agents: int
-            - system_agents: int
-            - independent_agents: int
-            - control_agents: int
-            - total_resources: float
-            - average_agent_resources: float
-            - births: int
-            - deaths: int
-            And other relevant metrics
-
-        Raises
-        ------
-        SQLAlchemyError
-            If there's an error during database insertion
-        ValueError
-            If input data is malformed or invalid
-        """
-
-        def _insert(session):
-            # Bulk insert agent states
-            if agent_states:
-                agent_state_mappings = [
-                    {
-                        "step_number": step_number,
-                        "agent_id": state[0],
-                        "position_x": state[1],
-                        "position_y": state[2],
-                        "resource_level": state[3],
-                        "current_health": state[4],
-                        "max_health": state[5],
-                        "starvation_threshold": state[6],
-                        "is_defending": bool(state[7]),
-                        "total_reward": state[8],
-                        "age": state[9],
-                    }
-                    for state in agent_states
-                ]
-                session.bulk_insert_mappings(AgentState, agent_state_mappings)
-
-            # Bulk insert resource states
-            if resource_states:
-                resource_state_mappings = [
-                    {
-                        "step_number": step_number,
-                        "resource_id": state[0],
-                        "amount": state[1],
-                        "position_x": state[2],
-                        "position_y": state[3],
-                    }
-                    for state in resource_states
-                ]
-                session.bulk_insert_mappings(ResourceState, resource_state_mappings)
-
-            # Insert metrics
-            simulation_step = SimulationStep(step_number=step_number, **metrics)
-            session.add(simulation_step)
-
-        self._execute_in_transaction(_insert)
-
-    def get_historical_data(self) -> Dict:
-        """Retrieve historical metrics for the entire simulation."""
-
-        def _query(session):
-            steps = (
-                session.query(SimulationStep).order_by(SimulationStep.step_number).all()
-            )
-
-            return {
-                "steps": [step.step_number for step in steps],
-                "metrics": {
-                    "total_agents": [step.total_agents for step in steps],
-                    "system_agents": [step.system_agents for step in steps],
-                    "independent_agents": [step.independent_agents for step in steps],
-                    "control_agents": [step.control_agents for step in steps],
-                    "total_resources": [step.total_resources for step in steps],
-                    "average_agent_resources": [
-                        step.average_agent_resources for step in steps
-                    ],
-                    "births": [step.births for step in steps],
-                    "deaths": [step.deaths for step in steps],
-                },
-            }
-
-        return self._execute_in_transaction(_query)
 
     def close(self) -> None:
         """Close the database connection with enhanced error handling."""
@@ -637,423 +382,6 @@ class SimulationDatabase:
 
         self._execute_in_transaction(_query)
 
-    def get_population_momentum(self) -> float:
-        """Calculate population momentum using simpler SQL queries."""
-
-        def _query(session):
-            # Get initial population
-            initial = (
-                session.query(SimulationStep.total_agents)
-                .order_by(SimulationStep.step_number)
-                .first()
-            )
-
-            # Get max population and final step
-            stats = session.query(
-                func.max(SimulationStep.total_agents).label("max_count"),
-                func.max(SimulationStep.step_number).label("final_step"),
-            ).first()
-
-            if initial and stats and initial[0] > 0:
-                return (float(stats[1]) * float(stats[0])) / float(initial[0])
-            return 0.0
-
-        return self._execute_in_transaction(_query)
-
-    def get_population_statistics(self) -> Dict:
-        """Calculate comprehensive population statistics using SQLAlchemy."""
-
-        def _query(session):
-            from sqlalchemy import case, func
-
-            # Subquery for population data
-            pop_data = (
-                session.query(
-                    SimulationStep.step_number,
-                    SimulationStep.total_agents,
-                    SimulationStep.total_resources,
-                    func.sum(AgentState.resource_level).label("resources_consumed"),
-                )
-                .outerjoin(
-                    AgentState, AgentState.step_number == SimulationStep.step_number
-                )
-                .filter(SimulationStep.total_agents > 0)
-                .group_by(SimulationStep.step_number)
-                .subquery()
-            )
-
-            # Calculate statistics
-            stats = session.query(
-                func.avg(pop_data.c.total_agents).label("avg_population"),
-                func.max(pop_data.c.step_number).label("death_step"),
-                func.max(pop_data.c.total_agents).label("peak_population"),
-                func.sum(pop_data.c.resources_consumed).label(
-                    "total_resources_consumed"
-                ),
-                func.sum(pop_data.c.total_resources).label("total_resources_available"),
-                func.sum(pop_data.c.total_agents * pop_data.c.total_agents).label(
-                    "sum_squared"
-                ),
-                func.count().label("step_count"),
-            ).first()
-
-            if stats:
-                avg_pop = float(stats[0] or 0)
-                death_step = int(stats[1] or 0)
-                peak_pop = int(stats[2] or 0)
-                resources_consumed = float(stats[3] or 0)
-                resources_available = float(stats[4] or 0)
-                sum_squared = float(stats[5] or 0)
-                step_count = int(stats[6] or 1)
-
-                # Calculate derived statistics
-                variance = (sum_squared / step_count) - (avg_pop * avg_pop)
-                std_dev = variance**0.5
-
-                resource_utilization = (
-                    resources_consumed / resources_available
-                    if resources_available > 0
-                    else 0
-                )
-
-                cv = std_dev / avg_pop if avg_pop > 0 else 0
-
-                return {
-                    "average_population": avg_pop,
-                    "peak_population": peak_pop,
-                    "death_step": death_step,
-                    "resource_utilization": resource_utilization,
-                    "population_variance": variance,
-                    "coefficient_variation": cv,
-                    "resources_consumed": resources_consumed,
-                    "resources_available": resources_available,
-                    "utilization_per_agent": (
-                        resources_consumed / (avg_pop * death_step)
-                        if avg_pop * death_step > 0
-                        else 0
-                    ),
-                }
-
-            return {}
-
-        return self._execute_in_transaction(_query)
-
-    def get_advanced_statistics(self) -> Dict:
-        """Calculate advanced simulation statistics using optimized queries."""
-
-        def _query(session):
-            # Get basic population stats in one query
-            pop_stats = session.query(
-                func.avg(SimulationStep.total_agents).label("avg_pop"),
-                func.max(SimulationStep.total_agents).label("peak_pop"),
-                func.min(SimulationStep.total_agents).label("min_pop"),
-                func.count(SimulationStep.step_number).label("total_steps"),
-                func.avg(SimulationStep.average_agent_health).label("avg_health"),
-            ).first()
-
-            # Get agent type ratios in a separate query
-            type_stats = session.query(
-                func.avg(SimulationStep.system_agents).label("avg_system"),
-                func.avg(SimulationStep.independent_agents).label("avg_independent"),
-                func.avg(SimulationStep.control_agents).label("avg_control"),
-                func.avg(SimulationStep.total_agents).label("avg_total"),
-            ).first()
-
-            # Get interaction stats
-            interaction_stats = session.query(
-                func.count(AgentAction.action_id).label("total_actions"),
-                func.sum(
-                    case(
-                        [(AgentAction.action_type.in_(["attack", "defend"]), 1)],
-                        else_=0,
-                    )
-                ).label("conflicts"),
-                func.sum(
-                    case([(AgentAction.action_type.in_(["share", "help"]), 1)], else_=0)
-                ).label("cooperation"),
-            ).first()
-
-            if not all([pop_stats, type_stats, interaction_stats]):
-                return {}
-
-            # Calculate diversity index
-            total = float(type_stats[3] or 1)  # Avoid division by zero
-            ratios = [float(count or 0) / total for count in type_stats[:3]]
-
-            import math
-
-            diversity = sum(
-                -ratio * math.log(ratio) if ratio > 0 else 0 for ratio in ratios
-            )
-
-            return {
-                "peak_population": int(pop_stats[1] or 0),
-                "average_population": float(pop_stats[0] or 0),
-                "total_steps": int(pop_stats[3] or 0),
-                "average_health": float(pop_stats[4] or 0),
-                "agent_diversity": diversity,
-                "interaction_rate": (
-                    float(interaction_stats[0] or 0)
-                    / float(pop_stats[3] or 1)
-                    / float(pop_stats[1] or 1)
-                ),
-                "conflict_cooperation_ratio": (
-                    float(interaction_stats[1] or 0)
-                    / float(interaction_stats[2] or 1)  # Avoid division by zero
-                ),
-            }
-
-        return self._execute_in_transaction(_query)
-
-    def log_resource(
-        self, resource_id: int, initial_amount: float, position: Tuple[float, float]
-    ):
-        """Log a new resource in the simulation.
-
-        Parameters
-        ----------
-        resource_id : int
-            Unique identifier for the resource
-        initial_amount : float
-            Starting amount of the resource
-        position : Tuple[float, float]
-            (x, y) coordinates of the resource location
-        """
-
-        def _insert(session):
-            resource_state = ResourceState(
-                step_number=0,  # Initial state
-                resource_id=resource_id,
-                amount=initial_amount,
-                position_x=position[0],
-                position_y=position[1],
-            )
-            session.add(resource_state)
-
-        self._execute_in_transaction(_insert)
-
-    def get_agent_data(self, agent_id: int) -> Dict:
-        """Get all data for a specific agent."""
-
-        def _query(session):
-            agent = session.query(Agent).filter(Agent.agent_id == agent_id).first()
-
-            if not agent:
-                return {}
-
-            return {
-                "agent_id": agent.agent_id,
-                "agent_type": agent.agent_type,
-                "birth_time": agent.birth_time,
-                "death_time": agent.death_time,
-                "initial_resources": agent.initial_resources,
-                "max_health": agent.max_health,
-                "starvation_threshold": agent.starvation_threshold,
-                "genome_id": agent.genome_id,
-                "parent_id": agent.parent_id,
-                "generation": agent.generation,
-            }
-
-        return self._execute_in_transaction(_query)
-
-    def get_agent_actions(self, agent_id: int) -> List[Dict]:
-        """Get all actions performed by an agent.
-
-        Retrieves a chronological list of all actions performed by a specific agent,
-        including details about each action's outcome and impact.
-
-        Parameters
-        ----------
-        agent_id : int
-            The unique identifier of the agent
-
-        Returns
-        -------
-        List[Dict]
-            List of action records, each containing:
-            - step_number: int
-            - action_type: str
-            - action_target_id: Optional[int]
-            - position_before: Optional[str]
-            - position_after: Optional[str]
-            - resources_before: Optional[float]
-            - resources_after: Optional[float]
-            - reward: Optional[float]
-            - details: Optional[Dict]
-
-        Raises
-        ------
-        SQLAlchemyError
-            If there's a database error during retrieval
-        """
-
-        def _query(session):
-            actions = (
-                session.query(AgentAction)
-                .filter(AgentAction.agent_id == agent_id)
-                .order_by(AgentAction.step_number)
-                .all()
-            )
-
-            return [
-                {
-                    "step_number": action.step_number,
-                    "action_type": action.action_type,
-                    "action_target_id": action.action_target_id,
-                    "position_before": action.position_before,
-                    "position_after": action.position_after,
-                    "resources_before": action.resources_before,
-                    "resources_after": action.resources_after,
-                    "reward": action.reward,
-                    "details": json.loads(action.details) if action.details else None,
-                }
-                for action in actions
-            ]
-
-        return self._execute_in_transaction(_query)
-
-    def get_step_actions(self, agent_id: int, step_number: int) -> Optional[Dict]:
-        """Get actions performed by an agent at a specific step."""
-
-        def _query(session):
-            action = (
-                session.query(AgentAction)
-                .filter(
-                    AgentAction.agent_id == agent_id,
-                    AgentAction.step_number == step_number,
-                )
-                .first()
-            )
-
-            if not action:
-                return None
-
-            return {
-                "action_type": action.action_type,
-                "action_target_id": action.action_target_id,
-                "position_before": action.position_before,
-                "position_after": action.position_after,
-                "resources_before": action.resources_before,
-                "resources_after": action.resources_after,
-                "reward": action.reward,
-                "details": json.loads(action.details) if action.details else None,
-            }
-
-        return self._execute_in_transaction(_query)
-
-    def get_agent_types(self) -> List[str]:
-        """Get list of all agent types in the simulation."""
-
-        def _query(session):
-            types = session.query(Agent.agent_type).distinct().all()
-            return [t[0] for t in types]
-
-        return self._execute_in_transaction(_query)
-
-    def get_agent_behaviors(self) -> List[Dict]:
-        """Get behavior patterns for all agents."""
-
-        def _query(session):
-            behaviors = (
-                session.query(
-                    AgentAction.step_number,
-                    AgentAction.action_type,
-                    func.count().label("count"),
-                )
-                .group_by(AgentAction.step_number, AgentAction.action_type)
-                .order_by(AgentAction.step_number)
-                .all()
-            )
-
-            return [
-                {"step_number": b[0], "action_type": b[1], "count": b[2]}
-                for b in behaviors
-            ]
-
-        return self._execute_in_transaction(_query)
-
-    def get_agent_decisions(self) -> List[Dict]:
-        """Get decision-making patterns for all agents."""
-
-        def _query(session):
-            decisions = (
-                session.query(
-                    AgentAction.action_type,
-                    func.avg(AgentAction.reward).label("avg_reward"),
-                    func.count().label("count"),
-                )
-                .group_by(AgentAction.action_type)
-                .all()
-            )
-
-            return [
-                {
-                    "action_type": d[0],
-                    "avg_reward": float(d[1]) if d[1] is not None else 0.0,
-                    "count": d[2],
-                }
-                for d in decisions
-            ]
-
-        return self._execute_in_transaction(_query)
-
-    def log_agent(
-        self,
-        agent_id: int,
-        birth_time: int,
-        agent_type: str,
-        position: tuple,
-        initial_resources: float,
-        max_health: float,
-        starvation_threshold: int,
-        genome_id: Optional[str] = None,
-        parent_id: Optional[int] = None,
-        generation: int = 0,
-    ) -> None:
-        """Log a single agent's creation to the database.
-
-        Parameters
-        ----------
-        agent_id : int
-            Unique identifier for the agent
-        birth_time : int
-            Time step when agent was created
-        agent_type : str
-            Type of agent (e.g., 'SystemAgent', 'IndependentAgent')
-        position : tuple
-            Initial (x, y) coordinates
-        initial_resources : float
-            Starting resource level
-        max_health : float
-            Maximum health points
-        starvation_threshold : int
-            Steps agent can survive without resources
-        genome_id : Optional[str]
-            Unique identifier for agent's genome
-        parent_id : Optional[int]
-            ID of parent agent if created through reproduction
-        generation : int
-            Generation number in evolutionary lineage
-        """
-
-        def _insert(session):
-            agent = Agent(
-                agent_id=agent_id,
-                birth_time=birth_time,
-                agent_type=agent_type,
-                position_x=position[0],
-                position_y=position[1],
-                initial_resources=initial_resources,
-                max_health=max_health,
-                starvation_threshold=starvation_threshold,
-                genome_id=genome_id,
-                parent_id=parent_id,
-                generation=generation,
-            )
-            session.add(agent)
-
-        self._execute_in_transaction(_insert)
-
     def update_agent_death(
         self, agent_id: int, death_time: int, cause: str = "starvation"
     ):
@@ -1181,7 +509,7 @@ class SimulationDatabase:
 
         def _create(session):
             create_database_schema(self.engine, Base)
-        
+
         self._execute_in_transaction(_create)
 
     def update_notes(self, notes_data: Dict):
@@ -1267,44 +595,3 @@ class SimulationDatabase:
             session.add(config_obj)
 
         self._execute_in_transaction(_insert)
-
-    def log_agents_batch(self, agent_data_list: List[Dict]) -> None:
-        """Batch insert multiple agents for better performance.
-
-        Parameters
-        ----------
-        agent_data_list : List[Dict]
-            List of dictionaries containing agent data with fields:
-            - agent_id: int
-            - birth_time: int
-            - agent_type: str
-            - position: Tuple[float, float]
-            - initial_resources: float
-            - max_health: float
-            - starvation_threshold: int
-            - genome_id: Optional[str]
-            - parent_id: Optional[int]
-            - generation: int
-        """
-
-        def _batch_insert(session):
-            # Format data for bulk insert
-            mappings = [
-                {
-                    "agent_id": data["agent_id"],
-                    "birth_time": data["birth_time"],
-                    "agent_type": data["agent_type"],
-                    "position_x": data["position"][0],
-                    "position_y": data["position"][1],
-                    "initial_resources": data["initial_resources"],
-                    "max_health": data["max_health"],
-                    "starvation_threshold": data["starvation_threshold"],
-                    "genome_id": data.get("genome_id"),
-                    "parent_id": data.get("parent_id"),
-                    "generation": data.get("generation", 0),
-                }
-                for data in agent_data_list
-            ]
-            session.bulk_insert_mappings(Agent, mappings)
-
-        self._execute_in_transaction(_batch_insert)

@@ -12,15 +12,28 @@ Main Models:
 - LearningExperience: Stores agent learning data
 - HealthIncident: Tracks changes in agent health
 - SimulationConfig: Stores simulation configuration data
+- Simulation: Stores simulation metadata
 
 Each model includes appropriate indexes for query optimization and relationships
 between related tables.
 """
 
 import logging
+from datetime import datetime
 from typing import Any, Dict
 
-from sqlalchemy import Boolean, Column, Float, ForeignKey, Index, Integer, String
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    func,
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
@@ -239,3 +252,22 @@ class SimulationConfig(Base):
     config_id = Column(Integer, primary_key=True)
     timestamp = Column(Integer, nullable=False)
     config_data = Column(String(4096), nullable=False)
+
+
+class Simulation(Base):
+    __tablename__ = "simulations"
+
+    simulation_id = Column(Integer, primary_key=True, autoincrement=True)
+    start_time = Column(DateTime, default=func.now())
+    end_time = Column(DateTime, nullable=True)
+    status = Column(String(50), default="pending")
+    parameters = Column(JSON, nullable=False)
+    results_summary = Column(JSON, nullable=True)
+    simulation_db_path = Column(String(255), nullable=False)
+
+    # Relationships (optional, for future extensions)
+    # e.g., could relate to logs, individual agent data, etc.
+    # logs = relationship("Log", back_populates="simulation")
+
+    def __repr__(self):
+        return f"<Simulation(simulation_id={self.simulation_id}, status={self.status})>"

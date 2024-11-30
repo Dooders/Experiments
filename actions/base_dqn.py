@@ -8,8 +8,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from database.data_logging import DataLogger
-
 logger = logging.getLogger(__name__)
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")

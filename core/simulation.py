@@ -174,7 +174,7 @@ def run_simulation(
 
         # Force final flush of database buffers
         if environment.db:
-            environment.logger.flush_all_buffers()
+            environment.db.logger.flush_all_buffers()
             environment.db.close()
 
     except Exception as e:

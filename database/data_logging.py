@@ -14,11 +14,19 @@ Features:
 
 import json
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from .models import AgentAction, HealthIncident, LearningExperience
+from .models import (
+    Agent,
+    AgentAction,
+    AgentState,
+    HealthIncident,
+    LearningExperience,
+    ResourceState,
+    SimulationStep,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +49,7 @@ class DataLogger:
         self._action_buffer = []
         self._learning_exp_buffer = []
         self._health_incident_buffer = []
+        self._resource_buffer = []
 
     def log_agent_action(
         self,
@@ -239,3 +248,249 @@ class DataLogger:
         if errors:
             error_msg = "; ".join(f"{name}: {err}" for name, err in errors)
             raise SQLAlchemyError(f"Failed to flush buffers: {error_msg}")
+
+    def log_agents_batch(self, agent_data_list: List[Dict]) -> None:
+        """Batch insert multiple agents for better performance.
+
+        Parameters
+        ----------
+        agent_data_list : List[Dict]
+            List of dictionaries containing agent data with fields:
+            - agent_id: int
+            - birth_time: int
+            - agent_type: str
+            - position: Tuple[float, float]
+            - initial_resources: float
+            - max_health: float
+            - starvation_threshold: int
+            - genome_id: Optional[str]
+            - parent_id: Optional[int]
+            - generation: int
+
+        Raises
+        ------
+        ValueError
+            If agent data is malformed
+        SQLAlchemyError
+            If database operation fails
+        """
+        try:
+
+            def _batch_insert(session):
+                mappings = [
+                    {
+                        "agent_id": data["agent_id"],
+                        "birth_time": data["birth_time"],
+                        "agent_type": data["agent_type"],
+                        "position_x": data["position"][0],
+                        "position_y": data["position"][1],
+                        "initial_resources": data["initial_resources"],
+                        "max_health": data["max_health"],
+                        "starvation_threshold": data["starvation_threshold"],
+                        "genome_id": data.get("genome_id"),
+                        "parent_id": data.get("parent_id"),
+                        "generation": data.get("generation", 0),
+                    }
+                    for data in agent_data_list
+                ]
+                session.bulk_insert_mappings(Agent, mappings)
+
+            self.db._execute_in_transaction(_batch_insert)
+
+        except (ValueError, TypeError) as e:
+            logger.error(f"Invalid agent data format: {e}")
+            raise
+        except SQLAlchemyError as e:
+            logger.error(f"Database error during batch agent insert: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error during batch agent insert: {e}")
+            raise
+
+    def log_agent(
+        self,
+        agent_id: int,
+        birth_time: int,
+        agent_type: str,
+        position: Tuple[float, float],
+        initial_resources: float,
+        max_health: float,
+        starvation_threshold: int,
+        genome_id: Optional[str] = None,
+        parent_id: Optional[int] = None,
+        generation: int = 0,
+    ) -> None:
+        """Log a single agent's creation to the database.
+
+        Parameters
+        ----------
+        agent_id : int
+            Unique identifier for the agent
+        birth_time : int
+            Time step when agent was created
+        agent_type : str
+            Type of agent (e.g., 'SystemAgent', 'IndependentAgent')
+        position : Tuple[float, float]
+            Initial (x, y) coordinates
+        initial_resources : float
+            Starting resource level
+        max_health : float
+            Maximum health points
+        starvation_threshold : int
+            Steps agent can survive without resources
+        genome_id : Optional[str]
+            Unique identifier for agent's genome
+        parent_id : Optional[int]
+            ID of parent agent if created through reproduction
+        generation : int
+            Generation number in evolutionary lineage
+
+        Raises
+        ------
+        ValueError
+            If input parameters are invalid
+        SQLAlchemyError
+            If database operation fails
+        """
+        agent_data = {
+            "agent_id": agent_id,
+            "birth_time": birth_time,
+            "agent_type": agent_type,
+            "position": position,
+            "initial_resources": initial_resources,
+            "max_health": max_health,
+            "starvation_threshold": starvation_threshold,
+            "genome_id": genome_id,
+            "parent_id": parent_id,
+            "generation": generation,
+        }
+        self.log_agents_batch([agent_data])
+
+    def log_step(
+        self,
+        step_number: int,
+        agent_states: List[Tuple],
+        resource_states: List[Tuple],
+        metrics: Dict,
+    ) -> None:
+        """Log comprehensive simulation state data for a single time step.
+
+        Records the complete state of the simulation including all agent states,
+        resource states, and aggregate metrics for the given step.
+
+        Parameters
+        ----------
+        step_number : int
+            Current simulation step number
+        agent_states : List[Tuple]
+            List of agent state tuples containing:
+            (agent_id, position_x, position_y, resource_level, current_health,
+             max_health, starvation_threshold, is_defending, total_reward, age)
+        resource_states : List[Tuple]
+            List of resource state tuples containing:
+            (resource_id, amount, position_x, position_y)
+        metrics : Dict
+            Dictionary of simulation metrics including:
+            - total_agents: int
+            - system_agents: int
+            - independent_agents: int
+            - control_agents: int
+            - total_resources: float
+            - average_agent_resources: float
+            - births: int
+            - deaths: int
+            And other relevant metrics
+
+        Raises
+        ------
+        SQLAlchemyError
+            If there's an error during database insertion
+        ValueError
+            If input data is malformed or invalid
+        """
+
+        def _insert(session):
+            # Bulk insert agent states
+            if agent_states:
+                agent_state_mappings = [
+                    {
+                        "step_number": step_number,
+                        "agent_id": state[0],
+                        "position_x": state[1],
+                        "position_y": state[2],
+                        "resource_level": state[3],
+                        "current_health": state[4],
+                        "max_health": state[5],
+                        "starvation_threshold": state[6],
+                        "is_defending": bool(state[7]),
+                        "total_reward": state[8],
+                        "age": state[9],
+                    }
+                    for state in agent_states
+                ]
+                session.bulk_insert_mappings(AgentState, agent_state_mappings)
+
+            # Bulk insert resource states
+            if resource_states:
+                resource_state_mappings = [
+                    {
+                        "step_number": step_number,
+                        "resource_id": state[0],
+                        "amount": state[1],
+                        "position_x": state[2],
+                        "position_y": state[3],
+                    }
+                    for state in resource_states
+                ]
+                session.bulk_insert_mappings(ResourceState, resource_state_mappings)
+
+            # Insert metrics
+            simulation_step = SimulationStep(step_number=step_number, **metrics)
+            session.add(simulation_step)
+
+        self.db._execute_in_transaction(_insert)
+
+    def log_resource(
+        self, resource_id: int, initial_amount: float, position: Tuple[float, float]
+    ) -> None:
+        """Log a new resource in the simulation.
+
+        Parameters
+        ----------
+        resource_id : int
+            Unique identifier for the resource
+        initial_amount : float
+            Starting amount of the resource
+        position : Tuple[float, float]
+            (x, y) coordinates of the resource location
+
+        Raises
+        ------
+        ValueError
+            If input parameters are invalid
+        SQLAlchemyError
+            If database operation fails
+        """
+        try:
+            resource_data = {
+                "step_number": 0,  # Initial state
+                "resource_id": resource_id,
+                "amount": initial_amount,
+                "position_x": position[0],
+                "position_y": position[1],
+            }
+
+            def _insert(session):
+                session.add(ResourceState(**resource_data))
+
+            self.db._execute_in_transaction(_insert)
+
+        except (ValueError, TypeError) as e:
+            logger.error(f"Invalid resource data format: {e}")
+            raise
+        except SQLAlchemyError as e:
+            logger.error(f"Database error during resource insert: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error during resource insert: {e}")
+            raise

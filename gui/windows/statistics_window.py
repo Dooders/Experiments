@@ -73,46 +73,44 @@ class StatisticsWindow(BaseWindow):
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
 
-        # Population Dynamics section
-        self._add_stat_section(scrollable_frame, "Population Dynamics")
-        
-        # Get statistics using DataRetriever
+        # Get comprehensive statistics using DataRetriever
         population_stats = self.retriever.get_population_statistics()
-        lifespan_stats = self.retriever.get_agent_lifespan_statistics()
         resource_stats = self.retriever.get_resource_statistics()
         learning_stats = self.retriever.get_learning_statistics()
-
-        # Add population metrics
+        advanced_stats = self.retriever.get_advanced_statistics()
+        
+        # Population Dynamics section
+        self._add_stat_section(scrollable_frame, "Population Dynamics")
         self._add_stat_row(
-            "Average Population",
-            f"{population_stats['birth_death_rates']['birth_rate']:,.2f}"
+            "Average Population", 
+            f"{population_stats['basic_stats']['average_population']:,.2f}"
         )
         self._add_stat_row(
             "Peak Population",
-            f"{max(population_stats['population_over_time']['total']):,d}"
+            f"{population_stats['basic_stats']['peak_population']:,d}"
+        )
+        self._add_stat_row(
+            "Population Stability",
+            f"{advanced_stats['survival_metrics']['population_stability']:.2%}"
         )
         
-        # Add resource metrics
+        # Resource Metrics section
         self._add_stat_section(scrollable_frame, "Resource Metrics")
         self._add_stat_row(
-            "Resource Efficiency",
+            "Resource Utilization",
             f"{resource_stats['efficiency_metrics']['average_efficiency']:.2%}"
         )
         self._add_stat_row(
-            "Resource Distribution",
-            f"{resource_stats['efficiency_metrics']['distribution_entropy'][-1]:.2f}"
+            "Resources per Agent",
+            f"{population_stats['resource_metrics']['utilization_per_agent']:.2f}"
         )
-
-        # Add learning metrics
-        self._add_stat_section(scrollable_frame, "Learning Performance")
-        for module, stats in learning_stats['module_performance'].items():
+        
+        # Agent Distribution section
+        self._add_stat_section(scrollable_frame, "Agent Distribution")
+        for agent_type, ratio in advanced_stats['agent_distribution'].items():
             self._add_stat_row(
-                f"{module} Reward",
-                f"{stats['avg_reward']:.2f}"
-            )
-            self._add_stat_row(
-                f"{module} Loss",
-                f"{stats['avg_loss']:.2f}"
+                f"{agent_type.replace('_', ' ').title()}",
+                f"{ratio:.2%}"
             )
         
         # Update tooltips dictionary with new metrics

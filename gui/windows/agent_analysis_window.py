@@ -370,15 +370,29 @@ class AgentAnalysisWindow(ttk.Frame):
     def _load_agent_data(self, agent_id: int):
         """Load and display all data for selected agent."""
         try:
-            db = SimulationDatabase(self.db_path)
+            # Get comprehensive agent data using DataRetriever
+            agent_data = self.retriever.get_agent_data(agent_id)
+            agent_actions = self.retriever.get_agent_actions(agent_id)
+            agent_decisions = self.retriever.get_agent_decisions(agent_id)
             
-            # Load and update all data components
-            self._update_info_labels(self._load_basic_info(db, agent_id))
-            self._update_stat_labels(self._load_agent_stats(db, agent_id))
-            self._update_metric_labels(self._load_performance_metrics(db, agent_id))
-            self._update_metrics_chart(db, agent_id)
+            # Update info labels with basic info
+            self._update_info_labels(agent_data['basic_info'])
+            
+            # Update current state
+            self._update_stat_labels(agent_data['current_state'])
+            
+            # Update performance metrics
+            self._update_metric_labels(agent_data['historical_metrics'])
+            
+            # Update metrics chart with time series data
+            self._update_metrics_chart(agent_data, agent_actions)
+            
+            # Update children table
             self._update_children_table(agent_id)
-
+            
+            # Update action analysis
+            self._update_action_analysis(agent_actions, agent_decisions)
+            
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load agent data: {e}")
 

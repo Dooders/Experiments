@@ -1,16 +1,14 @@
 import logging
 import os
 import random
-import threading
 import time
-from typing import Dict, List
+from typing import Dict
 
 import numpy as np
 from scipy.spatial import cKDTree
 
 from agents import ControlAgent, IndependentAgent, SystemAgent
 from database.database import SimulationDatabase
-from database.data_logging import DataLogger
 from core.resources import Resource
 from core.state import EnvironmentState
 
@@ -56,7 +54,6 @@ class Environment:
         self.resources = []
         self.time = 0
         self.db = SimulationDatabase(db_path)
-        self.logger = self.db.logger  # Get DataLogger instance
         self.next_agent_id = 0
         self.next_resource_id = 0
         self.max_resource = max_resource
@@ -171,7 +168,7 @@ class Environment:
             )
             self.resources.append(resource)
             # Log resource to database
-            self.db.log_resource(
+            self.db.logger.log_resource(
                 resource_id=resource.resource_id,
                 initial_amount=resource.amount,
                 position=resource.position,
@@ -224,7 +221,7 @@ class Environment:
 
         # Log simulation state using SQLAlchemy
         if self.db is not None:
-            self.db.log_step(
+            self.db.logger.log_step(
                 step_number=self.time,
                 agent_states=[
                     self._prepare_agent_state(agent) 
@@ -546,7 +543,7 @@ class Environment:
 
         # Batch log to database using SQLAlchemy
         if self.db is not None:
-            self.db.batch_log_agents(agent_data)
+            self.db.logger.log_agents_batch(agent_data)
 
     def cleanup(self):
         """Clean up environment resources."""
@@ -574,7 +571,7 @@ class Environment:
         try:
             # Log metrics to database
             if self.db:
-                self.db.log_step(
+                self.db.logger.log_step(
                     step_number=self.time,
                     agent_states=[
                         self._prepare_agent_state(agent) for agent in self.agents if agent.alive
