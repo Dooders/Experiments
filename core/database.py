@@ -1,12 +1,22 @@
-import logging
 import json
+import logging
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+
 import pandas as pd
-from sqlalchemy import create_engine, event, func, text
-from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    create_engine,
+    event,
+    func,
+    text,
+)
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, Integer, Float, String, ForeignKey, Boolean
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, scoped_session, sessionmaker
 
 if TYPE_CHECKING:
     from core.environment import Environment
@@ -179,7 +189,7 @@ class SimulationDatabase:
         self._buffer_size = 1000
 
     def _execute_in_transaction(self, func):
-        """Execute database operations within a transaction."""
+        """Execute database operations within a transaction with improved error handling."""
         session = self.Session()
         try:
             result = func(session)
@@ -187,6 +197,10 @@ class SimulationDatabase:
             return result
         except Exception as e:
             session.rollback()
+            # Check if error is due to application shutdown
+            if "application has been destroyed" in str(e):
+                logger.info("Operation cancelled due to application shutdown")
+                return None
             logger.error(f"Database transaction failed: {e}")
             raise
         finally:
@@ -196,23 +210,24 @@ class SimulationDatabase:
         """Batch insert multiple agents using SQLAlchemy."""
 
         def _insert(session):
-            agents = [
-                Agent(
-                    agent_id=data["agent_id"],
-                    birth_time=data["birth_time"],
-                    agent_type=data["agent_type"],
-                    position_x=data["position"][0],
-                    position_y=data["position"][1],
-                    initial_resources=data["initial_resources"],
-                    max_health=data["max_health"],
-                    starvation_threshold=data["starvation_threshold"],
-                    genome_id=data.get("genome_id"),
-                    parent_id=data.get("parent_id"),
-                    generation=data.get("generation", 0),
-                )
+            # Format data as mappings
+            mappings = [
+                {
+                    "agent_id": data["agent_id"],
+                    "birth_time": data["birth_time"],
+                    "agent_type": data["agent_type"],
+                    "position_x": data["position"][0],
+                    "position_y": data["position"][1],
+                    "initial_resources": data["initial_resources"],
+                    "max_health": data["max_health"],
+                    "starvation_threshold": data["starvation_threshold"],
+                    "genome_id": data.get("genome_id"),
+                    "parent_id": data.get("parent_id"),
+                    "generation": data.get("generation", 0),
+                }
                 for data in agent_data
             ]
-            session.bulk_save_objects(agents)
+            session.bulk_insert_mappings(Agent, mappings)
 
         self._execute_in_transaction(_insert)
 
@@ -302,37 +317,37 @@ class SimulationDatabase:
         def _insert(session):
             # Bulk insert agent states
             if agent_states:
-                agent_state_objects = [
-                    AgentState(
-                        step_number=step_number,
-                        agent_id=state[0],
-                        position_x=state[1],
-                        position_y=state[2],
-                        resource_level=state[3],
-                        current_health=state[4],
-                        max_health=state[5],
-                        starvation_threshold=state[6],
-                        is_defending=bool(state[7]),
-                        total_reward=state[8],
-                        age=state[9],
-                    )
+                agent_state_mappings = [
+                    {
+                        "step_number": step_number,
+                        "agent_id": state[0],
+                        "position_x": state[1],
+                        "position_y": state[2],
+                        "resource_level": state[3],
+                        "current_health": state[4],
+                        "max_health": state[5],
+                        "starvation_threshold": state[6],
+                        "is_defending": bool(state[7]),
+                        "total_reward": state[8],
+                        "age": state[9],
+                    }
                     for state in agent_states
                 ]
-                session.bulk_save_objects(agent_state_objects)
+                session.bulk_insert_mappings(AgentState, agent_state_mappings)
 
             # Bulk insert resource states
             if resource_states:
-                resource_state_objects = [
-                    ResourceState(
-                        step_number=step_number,
-                        resource_id=state[0],
-                        amount=state[1],
-                        position_x=state[2],
-                        position_y=state[3],
-                    )
+                resource_state_mappings = [
+                    {
+                        "step_number": step_number,
+                        "resource_id": state[0],
+                        "amount": state[1],
+                        "position_x": state[2],
+                        "position_y": state[3],
+                    }
                     for state in resource_states
                 ]
-                session.bulk_save_objects(resource_state_objects)
+                session.bulk_insert_mappings(ResourceState, resource_state_mappings)
 
             # Insert metrics
             simulation_step = SimulationStep(step_number=step_number, **metrics)
@@ -380,9 +395,11 @@ class SimulationDatabase:
         details: Optional[Dict] = None,
     ):
         """Buffer an agent action for batch processing."""
-        # Ensure action_type is not None
+        # Ensure action_type is not None and is a string
         if action_type is None:
             action_type = "unknown"  # Provide a default value
+        elif not isinstance(action_type, str):
+            action_type = str(action_type)  # Convert to string if not already
 
         action_data = {
             "step_number": step_number,
@@ -406,10 +423,7 @@ class SimulationDatabase:
         if self._action_buffer:
 
             def _insert(session):
-                actions = [
-                    AgentAction(**action_data) for action_data in self._action_buffer
-                ]
-                session.bulk_save_objects(actions)
+                session.bulk_insert_mappings(AgentAction, self._action_buffer)
 
             self._execute_in_transaction(_insert)
             self._action_buffer.clear()
@@ -446,11 +460,9 @@ class SimulationDatabase:
         if self._learning_exp_buffer:
 
             def _insert(session):
-                experiences = [
-                    LearningExperience(**exp_data)
-                    for exp_data in self._learning_exp_buffer
-                ]
-                session.bulk_save_objects(experiences)
+                session.bulk_insert_mappings(
+                    LearningExperience, self._learning_exp_buffer
+                )
 
             self._execute_in_transaction(_insert)
             self._learning_exp_buffer.clear()
@@ -483,11 +495,9 @@ class SimulationDatabase:
         if self._health_incident_buffer:
 
             def _insert(session):
-                incidents = [
-                    HealthIncident(**incident_data)
-                    for incident_data in self._health_incident_buffer
-                ]
-                session.bulk_save_objects(incidents)
+                session.bulk_insert_mappings(
+                    HealthIncident, self._health_incident_buffer
+                )
 
             self._execute_in_transaction(_insert)
             self._health_incident_buffer.clear()
@@ -522,7 +532,7 @@ class SimulationDatabase:
         """Calculate lifespan statistics for different agent types."""
 
         def _query(session):
-            from sqlalchemy import func, case
+            from sqlalchemy import case, func
 
             subquery = (
                 session.query(
@@ -599,14 +609,25 @@ class SimulationDatabase:
             raise
 
     def close(self):
-        """Close the database connection."""
+        """Close the database connection with improved cleanup."""
         try:
+            # Flush pending changes
             self.flush_all_buffers()
-            self.Session.remove()  # Remove the session from the registry
-            self.engine.dispose()  # Close all connections
+
+            # Clean up sessions
+            self.Session.remove()
+
+            # Dispose engine connections
+            if hasattr(self, "engine"):
+                self.engine.dispose()
+
         except Exception as e:
             logger.error(f"Error closing database: {e}")
-            raise
+            # Don't re-raise to ensure cleanup continues
+        finally:
+            # Ensure critical resources are released
+            if hasattr(self, "Session"):
+                self.Session.remove()
 
     def export_data(self, filepath: str):
         """Export simulation metrics data to a CSV file."""
@@ -657,7 +678,7 @@ class SimulationDatabase:
         """Calculate comprehensive population statistics using SQLAlchemy."""
 
         def _query(session):
-            from sqlalchemy import func, case
+            from sqlalchemy import case, func
 
             # Subquery for population data
             pop_data = (
@@ -735,7 +756,7 @@ class SimulationDatabase:
         """Calculate advanced simulation statistics using SQLAlchemy."""
 
         def _query(session):
-            from sqlalchemy import func, case
+            from sqlalchemy import case, func
 
             # Population timeline subquery
             pop_timeline = (
@@ -1235,3 +1256,31 @@ class SimulationDatabase:
             Index("idx_health_incidents_agent_id", HealthIncident.agent_id)
 
         self._execute_in_transaction(_create)
+
+    def update_notes(self, notes_data: Dict):
+        """Update notes in the database."""
+
+        def _update(session):
+            # Use merge instead of update to handle both inserts and updates
+            for key, value in notes_data.items():
+                session.merge(value)
+
+        self._execute_in_transaction(_update)
+
+    def cleanup(self):
+        """Clean up database and GUI resources."""
+        try:
+            # Flush any pending changes
+            self.flush_all_buffers()
+
+            # Close database connections
+            self.Session.remove()
+            self.engine.dispose()
+
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
+            raise
+        finally:
+            # Ensure critical resources are released
+            if hasattr(self, "Session"):
+                self.Session.remove()
