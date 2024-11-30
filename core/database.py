@@ -1,7 +1,51 @@
+"""Database module for simulation state persistence and analysis.
+
+This module provides a SQLAlchemy-based database implementation for storing and 
+analyzing simulation data. It handles all database operations including state 
+logging, configuration management, and data analysis.
+
+Key Components
+-------------
+- SimulationDatabase : Main database interface class
+- SQLAlchemy Models : ORM models for different data types
+    - Agent : Agent entity data
+    - AgentState : Time-series agent state data
+    - ResourceState : Resource position and amount tracking
+    - SimulationStep : Per-step simulation metrics
+    - AgentAction : Agent behavior logging
+    - HealthIncident : Health-related events
+    - LearningExperience : Agent learning data
+
+Features
+--------
+- Efficient batch operations with buffering
+- Transaction safety with rollback support
+- Comprehensive error handling
+- Data export in multiple formats
+- Advanced statistical analysis
+- Configuration management
+- Performance optimized queries
+
+Usage Example
+------------
+>>> db = SimulationDatabase("simulation_results.db")
+>>> db.save_configuration(config_dict)
+>>> db.log_step(step_number, agent_states, resource_states, metrics)
+>>> db.export_data("results.csv")
+>>> db.close()
+
+Notes
+-----
+- Uses SQLite as the backend database
+- Implements foreign key constraints
+- Includes indexes for performance
+- Supports concurrent access through session management
+"""
+
 import json
 import logging
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Any, Union
 from datetime import datetime
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 from sqlalchemy import (
@@ -9,6 +53,7 @@ from sqlalchemy import (
     Column,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     case,
@@ -16,11 +61,15 @@ from sqlalchemy import (
     event,
     func,
     text,
-    Index,
+)
+from sqlalchemy.exc import (
+    IntegrityError,
+    OperationalError,
+    ProgrammingError,
+    SQLAlchemyError,
 )
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, scoped_session, sessionmaker, joinedload
-from sqlalchemy.exc import SQLAlchemyError, IntegrityError, OperationalError, ProgrammingError
+from sqlalchemy.orm import joinedload, relationship, scoped_session, sessionmaker
 
 if TYPE_CHECKING:
     from core.environment import Environment
@@ -94,7 +143,7 @@ class AgentState(Base):
             "starvation_threshold": self.starvation_threshold,
             "is_defending": self.is_defending,
             "total_reward": self.total_reward,
-            "age": self.age
+            "age": self.age,
         }
 
 
@@ -118,15 +167,13 @@ class ResourceState(Base):
         return {
             "resource_id": self.resource_id,
             "amount": self.amount,
-            "position": (self.position_x, self.position_y)
+            "position": (self.position_x, self.position_y),
         }
 
 
 class SimulationStep(Base):
     __tablename__ = "simulation_steps"
-    __table_args__ = (
-        Index("idx_simulation_steps_step_number", "step_number"),
-    )
+    __table_args__ = (Index("idx_simulation_steps_step_number", "step_number"),)
 
     step_number = Column(Integer, primary_key=True)
     total_agents = Column(Integer)
@@ -170,7 +217,7 @@ class SimulationStep(Base):
             "successful_attacks": self.successful_attacks,
             "resources_shared": self.resources_shared,
             "genetic_diversity": self.genetic_diversity,
-            "dominant_genome_ratio": self.dominant_genome_ratio
+            "dominant_genome_ratio": self.dominant_genome_ratio,
         }
 
 
@@ -245,8 +292,88 @@ class SimulationConfig(Base):
 
 
 class SimulationDatabase:
+    """Database interface for simulation state persistence and analysis.
+
+    This class provides a high-level interface for storing and retrieving simulation
+    data using SQLAlchemy ORM. It handles all database operations including state
+    logging, configuration management, and data analysis with transaction safety
+    and efficient batch operations.
+
+    Features
+    --------
+    - Buffered batch operations for performance
+    - Transaction safety with automatic rollback
+    - Comprehensive error handling
+    - Multi-format data export
+    - Statistical analysis functions
+    - Thread-safe session management
+
+    Attributes
+    ----------
+    db_path : str
+        Path to the SQLite database file
+    engine : sqlalchemy.engine.Engine
+        SQLAlchemy database engine instance
+    Session : sqlalchemy.orm.scoped_session
+        Thread-local session factory
+    _action_buffer : List[Dict]
+        Buffer for agent actions before batch insert
+    _learning_exp_buffer : List[Dict]
+        Buffer for learning experiences before batch insert
+    _health_incident_buffer : List[Dict]
+        Buffer for health incidents before batch insert
+    _buffer_size : int
+        Maximum size of buffers before auto-flush (default: 1000)
+
+    Methods
+    -------
+    log_step(step_number, agent_states, resource_states, metrics)
+        Log complete simulation state for a time step
+    get_simulation_data(step_number)
+        Retrieve comprehensive state data for a time step
+    export_data(filepath, format='csv', ...)
+        Export simulation data to various file formats
+    get_advanced_statistics()
+        Calculate advanced simulation metrics
+    flush_all_buffers()
+        Write all buffered data to database
+    close()
+        Clean up database connections and resources
+
+    Example
+    -------
+    >>> db = SimulationDatabase("simulation_results.db")
+    >>> db.save_configuration({"agents": 100, "resources": 1000})
+    >>> db.log_step(1, agent_states, resource_states, metrics)
+    >>> simulation_data = db.get_simulation_data(1)
+    >>> db.export_data("results.csv")
+    >>> db.close()
+
+    Notes
+    -----
+    - Uses SQLite as the backend database
+    - Implements foreign key constraints
+    - Creates required tables automatically
+    - Handles concurrent access through thread-local sessions
+    - Buffers operations for better performance
+    - Provides automatic cleanup through context management
+    """
+
     def __init__(self, db_path: str) -> None:
-        """Initialize a new SimulationDatabase instance with SQLAlchemy."""
+        """Initialize a new SimulationDatabase instance with SQLAlchemy.
+
+        Parameters
+        ----------
+        db_path : str
+            Path to the SQLite database file
+
+        Notes
+        -----
+        - Enables foreign key support for SQLite
+        - Creates session factory with thread-local scope
+        - Initializes tables and indexes
+        - Sets up batch operation buffers
+        """
         self.db_path = db_path
         self.engine = create_engine(f"sqlite:///{db_path}")
 
@@ -271,7 +398,29 @@ class SimulationDatabase:
         self._buffer_size = 1000
 
     def _execute_in_transaction(self, func: callable) -> Any:
-        """Execute database operations within a transaction with specific error handling."""
+        """Execute database operations within a transaction with error handling.
+
+        Parameters
+        ----------
+        func : callable
+            Function that takes a session argument and performs database operations
+
+        Returns
+        -------
+        Any
+            Result of the executed function
+
+        Raises
+        ------
+        IntegrityError
+            If there's a database constraint violation
+        OperationalError
+            If there's a database connection issue
+        ProgrammingError
+            If there's a SQL syntax error
+        SQLAlchemyError
+            For other database-related errors
+        """
         session = self.Session()
         try:
             result = func(session)
@@ -301,7 +450,30 @@ class SimulationDatabase:
             self.Session.remove()
 
     def batch_log_agents(self, agent_data: List[Dict]):
-        """Batch insert multiple agents using SQLAlchemy."""
+        """Batch insert multiple agents into the database.
+
+        Parameters
+        ----------
+        agent_data : List[Dict]
+            List of dictionaries containing agent data:
+            - agent_id: int
+            - birth_time: int
+            - agent_type: str
+            - position: Tuple[float, float]
+            - initial_resources: float
+            - max_health: float
+            - starvation_threshold: int
+            - genome_id: Optional[str]
+            - parent_id: Optional[int]
+            - generation: Optional[int]
+
+        Raises
+        ------
+        SQLAlchemyError
+            If there's an error during batch insertion
+        ValueError
+            If agent data is malformed
+        """
 
         def _insert(session):
             # Format data as mappings
@@ -326,7 +498,34 @@ class SimulationDatabase:
         self._execute_in_transaction(_insert)
 
     def get_simulation_data(self, step_number: int) -> Dict[str, Any]:
-        """Retrieve simulation data using SQLAlchemy with optimized queries."""
+        """Retrieve simulation data for a specific time step.
+
+        Fetches comprehensive state data including agent states, resource states,
+        and simulation metrics for the specified step number.
+
+        Parameters
+        ----------
+        step_number : int
+            The simulation step number to retrieve data for
+
+        Returns
+        -------
+        Dict[str, Any]
+            Dictionary containing:
+            - step_number: int
+            - agent_states: List[Tuple] - Agent state data tuples
+            - resource_states: List[Tuple] - Resource state data tuples
+            - metrics: Dict - Simulation metrics
+            - timestamp: str - ISO format timestamp
+
+        Raises
+        ------
+        SQLAlchemyError
+            If there's a database error
+        ValueError
+            If step_number is invalid
+        """
+
         def _query(session):
             # Optimize queries with joins and specific column selection
             agent_states = (
@@ -382,7 +581,7 @@ class SimulationDatabase:
                 "agent_states": agent_state_tuples,
                 "resource_states": resource_state_tuples,
                 "metrics": metrics.as_dict() if metrics else {},
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
 
         return self._execute_in_transaction(_query)
@@ -393,8 +592,42 @@ class SimulationDatabase:
         agent_states: List[Tuple],
         resource_states: List[Tuple],
         metrics: Dict,
-    ):
-        """Log comprehensive simulation state data for a single time step."""
+    ) -> None:
+        """Log comprehensive simulation state data for a single time step.
+
+        Records the complete state of the simulation including all agent states,
+        resource states, and aggregate metrics for the given step.
+
+        Parameters
+        ----------
+        step_number : int
+            Current simulation step number
+        agent_states : List[Tuple]
+            List of agent state tuples containing:
+            (agent_id, position_x, position_y, resource_level, current_health,
+             max_health, starvation_threshold, is_defending, total_reward, age)
+        resource_states : List[Tuple]
+            List of resource state tuples containing:
+            (resource_id, amount, position_x, position_y)
+        metrics : Dict
+            Dictionary of simulation metrics including:
+            - total_agents: int
+            - system_agents: int
+            - independent_agents: int
+            - control_agents: int
+            - total_resources: float
+            - average_agent_resources: float
+            - births: int
+            - deaths: int
+            And other relevant metrics
+
+        Raises
+        ------
+        SQLAlchemyError
+            If there's an error during database insertion
+        ValueError
+            If input data is malformed or invalid
+        """
 
         def _insert(session):
             # Bulk insert agent states
@@ -498,12 +731,12 @@ class SimulationDatabase:
                 "reward": reward,
                 "details": json.dumps(details) if details else None,
             }
-            
+
             self._action_buffer.append(action_data)
 
             if len(self._action_buffer) >= self._buffer_size:
                 self.flush_action_buffer()
-                
+
         except ValueError as e:
             logger.error(f"Invalid input for agent action: {e}")
             raise
@@ -518,27 +751,31 @@ class SimulationDatabase:
         """Flush the action buffer by batch inserting all buffered actions."""
         if not self._action_buffer:
             return
-        
+
         buffer_copy = list(self._action_buffer)  # Create a copy of the buffer
         try:
+
             def _insert(session):
                 session.bulk_insert_mappings(AgentAction, buffer_copy)
+
             self._execute_in_transaction(_insert)
         except SQLAlchemyError as e:
             logger.error(f"Failed to flush action buffer: {e}")
             raise
         else:
             self._action_buffer.clear()  # Only clear if successful
-    
+
     def flush_learning_buffer(self):
         """Flush the learning experience buffer with transaction safety."""
         if not self._learning_exp_buffer:
             return
-        
+
         buffer_copy = list(self._learning_exp_buffer)
         try:
+
             def _insert(session):
                 session.bulk_insert_mappings(LearningExperience, buffer_copy)
+
             self._execute_in_transaction(_insert)
         except SQLAlchemyError as e:
             logger.error(f"Failed to flush learning buffer: {e}")
@@ -550,11 +787,13 @@ class SimulationDatabase:
         """Flush the health incident buffer with transaction safety."""
         if not self._health_incident_buffer:
             return
-        
+
         buffer_copy = list(self._health_incident_buffer)
         try:
+
             def _insert(session):
                 session.bulk_insert_mappings(HealthIncident, buffer_copy)
+
             self._execute_in_transaction(_insert)
         except SQLAlchemyError as e:
             logger.error(f"Failed to flush health buffer: {e}")
@@ -563,13 +802,27 @@ class SimulationDatabase:
             self._health_incident_buffer.clear()
 
     def flush_all_buffers(self) -> None:
-        """Flush all data buffers with enhanced error handling and transaction safety."""
+        """Flush all data buffers to the database.
+
+        Safely writes all buffered data (actions, learning experiences, health incidents)
+        to the database in transactions. Maintains data integrity by only clearing
+        buffers after successful writes.
+
+        Raises
+        ------
+        SQLAlchemyError
+            If any buffer flush fails, with details about which buffer(s) failed
+        IntegrityError
+            If there are foreign key or unique constraint violations
+        OperationalError
+            If there are database connection issues
+        """
         buffers = {
-            'action': (self._action_buffer, self.flush_action_buffer),
-            'learning': (self._learning_exp_buffer, self.flush_learning_buffer),
-            'health': (self._health_incident_buffer, self.flush_health_buffer)
+            "action": (self._action_buffer, self.flush_action_buffer),
+            "learning": (self._learning_exp_buffer, self.flush_learning_buffer),
+            "health": (self._health_incident_buffer, self.flush_health_buffer),
         }
-        
+
         errors = []
         for buffer_name, (buffer, flush_func) in buffers.items():
             if buffer:  # Only attempt flush if buffer has data
@@ -581,7 +834,7 @@ class SimulationDatabase:
                 except Exception as e:
                     logger.error(f"Unexpected error flushing {buffer_name} buffer: {e}")
                     errors.append((buffer_name, str(e)))
-        
+
         if errors:
             error_msg = "; ".join(f"{name}: {err}" for name, err in errors)
             raise SQLAlchemyError(f"Failed to flush buffers: {error_msg}")
@@ -591,17 +844,17 @@ class SimulationDatabase:
         try:
             # Flush pending changes
             self.flush_all_buffers()
-            
+
             # Clean up sessions
             self.Session.remove()
-            
+
             # Dispose engine connections
             if hasattr(self, "engine"):
                 try:
                     self.engine.dispose()
                 except SQLAlchemyError as e:
                     logger.error(f"Error disposing database engine: {e}")
-                    
+
         except SQLAlchemyError as e:
             logger.error(f"Database error during close: {e}")
         except Exception as e:
@@ -614,23 +867,153 @@ class SimulationDatabase:
                 except Exception as e:
                     logger.error(f"Final cleanup error: {e}")
 
-    def export_data(self, filepath: str):
-        """Export simulation metrics data to a CSV file."""
+    def export_data(
+        self,
+        filepath: str,
+        format: str = "csv",
+        data_types: List[str] = None,
+        start_step: Optional[int] = None,
+        end_step: Optional[int] = None,
+        include_metadata: bool = True,
+    ) -> None:
+        """Export simulation data to various file formats with filtering options.
+
+        Exports selected simulation data to a file in the specified format. Supports
+        filtering by data type and time range, with optional metadata inclusion.
+
+        Parameters
+        ----------
+        filepath : str
+            Path where the export file will be saved
+        format : str, optional
+            Export format, one of: 'csv', 'excel', 'json', 'parquet'
+            Default is 'csv'
+        data_types : List[str], optional
+            List of data types to export, can include:
+            'metrics', 'agents', 'resources', 'actions'
+            If None, exports all types
+        start_step : int, optional
+            Starting step number for data range
+        end_step : int, optional
+            Ending step number for data range
+        include_metadata : bool, optional
+            Whether to include simulation metadata, by default True
+
+        Raises
+        ------
+        ValueError
+            If format is unsupported or filepath is invalid
+        SQLAlchemyError
+            If there's an error retrieving data
+        IOError
+            If there's an error writing to the file
+        """
 
         def _query(session):
-            # Query all simulation steps with their metrics
-            query = session.query(SimulationStep).order_by(SimulationStep.step_number)
+            data = {}
 
-            # Convert to pandas DataFrame using SQLAlchemy
-            df = pd.read_sql(query.statement, session.bind, index_col="step_number")
+            # Build step number filter
+            step_filter = []
+            if start_step is not None:
+                step_filter.append(SimulationStep.step_number >= start_step)
+            if end_step is not None:
+                step_filter.append(SimulationStep.step_number <= end_step)
 
-            # Export to CSV
-            df.to_csv(filepath)
+            # Default to all data types if none specified
+            export_types = data_types or ["metrics", "agents", "resources", "actions"]
+
+            # Collect requested data
+            if "metrics" in export_types:
+                metrics_query = session.query(SimulationStep)
+                if step_filter:
+                    metrics_query = metrics_query.filter(*step_filter)
+                data["metrics"] = pd.read_sql(
+                    metrics_query.statement, session.bind, index_col="step_number"
+                )
+
+            if "agents" in export_types:
+                agents_query = (
+                    session.query(AgentState)
+                    .join(Agent)
+                    .options(joinedload(AgentState.agent))
+                )
+                if step_filter:
+                    agents_query = agents_query.filter(*step_filter)
+                data["agents"] = pd.read_sql(agents_query.statement, session.bind)
+
+            if "resources" in export_types:
+                resources_query = session.query(ResourceState)
+                if step_filter:
+                    resources_query = resources_query.filter(*step_filter)
+                data["resources"] = pd.read_sql(resources_query.statement, session.bind)
+
+            if "actions" in export_types:
+                actions_query = session.query(AgentAction)
+                if step_filter:
+                    actions_query = actions_query.filter(*step_filter)
+                data["actions"] = pd.read_sql(actions_query.statement, session.bind)
+
+            # Add metadata if requested
+            if include_metadata:
+                config = self.get_configuration()
+                data["metadata"] = {
+                    "config": config,
+                    "export_timestamp": datetime.now().isoformat(),
+                    "data_range": {"start_step": start_step, "end_step": end_step},
+                    "exported_types": export_types,
+                }
+
+            # Export based on format
+            if format == "csv":
+                # Create separate CSV files for each data type
+                base_path = filepath.rsplit(".", 1)[0]
+                for data_type, df in data.items():
+                    if isinstance(df, pd.DataFrame):
+                        df.to_csv(f"{base_path}_{data_type}.csv", index=False)
+                    elif data_type == "metadata":
+                        with open(f"{base_path}_metadata.json", "w") as f:
+                            json.dump(df, f, indent=2)
+
+            elif format == "excel":
+                # Save all data types as separate sheets in one Excel file
+                with pd.ExcelWriter(filepath) as writer:
+                    for data_type, df in data.items():
+                        if isinstance(df, pd.DataFrame):
+                            df.to_excel(writer, sheet_name=data_type, index=False)
+                        elif data_type == "metadata":
+                            pd.DataFrame([df]).to_excel(
+                                writer, sheet_name="metadata", index=False
+                            )
+
+            elif format == "json":
+                # Convert all data to JSON format
+                json_data = {
+                    k: (v.to_dict("records") if isinstance(v, pd.DataFrame) else v)
+                    for k, v in data.items()
+                }
+                with open(filepath, "w") as f:
+                    json.dump(json_data, f, indent=2)
+
+            elif format == "parquet":
+                # Save as parquet format (good for large datasets)
+                if len(data) == 1:
+                    # Single dataframe case
+                    next(iter(data.values())).to_parquet(filepath)
+                else:
+                    # Multiple dataframes case
+                    base_path = filepath.rsplit(".", 1)[0]
+                    for data_type, df in data.items():
+                        if isinstance(df, pd.DataFrame):
+                            df.to_parquet(f"{base_path}_{data_type}.parquet")
+
+            else:
+                raise ValueError(f"Unsupported export format: {format}")
 
         self._execute_in_transaction(_query)
 
     def get_population_momentum(self) -> float:
         """Calculate population momentum using simpler SQL queries."""
+
         def _query(session):
             # Get initial population
             initial = (
@@ -638,11 +1021,11 @@ class SimulationDatabase:
                 .order_by(SimulationStep.step_number)
                 .first()
             )
-            
+
             # Get max population and final step
             stats = session.query(
                 func.max(SimulationStep.total_agents).label("max_count"),
-                func.max(SimulationStep.step_number).label("final_step")
+                func.max(SimulationStep.step_number).label("final_step"),
             ).first()
 
             if initial and stats and initial[0] > 0:
@@ -731,6 +1114,7 @@ class SimulationDatabase:
 
     def get_advanced_statistics(self) -> Dict:
         """Calculate advanced simulation statistics using optimized queries."""
+
         def _query(session):
             # Get basic population stats in one query
             pop_stats = session.query(
@@ -746,20 +1130,21 @@ class SimulationDatabase:
                 func.avg(SimulationStep.system_agents).label("avg_system"),
                 func.avg(SimulationStep.independent_agents).label("avg_independent"),
                 func.avg(SimulationStep.control_agents).label("avg_control"),
-                func.avg(SimulationStep.total_agents).label("avg_total")
+                func.avg(SimulationStep.total_agents).label("avg_total"),
             ).first()
 
             # Get interaction stats
             interaction_stats = session.query(
                 func.count(AgentAction.action_id).label("total_actions"),
-                func.sum(case(
-                    [(AgentAction.action_type.in_(["attack", "defend"]), 1)],
-                    else_=0
-                )).label("conflicts"),
-                func.sum(case(
-                    [(AgentAction.action_type.in_(["share", "help"]), 1)],
-                    else_=0
-                )).label("cooperation")
+                func.sum(
+                    case(
+                        [(AgentAction.action_type.in_(["attack", "defend"]), 1)],
+                        else_=0,
+                    )
+                ).label("conflicts"),
+                func.sum(
+                    case([(AgentAction.action_type.in_(["share", "help"]), 1)], else_=0)
+                ).label("cooperation"),
             ).first()
 
             if not all([pop_stats, type_stats, interaction_stats]):
@@ -767,15 +1152,12 @@ class SimulationDatabase:
 
             # Calculate diversity index
             total = float(type_stats[3] or 1)  # Avoid division by zero
-            ratios = [
-                float(count or 0) / total 
-                for count in type_stats[:3]
-            ]
-            
+            ratios = [float(count or 0) / total for count in type_stats[:3]]
+
             import math
+
             diversity = sum(
-                -ratio * math.log(ratio) if ratio > 0 else 0 
-                for ratio in ratios
+                -ratio * math.log(ratio) if ratio > 0 else 0 for ratio in ratios
             )
 
             return {
@@ -785,14 +1167,14 @@ class SimulationDatabase:
                 "average_health": float(pop_stats[4] or 0),
                 "agent_diversity": diversity,
                 "interaction_rate": (
-                    float(interaction_stats[0] or 0) / 
-                    float(pop_stats[3] or 1) / 
-                    float(pop_stats[1] or 1)
+                    float(interaction_stats[0] or 0)
+                    / float(pop_stats[3] or 1)
+                    / float(pop_stats[1] or 1)
                 ),
                 "conflict_cooperation_ratio": (
-                    float(interaction_stats[1] or 0) / 
-                    float(interaction_stats[2] or 1)  # Avoid division by zero
-                )
+                    float(interaction_stats[1] or 0)
+                    / float(interaction_stats[2] or 1)  # Avoid division by zero
+                ),
             }
 
         return self._execute_in_transaction(_query)
@@ -849,7 +1231,35 @@ class SimulationDatabase:
         return self._execute_in_transaction(_query)
 
     def get_agent_actions(self, agent_id: int) -> List[Dict]:
-        """Get all actions performed by an agent."""
+        """Get all actions performed by an agent.
+
+        Retrieves a chronological list of all actions performed by a specific agent,
+        including details about each action's outcome and impact.
+
+        Parameters
+        ----------
+        agent_id : int
+            The unique identifier of the agent
+
+        Returns
+        -------
+        List[Dict]
+            List of action records, each containing:
+            - step_number: int
+            - action_type: str
+            - action_target_id: Optional[int]
+            - position_before: Optional[str]
+            - position_after: Optional[str]
+            - resources_before: Optional[float]
+            - resources_after: Optional[float]
+            - reward: Optional[float]
+            - details: Optional[Dict]
+
+        Raises
+        ------
+        SQLAlchemyError
+            If there's a database error during retrieval
+        """
 
         def _query(session):
             actions = (
@@ -1126,13 +1536,17 @@ class SimulationDatabase:
                 step_number=step_number,
                 agent_id=agent_id,
                 current_health=state_data["current_health"],
-                max_health=state_data.get("max_health", agent.max_health),  # Get from agent if not provided
+                max_health=state_data.get(
+                    "max_health", agent.max_health
+                ),  # Get from agent if not provided
                 resource_level=state_data["resource_level"],
                 position_x=state_data["position"][0],
                 position_y=state_data["position"][1],
                 is_defending=state_data["is_defending"],
                 total_reward=state_data["total_reward"],
-                starvation_threshold=state_data.get("starvation_threshold", agent.starvation_threshold),
+                starvation_threshold=state_data.get(
+                    "starvation_threshold", agent.starvation_threshold
+                ),
                 age=step_number,  # Age is calculated from step number
             )
             session.add(agent_state)
@@ -1140,7 +1554,18 @@ class SimulationDatabase:
         self._execute_in_transaction(_update)
 
     def _create_tables(self):
-        """Create the required database schema."""
+        """Create the required database schema.
+
+        Creates all tables defined in the SQLAlchemy models if they don't exist.
+        Also creates necessary indexes for performance optimization.
+
+        Raises
+        ------
+        SQLAlchemyError
+            If there's an error creating the tables
+        OperationalError
+            If there's a database connection issue
+        """
 
         def _create(session):
             # Create all tables defined in the models
@@ -1149,7 +1574,20 @@ class SimulationDatabase:
         self._execute_in_transaction(_create)
 
     def update_notes(self, notes_data: Dict):
-        """Update notes in the database."""
+        """Update simulation notes in the database.
+
+        Parameters
+        ----------
+        notes_data : Dict
+            Dictionary of notes to update, where:
+            - keys are note identifiers
+            - values are note content objects
+
+        Raises
+        ------
+        SQLAlchemyError
+            If there's an error updating the notes
+        """
 
         def _update(session):
             # Use merge instead of update to handle both inserts and updates
@@ -1159,7 +1597,21 @@ class SimulationDatabase:
         self._execute_in_transaction(_update)
 
     def cleanup(self):
-        """Clean up database and GUI resources."""
+        """Clean up database and GUI resources.
+
+        Performs cleanup operations including:
+        - Flushing all data buffers
+        - Closing database connections
+        - Disposing of the engine
+        - Removing session
+
+        This method should be called before application shutdown.
+
+        Raises
+        ------
+        Exception
+            If cleanup operations fail
+        """
         try:
             # Flush any pending changes
             self.flush_all_buffers()
@@ -1199,8 +1651,7 @@ class SimulationDatabase:
             import time
 
             config_obj = SimulationConfig(
-                timestamp=int(time.time()), 
-                config_data=json.dumps(config)
+                timestamp=int(time.time()), config_data=json.dumps(config)
             )
             session.add(config_obj)
 
