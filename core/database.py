@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Any, Union
 
 import pandas as pd
 from sqlalchemy import (
@@ -19,6 +19,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, scoped_session, sessionmaker
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError, OperationalError, ProgrammingError
 
 if TYPE_CHECKING:
     from core.environment import Environment
@@ -221,23 +222,35 @@ class SimulationDatabase:
         self._health_incident_buffer = []
         self._buffer_size = 1000
 
-    def _execute_in_transaction(self, func):
-        """Execute database operations within a transaction with improved error handling."""
+    def _execute_in_transaction(self, func: callable) -> Any:
+        """Execute database operations within a transaction with specific error handling."""
         session = self.Session()
         try:
             result = func(session)
             session.commit()
             return result
+        except IntegrityError as e:
+            session.rollback()
+            logger.error(f"Database integrity error: {e}")
+            raise
+        except OperationalError as e:
+            session.rollback()
+            logger.error(f"Database operational error (connection/timeout): {e}")
+            raise
+        except ProgrammingError as e:
+            session.rollback()
+            logger.error(f"Database programming error (SQL syntax/schema): {e}")
+            raise
+        except SQLAlchemyError as e:
+            session.rollback()
+            logger.error(f"General database error: {e}")
+            raise
         except Exception as e:
             session.rollback()
-            # Check if error is due to application shutdown
-            if "application has been destroyed" in str(e):
-                logger.info("Operation cancelled due to application shutdown")
-                return None
-            logger.error(f"Database transaction failed: {e}")
+            logger.error(f"Unexpected error during database operation: {e}")
             raise
         finally:
-            session.close()
+            self.Session.remove()
 
     def batch_log_agents(self, agent_data: List[Dict]):
         """Batch insert multiple agents using SQLAlchemy."""
@@ -426,30 +439,44 @@ class SimulationDatabase:
         resources_after: Optional[float] = None,
         reward: Optional[float] = None,
         details: Optional[Dict] = None,
-    ):
-        """Buffer an agent action for batch processing."""
-        # Ensure action_type is not None and is a string
-        if action_type is None:
-            action_type = "unknown"  # Provide a default value
-        elif not isinstance(action_type, str):
-            action_type = str(action_type)  # Convert to string if not already
+    ) -> None:
+        """Buffer an agent action with enhanced validation and error handling."""
+        try:
+            # Input validation
+            if step_number < 0:
+                raise ValueError("step_number must be non-negative")
+            if agent_id < 0:
+                raise ValueError("agent_id must be non-negative")
+            if not isinstance(action_type, str):
+                action_type = str(action_type)
 
-        action_data = {
-            "step_number": step_number,
-            "agent_id": agent_id,
-            "action_type": action_type,
-            "action_target_id": action_target_id,
-            "position_before": str(position_before) if position_before else None,
-            "position_after": str(position_after) if position_after else None,
-            "resources_before": resources_before,
-            "resources_after": resources_after,
-            "reward": reward,
-            "details": json.dumps(details) if details else None,
-        }
-        self._action_buffer.append(action_data)
+            action_data = {
+                "step_number": step_number,
+                "agent_id": agent_id,
+                "action_type": action_type,
+                "action_target_id": action_target_id,
+                "position_before": str(position_before) if position_before else None,
+                "position_after": str(position_after) if position_after else None,
+                "resources_before": resources_before,
+                "resources_after": resources_after,
+                "reward": reward,
+                "details": json.dumps(details) if details else None,
+            }
+            
+            self._action_buffer.append(action_data)
 
-        if len(self._action_buffer) >= self._buffer_size:
-            self.flush_action_buffer()
+            if len(self._action_buffer) >= self._buffer_size:
+                self.flush_action_buffer()
+                
+        except ValueError as e:
+            logger.error(f"Invalid input for agent action: {e}")
+            raise
+        except TypeError as e:
+            logger.error(f"Type error in agent action data: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error logging agent action: {e}")
+            raise
 
     def flush_action_buffer(self):
         """Flush the action buffer by batch inserting all buffered actions."""
@@ -649,36 +676,57 @@ class SimulationDatabase:
 
         self._execute_in_transaction(_insert)
 
-    def flush_all_buffers(self):
-        """Flush all data buffers and ensure data is written to disk."""
-        try:
-            self.flush_action_buffer()
-            self.flush_learning_buffer()
-            self.flush_health_buffer()
-        except Exception as e:
-            logger.error(f"Error flushing database buffers: {e}")
-            raise
+    def flush_all_buffers(self) -> None:
+        """Flush all data buffers with enhanced error handling."""
+        buffers = {
+            'action': self.flush_action_buffer,
+            'learning': self.flush_learning_buffer,
+            'health': self.flush_health_buffer
+        }
+        
+        for buffer_name, flush_func in buffers.items():
+            try:
+                flush_func()
+            except IntegrityError as e:
+                logger.error(f"Data integrity error flushing {buffer_name} buffer: {e}")
+                raise
+            except OperationalError as e:
+                logger.error(f"Database operation error flushing {buffer_name} buffer: {e}")
+                raise
+            except SQLAlchemyError as e:
+                logger.error(f"Database error flushing {buffer_name} buffer: {e}")
+                raise
+            except Exception as e:
+                logger.error(f"Unexpected error flushing {buffer_name} buffer: {e}")
+                raise
 
-    def close(self):
-        """Close the database connection with improved cleanup."""
+    def close(self) -> None:
+        """Close the database connection with enhanced error handling."""
         try:
             # Flush pending changes
             self.flush_all_buffers()
-
+            
             # Clean up sessions
             self.Session.remove()
-
+            
             # Dispose engine connections
             if hasattr(self, "engine"):
-                self.engine.dispose()
-
+                try:
+                    self.engine.dispose()
+                except SQLAlchemyError as e:
+                    logger.error(f"Error disposing database engine: {e}")
+                    
+        except SQLAlchemyError as e:
+            logger.error(f"Database error during close: {e}")
         except Exception as e:
-            logger.error(f"Error closing database: {e}")
-            # Don't re-raise to ensure cleanup continues
+            logger.error(f"Unexpected error during database close: {e}")
         finally:
             # Ensure critical resources are released
             if hasattr(self, "Session"):
-                self.Session.remove()
+                try:
+                    self.Session.remove()
+                except Exception as e:
+                    logger.error(f"Final cleanup error: {e}")
 
     def export_data(self, filepath: str):
         """Export simulation metrics data to a CSV file."""
