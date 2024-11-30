@@ -14,6 +14,7 @@ from sqlalchemy import (
     event,
     func,
     text,
+    Index,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, scoped_session, sessionmaker
@@ -29,6 +30,11 @@ Base = declarative_base()
 # Define SQLAlchemy Models
 class Agent(Base):
     __tablename__ = "agents"
+    __table_args__ = (
+        Index("idx_agents_agent_type", "agent_type"),
+        Index("idx_agents_birth_time", "birth_time"),
+        Index("idx_agents_death_time", "death_time"),
+    )
 
     agent_id = Column(Integer, primary_key=True)
     birth_time = Column(Integer)
@@ -52,6 +58,11 @@ class Agent(Base):
 
 class AgentState(Base):
     __tablename__ = "agent_states"
+    __table_args__ = (
+        Index("idx_agent_states_agent_id", "agent_id"),
+        Index("idx_agent_states_step_number", "step_number"),
+        Index("idx_agent_states_composite", "step_number", "agent_id"),
+    )
 
     id = Column(Integer, primary_key=True)
     step_number = Column(Integer)
@@ -72,6 +83,10 @@ class AgentState(Base):
 # Additional SQLAlchemy Models
 class ResourceState(Base):
     __tablename__ = "resource_states"
+    __table_args__ = (
+        Index("idx_resource_states_step_number", "step_number"),
+        Index("idx_resource_states_resource_id", "resource_id"),
+    )
 
     id = Column(Integer, primary_key=True)
     step_number = Column(Integer)
@@ -83,6 +98,9 @@ class ResourceState(Base):
 
 class SimulationStep(Base):
     __tablename__ = "simulation_steps"
+    __table_args__ = (
+        Index("idx_simulation_steps_step_number", "step_number"),
+    )
 
     step_number = Column(Integer, primary_key=True)
     total_agents = Column(Integer)
@@ -108,6 +126,11 @@ class SimulationStep(Base):
 
 class AgentAction(Base):
     __tablename__ = "agent_actions"
+    __table_args__ = (
+        Index("idx_agent_actions_step_number", "step_number"),
+        Index("idx_agent_actions_agent_id", "agent_id"),
+        Index("idx_agent_actions_action_type", "action_type"),
+    )
 
     action_id = Column(Integer, primary_key=True)
     step_number = Column(Integer, nullable=False)
@@ -126,6 +149,11 @@ class AgentAction(Base):
 
 class LearningExperience(Base):
     __tablename__ = "learning_experiences"
+    __table_args__ = (
+        Index("idx_learning_experiences_step_number", "step_number"),
+        Index("idx_learning_experiences_agent_id", "agent_id"),
+        Index("idx_learning_experiences_module_type", "module_type"),
+    )
 
     experience_id = Column(Integer, primary_key=True)
     step_number = Column(Integer)
@@ -142,6 +170,10 @@ class LearningExperience(Base):
 
 class HealthIncident(Base):
     __tablename__ = "health_incidents"
+    __table_args__ = (
+        Index("idx_health_incidents_step_number", "step_number"),
+        Index("idx_health_incidents_agent_id", "agent_id"),
+    )
 
     incident_id = Column(Integer, primary_key=True)
     step_number = Column(Integer, nullable=False)
@@ -1184,22 +1216,32 @@ class SimulationDatabase:
         state_data : Dict
             Dictionary containing state data:
             - current_health: float
+            - max_health: float
             - resource_level: float
             - position: Tuple[float, float]
             - is_defending: bool
             - total_reward: float
+            - starvation_threshold: int
         """
 
         def _update(session):
+            # Get the agent to access its properties
+            agent = session.query(Agent).filter(Agent.agent_id == agent_id).first()
+            if not agent:
+                logger.error(f"Agent {agent_id} not found")
+                return
+
             agent_state = AgentState(
                 step_number=step_number,
                 agent_id=agent_id,
                 current_health=state_data["current_health"],
+                max_health=state_data.get("max_health", agent.max_health),  # Get from agent if not provided
                 resource_level=state_data["resource_level"],
                 position_x=state_data["position"][0],
                 position_y=state_data["position"][1],
                 is_defending=state_data["is_defending"],
                 total_reward=state_data["total_reward"],
+                starvation_threshold=state_data.get("starvation_threshold", agent.starvation_threshold),
                 age=step_number,  # Age is calculated from step number
             )
             session.add(agent_state)
@@ -1212,48 +1254,6 @@ class SimulationDatabase:
         def _create(session):
             # Create all tables defined in the models
             Base.metadata.create_all(self.engine)
-
-            # Create indexes for performance
-            from sqlalchemy import Index
-
-            # Indexes for AgentStates
-            Index("idx_agent_states_agent_id", AgentState.agent_id)
-            Index("idx_agent_states_step_number", AgentState.step_number)
-            Index(
-                "idx_agent_states_composite",
-                AgentState.step_number,
-                AgentState.agent_id,
-            )
-
-            # Indexes for Agents
-            Index("idx_agents_agent_type", Agent.agent_type)
-            Index("idx_agents_birth_time", Agent.birth_time)
-            Index("idx_agents_death_time", Agent.death_time)
-
-            # Indexes for ResourceStates
-            Index("idx_resource_states_step_number", ResourceState.step_number)
-            Index("idx_resource_states_resource_id", ResourceState.resource_id)
-
-            # Indexes for SimulationSteps
-            Index("idx_simulation_steps_step_number", SimulationStep.step_number)
-
-            # Indexes for AgentActions
-            Index("idx_agent_actions_step_number", AgentAction.step_number)
-            Index("idx_agent_actions_agent_id", AgentAction.agent_id)
-            Index("idx_agent_actions_action_type", AgentAction.action_type)
-
-            # Indexes for LearningExperiences
-            Index(
-                "idx_learning_experiences_step_number", LearningExperience.step_number
-            )
-            Index("idx_learning_experiences_agent_id", LearningExperience.agent_id)
-            Index(
-                "idx_learning_experiences_module_type", LearningExperience.module_type
-            )
-
-            # Indexes for HealthIncidents
-            Index("idx_health_incidents_step_number", HealthIncident.step_number)
-            Index("idx_health_incidents_agent_id", HealthIncident.agent_id)
 
         self._execute_in_transaction(_create)
 

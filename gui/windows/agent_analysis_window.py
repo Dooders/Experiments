@@ -367,24 +367,20 @@ class AgentAnalysisWindow(ttk.Frame):
     def _load_agent_data(self, agent_id: int):
         """Load and display all data for selected agent."""
         try:
-            conn = sqlite3.connect(self.db_path)
-
+            db = SimulationDatabase(self.db_path)
+            
             # Load and update all data components
-            self._update_info_labels(self._load_basic_info(conn, agent_id))
-            self._update_stat_labels(self._load_agent_stats(conn, agent_id))
-            self._update_metric_labels(self._load_performance_metrics(conn, agent_id))
-            self._update_metrics_chart(conn, agent_id)
+            self._update_info_labels(self._load_basic_info(db, agent_id))
+            self._update_stat_labels(self._load_agent_stats(db, agent_id))
+            self._update_metric_labels(self._load_performance_metrics(db, agent_id))
+            self._update_metrics_chart(db, agent_id)
             self._update_children_table(agent_id)
-
-            conn.close()
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load agent data: {e}")
 
-    def _load_basic_info(self, conn, agent_id) -> Dict:
+    def _load_basic_info(self, db: SimulationDatabase, agent_id: int) -> Dict:
         """Load basic agent information from database."""
-        db = SimulationDatabase(self.db_path)
-        
         def _query(session):
             agent = (session.query(Agent)
                     .filter(Agent.agent_id == agent_id)
@@ -392,7 +388,7 @@ class AgentAnalysisWindow(ttk.Frame):
             
             if agent:
                 return {
-                    "agent_type": agent.agent_type,
+                    "type": agent.agent_type,
                     "birth_time": agent.birth_time,
                     "death_time": agent.death_time,
                     "generation": agent.generation,
@@ -406,29 +402,15 @@ class AgentAnalysisWindow(ttk.Frame):
             
         return db._execute_in_transaction(_query)
 
-    def _load_agent_stats(self, conn, agent_id) -> Dict:
+    def _load_agent_stats(self, db: SimulationDatabase, agent_id: int) -> Dict:
         """Load current agent statistics from database."""
-        db = SimulationDatabase(self.db_path)
-        
         def _query(session):
             # Get latest state using window function
-            subquery = (session.query(
-                AgentState.current_health,
-                AgentState.resource_level,
-                AgentState.total_reward,
-                AgentState.age,
-                AgentState.is_defending,
-                AgentState.position_x,
-                AgentState.position_y,
-                func.row_number().over(
-                    order_by=AgentState.step_number.desc()
-                ).label('rn')
-            )
-            .filter(AgentState.agent_id == agent_id)
-            .subquery())
-
-            latest_state = (session.query(subquery)
-                           .filter(subquery.c.rn == 1)
+            from sqlalchemy import func
+            
+            latest_state = (session.query(AgentState)
+                           .filter(AgentState.agent_id == agent_id)
+                           .order_by(AgentState.step_number.desc())
                            .first())
             
             if latest_state:
@@ -446,16 +428,14 @@ class AgentAnalysisWindow(ttk.Frame):
                 "resource_level": 0,
                 "total_reward": 0,
                 "age": 0,
-                "is_defending": 0,
+                "is_defending": False,
                 "current_position": "0, 0"
             }
             
         return db._execute_in_transaction(_query)
 
-    def _load_performance_metrics(self, conn, agent_id) -> Dict:
+    def _load_performance_metrics(self, db: SimulationDatabase, agent_id: int) -> Dict:
         """Load agent performance metrics from database."""
-        db = SimulationDatabase(self.db_path)
-        
         def _query(session):
             from sqlalchemy import func
             
@@ -476,7 +456,7 @@ class AgentAnalysisWindow(ttk.Frame):
             
             if metrics:
                 return {
-                    "survival_time": metrics.survival_time or 0,  # Handle None case
+                    "survival_time": metrics.survival_time or 0,
                     "peak_health": metrics.peak_health or 0,
                     "peak_resources": metrics.peak_resources or 0,
                     "total_actions": metrics.total_actions or 0
@@ -491,10 +471,8 @@ class AgentAnalysisWindow(ttk.Frame):
             
         return db._execute_in_transaction(_query)
 
-    def _update_metrics_chart(self, conn, agent_id):
+    def _update_metrics_chart(self, db: SimulationDatabase, agent_id):
         """Update the metrics chart with agent's time series data."""
-        db = SimulationDatabase(self.db_path)
-        
         def _query(session):
             states = (session.query(
                 AgentState.step_number,
