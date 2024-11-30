@@ -28,6 +28,7 @@ class StatsPanel(ttk.Frame):
 
         # Initialize variables
         self.stats_vars = {}
+        self.logger = None
 
         self._setup_ui()
 
@@ -174,3 +175,7 @@ class StatsPanel(ttk.Frame):
         """Reset all statistics to zero."""
         for stat_info in self.stats_vars.values():
             stat_info["var"].set("0")
+
+    def set_logger(self, logger):
+        """Set the data logger for this component."""
+        self.logger = logger

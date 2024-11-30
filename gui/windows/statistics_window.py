@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from gui.windows.base_window import BaseWindow
 from database.database import SimulationDatabase
+from database.data_retrieval import DataRetriever
 
 class StatisticsWindow(BaseWindow):
     """Window for displaying detailed simulation statistics."""
@@ -13,6 +14,7 @@ class StatisticsWindow(BaseWindow):
         # Initialize database before calling super().__init__
         self.db_path = db_path
         self.db = SimulationDatabase(db_path)
+        self.retriever = DataRetriever(self.db)
         
         # Initialize tooltips dictionary
         self.tooltips = {
@@ -74,110 +76,44 @@ class StatisticsWindow(BaseWindow):
         # Population Dynamics section
         self._add_stat_section(scrollable_frame, "Population Dynamics")
         
-        # Get statistics using SQLAlchemy
-        def _get_stats(session):
-            stats = self.db.get_population_statistics()
-            momentum = self.db.get_population_momentum()
-            advanced_stats = self.db.get_advanced_statistics()
-            return stats, momentum, advanced_stats
-            
-        stats, momentum, advanced_stats = self.db._execute_in_transaction(_get_stats)
-        
+        # Get statistics using DataRetriever
+        population_stats = self.retriever.get_population_statistics()
+        lifespan_stats = self.retriever.get_agent_lifespan_statistics()
+        resource_stats = self.retriever.get_resource_statistics()
+        learning_stats = self.retriever.get_learning_statistics()
+
         # Add population metrics
-        self._add_stat_row("Population Momentum", f"{momentum:,.0f}")
         self._add_stat_row(
             "Average Population",
-            f"{stats.get('average_population', 0):,.2f}"
+            f"{population_stats['birth_death_rates']['birth_rate']:,.2f}"
         )
         self._add_stat_row(
             "Peak Population",
-            f"{stats.get('peak_population', 0):,d}"
-        )
-        self._add_stat_row(
-            "Simulation Length",
-            f"{stats.get('death_step', 0):,d} steps"
+            f"{max(population_stats['population_over_time']['total']):,d}"
         )
         
-        # Resource Utilization section
+        # Add resource metrics
         self._add_stat_section(scrollable_frame, "Resource Metrics")
         self._add_stat_row(
-            "Resource Utilization",
-            f"{stats.get('resource_utilization', 0):.2%}"
+            "Resource Efficiency",
+            f"{resource_stats['efficiency_metrics']['average_efficiency']:.2%}"
         )
         self._add_stat_row(
-            "Resources Consumed",
-            f"{stats.get('resources_consumed', 0):,.0f}"
+            "Resource Distribution",
+            f"{resource_stats['efficiency_metrics']['distribution_entropy'][-1]:.2f}"
         )
-        self._add_stat_row(
-            "Resources Available",
-            f"{stats.get('resources_available', 0):,.0f}"
-        )
-        self._add_stat_row(
-            "Utilization per Agent",
-            f"{stats.get('utilization_per_agent', 0):.2f}"
-        )
-        
-        # Stability Metrics section
-        self._add_stat_section(scrollable_frame, "Stability Metrics")
-        self._add_stat_row(
-            "Population Variance",
-            f"{stats.get('population_variance', 0):,.2f}"
-        )
-        self._add_stat_row(
-            "Coefficient of Variation",
-            f"{stats.get('coefficient_variation', 0):.2%}"
-        )
-        
-        # Get advanced statistics
-        advanced_stats = self.db.get_advanced_statistics()
-        
-        # Population Dynamics (Additional)
-        self._add_stat_section(scrollable_frame, "Advanced Population Metrics")
-        self._add_stat_row(
-            "Peak-to-End Ratio",
-            f"{advanced_stats.get('peak_to_end_ratio', 0):,.2f}"
-        )
-        self._add_stat_row(
-            "Growth Rate",
-            f"{advanced_stats.get('growth_rate', 0):,.2f} agents/step"
-        )
-        self._add_stat_row(
-            "Extinction Threshold",
-            f"Step {advanced_stats.get('extinction_threshold_time', 'N/A')}"
-        )
-        
-        # Health and Survival
-        self._add_stat_section(scrollable_frame, "Health & Survival")
-        self._add_stat_row(
-            "Average Health",
-            f"{advanced_stats.get('average_health', 0):,.2%}"
-        )
-        self._add_stat_row(
-            "Survivor Ratio",
-            f"{advanced_stats.get('survivor_ratio', 0):,.2%}"
-        )
-        
-        # Diversity and Interaction
-        self._add_stat_section(scrollable_frame, "Diversity & Interaction")
-        self._add_stat_row(
-            "Agent Diversity",
-            f"{advanced_stats.get('agent_diversity', 0):,.3f}"
-        )
-        self._add_stat_row(
-            "Interaction Rate",
-            f"{advanced_stats.get('interaction_rate', 0):,.2f} per agent/step"
-        )
-        self._add_stat_row(
-            "Conflict/Cooperation Ratio",
-            f"{advanced_stats.get('conflict_cooperation_ratio', 0):,.2f}"
-        )
-        
-        # Resource Dynamics
-        self._add_stat_section(scrollable_frame, "Resource Dynamics")
-        self._add_stat_row(
-            "Scarcity Index",
-            f"{advanced_stats.get('scarcity_index', 0):,.2%}"
-        )
+
+        # Add learning metrics
+        self._add_stat_section(scrollable_frame, "Learning Performance")
+        for module, stats in learning_stats['module_performance'].items():
+            self._add_stat_row(
+                f"{module} Reward",
+                f"{stats['avg_reward']:.2f}"
+            )
+            self._add_stat_row(
+                f"{module} Loss",
+                f"{stats['avg_loss']:.2f}"
+            )
         
         # Update tooltips dictionary with new metrics
         self.tooltips.update({
@@ -259,17 +195,15 @@ class StatisticsWindow(BaseWindow):
         fig = plt.figure(figsize=(10, 6))
         canvas = FigureCanvasTkAgg(fig, master=parent)
         
-        def _get_data(session):
-            # Use SQLAlchemy to get population data
-            return self.db.get_historical_data()
-            
-        data = self.db._execute_in_transaction(_get_data)
+        # Get data using DataRetriever
+        population_stats = self.retriever.get_population_statistics()
+        data = population_stats['population_over_time']
         
         # Plot population trends
         ax = fig.add_subplot(111)
-        ax.plot(data["steps"], data["metrics"]["total_agents"], label="Total")
-        ax.plot(data["steps"], data["metrics"]["system_agents"], label="System")
-        ax.plot(data["steps"], data["metrics"]["independent_agents"], label="Independent")
+        ax.plot(data['steps'], data['total'], label="Total")
+        ax.plot(data['steps'], data['system'], label="System")
+        ax.plot(data['steps'], data['independent'], label="Independent")
         
         ax.set_xlabel("Step")
         ax.set_ylabel("Population")

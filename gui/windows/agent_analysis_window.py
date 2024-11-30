@@ -12,6 +12,7 @@ from sqlalchemy import func
 
 from database.database import Agent, AgentAction, AgentState, SimulationDatabase
 from gui.components.tooltips import ToolTip
+from database.data_retrieval import DataRetriever
 
 
 class AgentAnalysisWindow(ttk.Frame):
@@ -23,6 +24,8 @@ class AgentAnalysisWindow(ttk.Frame):
         super().__init__(parent)
         self.db_path = db_path
         self.chart_canvas = None
+        self.db = SimulationDatabase(db_path)
+        self.retriever = DataRetriever(self.db)
 
         self.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
         self.grid_columnconfigure(0, weight=1)
@@ -1190,3 +1193,22 @@ Reward: {action_details['reward']:.2f}
         except Exception as e:
             print(f"Error updating children table: {e}")
             traceback.print_exc()
+
+    def _update_agent_info(self, agent_id: int):
+        """Update agent information display."""
+        try:
+            # Get agent data using DataRetriever
+            data = self.retriever.get_simulation_data(self.current_step)
+            agent_states = [s for s in data['agent_states'] if s[0] == agent_id]
+            
+            if agent_states:
+                state = agent_states[0]
+                self._update_info_labels({
+                    "Agent ID": state[0],
+                    "Type": state[1],
+                    "Position": f"({state[2]:.1f}, {state[3]:.1f})",
+                    "Resources": f"{state[4]:.1f}",
+                    "Health": f"{state[5]:.1f}",
+                })
+        except Exception as e:
+            self.show_error("Error", f"Failed to update agent info: {str(e)}")

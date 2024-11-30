@@ -18,6 +18,8 @@ from gui.components.stats import StatsPanel
 from gui.components.tooltips import ToolTip
 from gui.utils.styles import configure_ttk_styles
 from gui.windows.agent_analysis_window import AgentAnalysisWindow
+from database.data_logging import DataLogger
+from database.data_retrieval import DataRetriever
 
 
 class SimulationGUI:
@@ -46,6 +48,11 @@ class SimulationGUI:
         self._setup_menu()
         self._setup_main_frame()
         self._show_welcome_screen()
+
+        # Initialize database components
+        self.db = None
+        self.logger = None
+        self.retriever = None
 
     def _configure_styles(self):
         """Configure custom styles for the application."""
@@ -427,6 +434,16 @@ class SimulationGUI:
 
         self.components["environment"].set_agent_selected_callback(on_agent_selected)
 
+        # Initialize database and loggers
+        self.db = SimulationDatabase(self.current_db_path)
+        self.logger = self.db.logger
+        self.retriever = DataRetriever(self.db)
+
+        # Update components to use logger
+        self.components["environment"].set_logger(self.logger)
+        self.components["stats"].set_logger(self.logger)
+        self.components["chart"].set_logger(self.logger)
+
     def _on_tab_changed(self, event):
         """Handle tab change events."""
         current_tab = self.notebook.select()
@@ -770,7 +787,7 @@ class SimulationGUI:
 
     def _export_data(self) -> None:
         """Export simulation data."""
-        if not self.current_db_path:
+        if not self.db:
             messagebox.showwarning("No Data", "Please run or open a simulation first.")
             return
 
@@ -782,8 +799,11 @@ class SimulationGUI:
 
         if filepath:
             try:
-                db = SimulationDatabase(self.current_db_path)
-                db.export_data(filepath)
+                # Use data retriever to get data
+                data = self.retriever.get_simulation_data(self.current_step)
+                
+                # Export using database
+                self.db.export_data(filepath)
                 messagebox.showinfo("Success", "Data exported successfully!")
             except Exception as e:
                 self.show_error("Export Error", f"Failed to export data: {str(e)}")

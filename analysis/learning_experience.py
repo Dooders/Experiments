@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 
 from database.database import SimulationDatabase
+from database.data_retrieval import DataRetriever
 
 #! Table not populating currently
 
@@ -15,103 +16,33 @@ def analyze_learning_experiences(db_path: str):
     db_path : str
         Path to the SQLite database file
     """
-    # Initialize database connection
+    # Initialize database and retriever
     db = SimulationDatabase(db_path)
+    retriever = DataRetriever(db)
 
-    # First, let's verify the table exists and check its structure
-    verify_query = """
-    SELECT name FROM sqlite_master 
-    WHERE type='table' AND name='LearningExperiences';
-    """
-    
-    print("Verifying database structure:")
-    verification_result = pd.read_sql_query(verify_query, db.conn)
-    print(verification_result)
+    try:
+        # Get learning statistics using DataRetriever
+        learning_stats = retriever.get_learning_statistics()
+        
+        # Convert to DataFrame for analysis
+        learning_data = pd.DataFrame({
+            'step': list(learning_stats['learning_progress']['average_reward'].keys()),
+            'reward': list(learning_stats['learning_progress']['average_reward'].values()),
+            'loss': list(learning_stats['learning_progress']['average_loss'].values())
+        })
 
-    # Let's also check if there are any rows at all
-    count_query = """
-    SELECT COUNT(*) as count 
-    FROM LearningExperiences;
-    """
-    
-    count_result = pd.read_sql_query(count_query, db.conn)
-    print("\nNumber of learning experiences:", count_result['count'].iloc[0])
+        # Module performance analysis
+        module_performance = pd.DataFrame.from_dict(
+            learning_stats['module_performance'], 
+            orient='index'
+        )
 
-    # Query RL data using the existing schema
-    query = """
-    SELECT 
-        le.step_number,
-        le.agent_id,
-        le.module_type,
-        le.state_before,
-        le.action_taken,
-        CAST(le.reward AS FLOAT) as reward,
-        le.state_after,
-        CAST(le.loss AS FLOAT) as loss
-    FROM 
-        LearningExperiences le
-    ORDER BY 
-        le.agent_id, le.step_number;
-    """
+        # Create visualizations
+        plot_learning_metrics(learning_data)
 
-    rl_data = pd.read_sql_query(query, db.conn)
-
-    # Show data preview
-    print("\nData Preview:")
-    print(rl_data.head())
-
-    # If we have no data, exit early
-    if rl_data.empty:
-        print("No learning experience data found in the database.")
+    finally:
+        # Close database connection
         db.close()
-        return
-
-    # Convert reward and loss columns to numeric
-    rl_data['reward'] = pd.to_numeric(rl_data['reward'], errors='coerce')
-    rl_data['loss'] = pd.to_numeric(rl_data['loss'], errors='coerce')
-
-    # Ensure data is clean
-    rl_data.fillna(0, inplace=True)
-
-    # Decode JSON states into dictionaries
-    import json
-
-    def decode_state(state):
-        if isinstance(state, str):
-            return json.loads(state)
-        return state
-
-    rl_data["state_before"] = rl_data["state_before"].apply(decode_state)
-    rl_data["state_after"] = rl_data["state_after"].apply(decode_state)
-
-    # Convert states into feature vectors
-    def state_to_vector(state):
-        if state:
-            return [
-                state.get("position_x", 0),
-                state.get("position_y", 0),
-                state.get("resources", 0),
-            ]
-        return [0, 0, 0]
-
-    rl_data["state_vector_before"] = rl_data["state_before"].apply(state_to_vector)
-    rl_data["state_vector_after"] = rl_data["state_after"].apply(state_to_vector)
-
-    # Calculate state deltas
-    rl_data["state_delta"] = rl_data.apply(
-        lambda row: np.array(row["state_vector_after"])
-        - np.array(row["state_vector_before"]),
-        axis=1,
-    )
-
-    # Calculate cumulative rewards per agent
-    rl_data["cumulative_reward"] = rl_data.groupby("agent_id")["reward"].cumsum()
-
-    # Create visualizations
-    plot_learning_metrics(rl_data)
-
-    # Close database connection
-    db.close()
 
 
 def plot_learning_metrics(rl_data: pd.DataFrame):

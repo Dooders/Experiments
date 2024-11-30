@@ -549,16 +549,15 @@ class Environment:
             self.db.batch_log_agents(agent_data)
 
     def cleanup(self):
-        """Clean up resources before shutdown."""
-        if hasattr(self, "db") and self.db is not None:
-            try:
-                # Ensure all pending data is saved
-                self.db.flush_all_buffers()
-                # Close database connection
+        """Clean up environment resources."""
+        try:
+            if self.db:
+                # Use logger for buffer flushing
+                if hasattr(self.db, 'logger'):
+                    self.db.logger.flush_all_buffers()
                 self.db.close()
-                self.db = None
-            except Exception as e:
-                logger.error(f"Error during environment cleanup: {e}")
+        except Exception as e:
+            logger.error(f"Error during environment cleanup: {str(e)}")
 
     def __del__(self):
         """Ensure cleanup on deletion."""

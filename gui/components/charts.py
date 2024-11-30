@@ -43,6 +43,8 @@ class SimulationChart(ttk.Frame):
             "deaths": []
         }
         
+        self.logger = None
+        
         self._setup_chart()
         self._setup_interactions()
         self._setup_context_menu()
@@ -503,3 +505,7 @@ class SimulationChart(ttk.Frame):
     def set_playback_toggle_callback(self, callback):
         """Set callback for toggling playback."""
         self.on_playback_toggle = callback
+
+    def set_logger(self, logger):
+        """Set the data logger for this component."""
+        self.logger = logger
