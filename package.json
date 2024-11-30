@@ -52,7 +52,7 @@
     "electron": "25.8.4",
     "socket.io-client": "4.7.2",
     "chart.js": "4.4.0",
-    "axios": "1.5.0"
+    "axios": "1.7.4"
   },
   "devDependencies": {
     "electron-builder": "24.9.1"
