@@ -1045,3 +1045,66 @@ class ConsumptionStats:
     avg_consumption_rate: float
     peak_consumption: float
     consumption_variance: float
+
+
+@dataclass
+class ResourceHotspot:
+    """Represents a location of high resource concentration.
+
+    Attributes
+    ----------
+    position_x : float
+        X coordinate of the hotspot
+    position_y : float
+        Y coordinate of the hotspot
+    concentration : float
+        Resource concentration at this location
+    """
+
+    position_x: float
+    position_y: float
+    concentration: float
+
+
+@dataclass
+class ResourceEfficiencyMetrics:
+    """Resource efficiency metrics.
+
+    Attributes
+    ----------
+    utilization_rate : float
+        Resource utilization rate (0-1)
+    distribution_efficiency : float
+        Resource distribution efficiency (0-1)
+    consumption_efficiency : float
+        Resource consumption efficiency (0-1)
+    regeneration_rate : float
+        Resource regeneration rate
+    """
+
+    utilization_rate: float
+    distribution_efficiency: float
+    consumption_efficiency: float
+    regeneration_rate: float
+
+
+@dataclass
+class ResourceAnalysis:
+    """Comprehensive resource statistics and analysis.
+
+    Attributes
+    ----------
+    distribution : List[ResourceDistributionStep]
+        Resource distribution data over time
+    consumption : ConsumptionStats
+        Consumption pattern statistics
+    hotspots : List[ResourceHotspot]
+        Resource concentration points, sorted by concentration
+    efficiency : ResourceEfficiencyMetrics
+        Resource efficiency metrics
+    """
+
+    distribution: List[ResourceDistributionStep]
+    consumption: ConsumptionStats
+    hotspots: List[ResourceHotspot]
+    efficiency: ResourceEfficiencyMetrics
