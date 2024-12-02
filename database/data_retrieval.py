@@ -44,39 +44,34 @@ import pandas as pd
 from sqlalchemy import and_, case, exists, func, not_
 from sqlalchemy.orm import aliased
 
+from database.agent_lifespan import AgentLifespanRetriever
+from database.population import PopulationStatisticsRetriever
+from database.simulation import SimulationStateRetriever
+from database.resource import ResourceRetriever
+from database.learning import LearningRetriever
+
 from .data_types import (
     ActionMetrics,
     AdvancedStatistics,
     AgentBehaviorMetrics,
-    AgentDecisionMetrics,
     AgentDistribution,
     AgentLifespanStats,
     AgentStateData,
-    AgentStates,
-    DecisionPattern,
     DecisionPatterns,
     DecisionPatternStats,
     DecisionSummary,
-    EfficiencyMetrics,
     HistoricalMetrics,
     InteractionMetrics,
     InteractionPattern,
     InteractionStats,
-    LearningProgress,
     LearningStatistics,
-    ModulePerformance,
     PopulationMetrics,
     PopulationStatistics,
     PopulationVariance,
-    ResourceBehavior,
-    ResourceDistribution,
     ResourceImpact,
     ResourceMetrics,
-    ResourceStates,
-    RewardStats,
     SequencePattern,
     SimulationResults,
-    SimulationState,
     StepActionData,
     SurvivalMetrics,
     TimePattern,
@@ -87,7 +82,6 @@ from .models import (
     AgentState,
     HealthIncident,
     LearningExperience,
-    ResourceState,
     SimulationStep,
 )
 
@@ -120,306 +114,6 @@ def execute_query(func):
     return wrapper
 
 
-class SimulationStateRetriever:
-    """Handles retrieval of simulation state data.
-
-    This class encapsulates methods for retrieving agent states, resource states,
-    and overall simulation state data for specific simulation steps.
-    """
-
-    def __init__(self, database):
-        """Initialize with database connection.
-
-        Parameters
-        ----------
-        database : SimulationDatabase
-            Database instance to use for queries
-        """
-        self.db = database
-
-    @execute_query
-    def agent_states(
-        self, session, step_number: Optional[int] = None
-    ) -> List[AgentStates]:
-        """Retrieve agent states for a specific step or all steps.
-
-        Gets the state data for all agents at either a specific simulation step or
-        across all steps. When no step is specified, returns the complete history
-        ordered by step number and agent ID.
-
-        Parameters
-        ----------
-        session : Session
-            SQLAlchemy database session (injected by decorator)
-        step_number : Optional[int], default=None
-            The simulation step number to retrieve data for.
-            If None, returns data for all steps.
-
-        Returns
-        -------
-        List[AgentStates]
-            List of agent states containing:
-            - step_number: int
-                Simulation step number
-            - agent_id: int
-                Unique identifier for the agent
-            - agent_type: str
-                Type/category of the agent
-            - position_x: float
-                X coordinate of agent position
-            - position_y: float
-                Y coordinate of agent position
-            - resource_level: float
-                Current resource level of the agent
-            - current_health: float
-                Current health level of the agent
-            - is_defending: bool
-                Whether the agent is in defensive stance
-
-        Notes
-        -----
-        The returned data is ordered by step_number and agent_id when retrieving
-        multiple steps. For single step queries, only agent_id ordering is applied.
-        """
-        agent_states = session.query(
-            AgentState.step_number,
-            AgentState.agent_id,
-            Agent.agent_type,
-            AgentState.position_x,
-            AgentState.position_y,
-            AgentState.resource_level,
-            AgentState.current_health,
-            AgentState.is_defending,
-        ).join(Agent)
-
-        if step_number is not None:
-            agent_states = agent_states.filter(AgentState.step_number == step_number)
-        else:
-            agent_states = agent_states.order_by(
-                AgentState.step_number, AgentState.agent_id
-            )
-
-        return agent_states.all()
-
-    @execute_query
-    def resource_states(self, session, step_number: int) -> List[ResourceStates]:
-        """Retrieve resource states for a specific step.
-
-        Gets the state of all resources in the simulation at the specified step number,
-        including their positions and amounts.
-
-        Parameters
-        ----------
-        step_number : int
-            The simulation step number to retrieve data for
-
-        Returns
-        -------
-        ResourceStates
-            List of ResourceState objects containing:
-            - resource_id: int
-                Unique identifier for the resource
-            - amount: float
-                Current amount of the resource
-            - position_x: float
-                X coordinate of resource position
-            - position_y: float
-                Y coordinate of resource position
-
-        Notes
-        -----
-        Resources that were depleted or removed will not be included in the results.
-        Positions are in simulation grid coordinates.
-        """
-        results = (
-            session.query(
-                ResourceState.resource_id,
-                ResourceState.amount,
-                ResourceState.position_x,
-                ResourceState.position_y,
-            )
-            .filter(ResourceState.step_number == step_number)
-            .all()
-        )
-        return results
-
-    @execute_query
-    def simulation_state(self, session, step_number: int) -> SimulationState:
-        """Retrieve simulation state for a specific step.
-
-        Gets the overall simulation state metrics and configuration at the specified
-        step number, including population counts, resource totals, and system metrics.
-
-        Parameters
-        ----------
-        step_number : int
-            The simulation step number to retrieve data for
-
-        Returns
-        -------
-        SimulationState
-            Dictionary containing:
-            - step_number: int
-                Current step number
-            - total_agents: int
-                Total number of agents alive
-            - total_resources: float
-                Total resources available
-            - average_agent_health: float
-                Mean health across all agents
-            - average_agent_resources: float
-                Mean resources per agent
-            - births: int
-                Number of births this step
-            - deaths: int
-                Number of deaths this step
-            - system_metrics: Dict[str, float]
-                Additional system performance metrics
-
-        Notes
-        -----
-        Returns None if the step number is not found in the database.
-        The SimulationState type is defined in data_types.py.
-        """
-        simulation_step = (
-            session.query(SimulationStep)
-            .filter(SimulationStep.step_number == step_number)
-            .first()
-        )
-        return simulation_step.as_dict()
-
-    def get_results(self, step_number: int) -> SimulationResults:
-        """Retrieve complete simulation state for a specific step.
-
-        Parameters
-        ----------
-        step_number : int
-            The simulation step number to retrieve data for
-
-        Returns
-        -------
-        SimulationResults
-            Data containing agent states, resource states, and simulation metrics
-        """
-        return {
-            "agent_states": self.agent_states(step_number),
-            "resource_states": self.resource_states(step_number),
-            "simulation_state": self.simulation_state(step_number),
-        }
-
-
-class AgentLifespanRetriever:
-    """Handles retrieval of agent lifespan statistics.
-
-    This class encapsulates methods for analyzing agent lifespans, survival rates,
-    and generational statistics across the simulation.
-    """
-
-    def __init__(self, database):
-        """Initialize with database connection.
-
-        Parameters
-        ----------
-        database : SimulationDatabase
-            Database instance to use for queries
-        """
-        self.db = database
-
-    @execute_query
-    def get_lifespans(self, session) -> Dict[str, Dict[str, float]]:
-        """Calculate lifespan statistics by agent type and generation.
-
-        Returns
-        -------
-        Dict[str, Dict[str, float]]
-            Dictionary containing:
-            - average_lifespan: float
-                Mean lifespan across all agents
-            - lifespan_by_type: Dict[str, float]
-                Mean lifespan per agent type
-            - lifespan_by_generation: Dict[int, float]
-                Mean lifespan per generation
-        """
-        lifespans = (
-            session.query(
-                Agent.agent_type,
-                Agent.generation,
-                (Agent.death_time - Agent.birth_time).label("lifespan"),
-            )
-            .filter(Agent.death_time.isnot(None))
-            .all()
-        )
-
-        lifespan_data = pd.DataFrame(
-            lifespans, columns=["agent_type", "generation", "lifespan"]
-        )
-
-        return {
-            "average_lifespan": lifespan_data["lifespan"].mean(),
-            "lifespan_by_type": lifespan_data.groupby("agent_type")["lifespan"]
-            .mean()
-            .to_dict(),
-            "lifespan_by_generation": lifespan_data.groupby("generation")["lifespan"]
-            .mean()
-            .to_dict(),
-        }
-
-    @execute_query
-    def get_survival_rates(self, session) -> Dict[int, float]:
-        """Calculate survival rates by generation.
-
-        Returns
-        -------
-        Dict[int, float]
-            Dictionary mapping generation numbers to their survival rates (0-100).
-            Survival rate is the percentage of agents still alive in each generation.
-        """
-        survival_rates = (
-            session.query(
-                Agent.generation,
-                func.count(case([(Agent.death_time.is_(None), 1)]))
-                * 100.0
-                / func.count(),
-            )
-            .group_by(Agent.generation)
-            .all()
-        )
-
-        survival_data = pd.DataFrame(
-            survival_rates, columns=["generation", "survival_rate"]
-        )
-
-        return survival_data.set_index("generation")["survival_rate"].to_dict()
-
-    @execute_query
-    def get_statistics(self, session) -> AgentLifespanStats:
-        """Calculate comprehensive statistics about agent lifespans.
-
-        Returns
-        -------
-        AgentLifespanStats
-            Data containing:
-            - average_lifespan: float
-                Mean lifespan across all agents
-            - lifespan_by_type: Dict[str, float]
-                Mean lifespan per agent type
-            - lifespan_by_generation: Dict[int, float]
-                Mean lifespan per generation
-            - survival_rates: Dict[int, float]
-                Survival rate per generation
-        """
-        # Get lifespan statistics
-        lifespan_stats = self.get_lifespans()
-
-        # Get survival rates
-        survival_rates = self.get_survival_rates()
-
-        return {
-            **lifespan_stats,
-            "survival_rates": survival_rates,
-        }
-
-
 class DataRetriever:
     """Handles data retrieval operations for the simulation database."""
 
@@ -433,8 +127,11 @@ class DataRetriever:
         """
         self.db = database
         self._retrievers = {
-            "simulation_state": SimulationStateRetriever(database),
+            "simulation": SimulationStateRetriever(database),
             "agent_lifespan": AgentLifespanRetriever(database),
+            "population": PopulationStatisticsRetriever(database),
+            "resource": ResourceRetriever(database),
+            "learning": LearningRetriever(database),
         }
 
     def __getattr__(self, name):
@@ -494,7 +191,7 @@ class DataRetriever:
         resource_states(), and simulation_state() into a single response.
         Returns None for any components that are not found for the given step.
         """
-        return self._retrievers["simulation_state"].get_results(step_number)
+        return self._retrievers["simulation_state"].execute(step_number)
 
     def agent_lifespan_statistics(self) -> AgentLifespanStats:
         """Calculate comprehensive statistics about agent lifespans.
@@ -513,28 +210,28 @@ class DataRetriever:
         This method encapsulates the logic for calculating and returning
         comprehensive agent lifespan statistics.
         """
-        return self._retrievers["agent_lifespan"].get_statistics()
+        return self._retrievers["agent_lifespan"].execute()
 
-    def get_population_statistics(self) -> PopulationStatistics:
-        """Calculate comprehensive population statistics using SQLAlchemy.
+    def population_statistics(self) -> PopulationStatistics:
+        """Calculate comprehensive population statistics for the simulation.
 
         Returns
         -------
         PopulationStatistics
-            Data containing:
+            Dictionary containing:
             - basic_stats: Dict[str, float]
-                - average_population: Average number of agents
+                - average_population: Mean population across all steps
                 - peak_population: Maximum population reached
-                - death_step: Step when population died out
-                - total_steps: Total simulation steps
+                - death_step: Final simulation step
+                - total_steps: Total number of simulation steps
             - resource_metrics: Dict[str, float]
                 - resource_utilization: Resource usage efficiency
                 - resources_consumed: Total resources consumed
                 - resources_available: Total resources available
                 - utilization_per_agent: Average resource usage per agent
             - population_variance: Dict[str, float]
-                - variance: Population size variance
-                - standard_deviation: Population size standard deviation
+                - variance: Population variance
+                - standard_deviation: Population standard deviation
                 - coefficient_variation: Coefficient of variation
             - agent_distribution: Dict[str, float]
                 - system_agents: Average number of system agents
@@ -542,224 +239,70 @@ class DataRetriever:
                 - control_agents: Average number of control agents
             - survival_metrics: Dict[str, float]
                 - survival_rate: Population survival rate
-                - average_lifespan: Average agent lifespan
+                - average_lifespan: Mean agent lifespan
+
+        Notes
+        -----
+        This method aggregates data from the PopulationStatisticsRetriever to provide
+        a comprehensive view of population dynamics throughout the simulation.
         """
+        return self._retrievers["population_statistics"].execute()
 
-        def _query(session):
-            # Subquery for population data
-            pop_data = (
-                session.query(
-                    SimulationStep.step_number,
-                    SimulationStep.total_agents,
-                    SimulationStep.total_resources,
-                    func.sum(AgentState.resource_level).label("resources_consumed"),
-                )
-                .outerjoin(
-                    AgentState, AgentState.step_number == SimulationStep.step_number
-                )
-                .filter(SimulationStep.total_agents > 0)
-                .group_by(SimulationStep.step_number)
-                .subquery()
-            )
-
-            # Calculate basic statistics
-            stats = session.query(
-                func.avg(pop_data.c.total_agents).label("avg_population"),
-                func.max(pop_data.c.step_number).label("death_step"),
-                func.max(pop_data.c.total_agents).label("peak_population"),
-                func.sum(pop_data.c.resources_consumed).label(
-                    "total_resources_consumed"
-                ),
-                func.sum(pop_data.c.total_resources).label("total_resources_available"),
-                func.sum(pop_data.c.total_agents * pop_data.c.total_agents).label(
-                    "sum_squared"
-                ),
-                func.count().label("step_count"),
-            ).first()
-
-            if not stats:
-                return {}
-
-            avg_pop = float(stats[0] or 0)
-            death_step = int(stats[1] or 0)
-            peak_pop = int(stats[2] or 0)
-            resources_consumed = float(stats[3] or 0)
-            resources_available = float(stats[4] or 0)
-            sum_squared = float(stats[5] or 0)
-            step_count = int(stats[6] or 1)
-
-            # Calculate derived statistics
-            variance = (sum_squared / step_count) - (avg_pop * avg_pop)
-            std_dev = variance**0.5
-            resource_utilization = (
-                resources_consumed / resources_available
-                if resources_available > 0
-                else 0
-            )
-            cv = std_dev / avg_pop if avg_pop > 0 else 0
-
-            # Get agent type distribution
-            type_stats = session.query(
-                func.avg(SimulationStep.system_agents).label("avg_system"),
-                func.avg(SimulationStep.independent_agents).label("avg_independent"),
-                func.avg(SimulationStep.control_agents).label("avg_control"),
-            ).first()
-
-            return {
-                "basic_stats": {
-                    "average_population": avg_pop,
-                    "peak_population": peak_pop,
-                    "death_step": death_step,
-                    "total_steps": step_count,
-                },
-                "resource_metrics": {
-                    "resource_utilization": resource_utilization,
-                    "resources_consumed": resources_consumed,
-                    "resources_available": resources_available,
-                    "utilization_per_agent": (
-                        resources_consumed / (avg_pop * death_step)
-                        if avg_pop * death_step > 0
-                        else 0
-                    ),
-                },
-                "population_variance": {
-                    "variance": variance,
-                    "standard_deviation": std_dev,
-                    "coefficient_variation": cv,
-                },
-                "agent_distribution": {
-                    "system_agents": float(type_stats[0] or 0),
-                    "independent_agents": float(type_stats[1] or 0),
-                    "control_agents": float(type_stats[2] or 0),
-                },
-                "survival_metrics": {
-                    "survival_rate": (avg_pop / peak_pop if peak_pop > 0 else 0),
-                    "average_lifespan": (death_step / 2 if death_step > 0 else 0),
-                },
-            }
-
-        return self.db._execute_in_transaction(_query)
-
-    def get_resource_statistics(self) -> Dict[str, Any]:
+    @execute_query
+    def resource_statistics(self, session) -> Dict[str, Any]:
         """Get statistics about resource distribution and consumption.
 
         Returns
         -------
         Dict[str, Any]
             Dictionary containing:
-            - resource_distribution: ResourceDistribution
-            - efficiency_metrics: EfficiencyMetrics
+            - resource_distribution: Dict[str, List[float]]
+                Time series data of resource distribution
+            - efficiency_metrics: Dict[str, float]
+                Resource efficiency and utilization metrics
+            - consumption_patterns: Dict[str, float]
+                Resource consumption statistics
+            - hotspots: List[Tuple[float, float, float]]
+                Resource concentration points
         """
+        return self._retrievers["resource"].execute()
 
-        def _query(session):
-            # Get resource states over time
-            resource_data = (
-                session.query(
-                    SimulationStep.step_number,
-                    SimulationStep.total_resources,
-                    SimulationStep.average_agent_resources,
-                    SimulationStep.resource_efficiency,
-                    SimulationStep.resource_distribution_entropy,
-                )
-                .order_by(SimulationStep.step_number)
-                .all()
-            )
-
-            df = pd.DataFrame(
-                resource_data,
-                columns=[
-                    "step",
-                    "total_resources",
-                    "avg_agent_resources",
-                    "efficiency",
-                    "entropy",
-                ],
-            )
-
-            return {
-                "resource_distribution": {
-                    "steps": df["step"].tolist(),
-                    "total_resources": df["total_resources"].tolist(),
-                    "average_per_agent": df["avg_agent_resources"].tolist(),
-                },
-                "efficiency_metrics": {
-                    "average_efficiency": df["efficiency"].mean(),
-                    "efficiency_trend": df["efficiency"].tolist(),
-                    "distribution_entropy": df["entropy"].tolist(),
-                },
-            }
-
-        return self.db._execute_in_transaction(_query)
-
-    def get_learning_statistics(self) -> LearningStatistics:
+    @execute_query
+    def learning_statistics(self, session) -> LearningStatistics:
         """Get statistics about agent learning and adaptation.
 
         Returns
         -------
         LearningStatistics
             Data containing:
-            - learning_progress: LearningProgress
-            - module_performance: Dict[str, ModulePerformance]
+            - learning_progress: Dict[str, float]
+                Time series data of learning progress
+            - module_performance: Dict[str, Dict[str, float]]
+                Performance metrics for each learning module
         """
+        return self._retrievers["learning"].execute()
 
-        def _query(session):
-            # Get learning experiences
-            learning_data = (
-                session.query(
-                    LearningExperience.step_number,
-                    LearningExperience.module_type,
-                    LearningExperience.reward,
-                    LearningExperience.loss,
-                )
-                .order_by(LearningExperience.step_number)
-                .all()
-            )
-
-            df = pd.DataFrame(
-                learning_data, columns=["step", "module_type", "reward", "loss"]
-            )
-
-            return {
-                "learning_progress": {
-                    "average_reward": df.groupby("step")["reward"].mean().to_dict(),
-                    "average_loss": df.groupby("step")["loss"].mean().to_dict(),
-                },
-                "module_performance": {
-                    module: {
-                        "avg_reward": group["reward"].mean(),
-                        "avg_loss": group["loss"].mean(),
-                    }
-                    for module, group in df.groupby("module_type")
-                },
-            }
-
-        return self.db._execute_in_transaction(_query)
-
-    def get_historical_data(self) -> HistoricalMetrics:
+    @execute_query
+    def historical_data(self, session) -> HistoricalMetrics:
         """Retrieve historical metrics for the entire simulation."""
 
-        def _query(session):
-            steps = (
-                session.query(SimulationStep).order_by(SimulationStep.step_number).all()
-            )
+        steps = session.query(SimulationStep).order_by(SimulationStep.step_number).all()
 
-            return {
-                "steps": [step.step_number for step in steps],
-                "metrics": {
-                    "total_agents": [step.total_agents for step in steps],
-                    "system_agents": [step.system_agents for step in steps],
-                    "independent_agents": [step.independent_agents for step in steps],
-                    "control_agents": [step.control_agents for step in steps],
-                    "total_resources": [step.total_resources for step in steps],
-                    "average_agent_resources": [
-                        step.average_agent_resources for step in steps
-                    ],
-                    "births": [step.births for step in steps],
-                    "deaths": [step.deaths for step in steps],
-                },
-            }
-
-        return self.db._execute_in_transaction(_query)
+        return {
+            "steps": [step.step_number for step in steps],
+            "metrics": {
+                "total_agents": [step.total_agents for step in steps],
+                "system_agents": [step.system_agents for step in steps],
+                "independent_agents": [step.independent_agents for step in steps],
+                "control_agents": [step.control_agents for step in steps],
+                "total_resources": [step.total_resources for step in steps],
+                "average_agent_resources": [
+                    step.average_agent_resources for step in steps
+                ],
+                "births": [step.births for step in steps],
+                "deaths": [step.deaths for step in steps],
+            },
+        }
 
     def population_momentum(self) -> float:
         """Calculate population momentum using simpler SQL queries.
@@ -788,12 +331,12 @@ class DataRetriever:
 
             if initial and stats and initial[0] > 0:
                 return (float(stats[1]) * float(stats[0])) / float(initial[0])
-            return 0.0
 
         return self.db._execute_in_transaction(_query)
 
     def population_stats(self, session) -> Dict[str, Any]:
         """Get basic population statistics.
+        #! already exists above. Is this different????
 
         Parameters
         ----------

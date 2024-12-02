@@ -574,10 +574,16 @@ class LearningStatistics:
         Overall learning and adaptation statistics
     module_performance : Dict[str, ModulePerformance]
         Performance metrics for individual learning modules
+    agent_learning_stats : Dict[str, float]
+        Learning statistics for individual agents
+    learning_efficiency : float
+        Overall learning efficiency
     """
 
     learning_progress: LearningProgress
     module_performance: Dict[str, ModulePerformance]
+    agent_learning_stats: Dict[str, float]
+    learning_efficiency: float
 
 
 @dataclass
