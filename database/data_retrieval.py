@@ -310,7 +310,7 @@ class SimulationStateRetriever:
 
 class AgentLifespanRetriever:
     """Handles retrieval of agent lifespan statistics.
-    
+
     This class encapsulates methods for analyzing agent lifespans, survival rates,
     and generational statistics across the simulation.
     """
@@ -359,9 +359,7 @@ class AgentLifespanRetriever:
             "lifespan_by_type": lifespan_data.groupby("agent_type")["lifespan"]
             .mean()
             .to_dict(),
-            "lifespan_by_generation": lifespan_data.groupby("generation")[
-                "lifespan"
-            ]
+            "lifespan_by_generation": lifespan_data.groupby("generation")["lifespan"]
             .mean()
             .to_dict(),
         }
@@ -390,7 +388,7 @@ class AgentLifespanRetriever:
         survival_data = pd.DataFrame(
             survival_rates, columns=["generation", "survival_rate"]
         )
-        
+
         return survival_data.set_index("generation")["survival_rate"].to_dict()
 
     @execute_query
@@ -412,7 +410,7 @@ class AgentLifespanRetriever:
         """
         # Get lifespan statistics
         lifespan_stats = self.get_lifespans()
-        
+
         # Get survival rates
         survival_rates = self.get_survival_rates()
 
@@ -469,7 +467,33 @@ class DataRetriever:
         )
 
     def simulation_results(self, step_number: int) -> SimulationResults:
-        """Retrieve complete simulation state for a specific step."""
+        """Retrieve complete simulation state for a specific step.
+
+        Gets the full simulation state including agent states, resource states,
+        and overall simulation metrics for the specified step number.
+
+        Parameters
+        ----------
+        step_number : int
+            The simulation step number to retrieve data for
+
+        Returns
+        -------
+        SimulationResults
+            Dictionary containing:
+            - agent_states: List[AgentStates]
+                States of all agents at this step
+            - resource_states: List[ResourceStates]
+                States of all resources at this step
+            - simulation_state: SimulationState
+                Overall simulation metrics and configuration
+
+        Notes
+        -----
+        This is a convenience method that combines the results of agent_states(),
+        resource_states(), and simulation_state() into a single response.
+        Returns None for any components that are not found for the given step.
+        """
         return self._retrievers["simulation_state"].get_results(step_number)
 
     def agent_lifespan_statistics(self) -> AgentLifespanStats:
@@ -483,6 +507,11 @@ class DataRetriever:
             - lifespan_by_type: Dict[str, float], mean lifespan per agent type
             - lifespan_by_generation: Dict[int, float], mean lifespan per generation
             - survival_rates: Dict[int, float], survival rate per generation
+
+        Notes
+        -----
+        This method encapsulates the logic for calculating and returning
+        comprehensive agent lifespan statistics.
         """
         return self._retrievers["agent_lifespan"].get_statistics()
 
