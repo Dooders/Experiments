@@ -910,6 +910,7 @@ class SurvivalRatesByGeneration:
         Dictionary mapping generation numbers to their survival rates (0-100).
         Survival rate is the percentage of agents still alive in each generation.
     """
+
     rates: Dict[int, float]
 
 
@@ -925,6 +926,59 @@ class AgentLifespanResults:
     survival_rates : SurvivalRatesByGeneration
         Survival rates for each generation of agents
     """
+
     lifespan_statistics: LifespanStatistics
     survival_rates: SurvivalRatesByGeneration
 
+
+@dataclass
+class Population:
+    """Data for population and resource metrics at a specific step.
+
+    Attributes
+    ----------
+    step_number : int
+        Step number in the simulation
+    total_agents : int
+        Total number of agents
+    total_resources : float
+        Total resources available
+    resources_consumed : float
+        Amount of resources consumed by agents
+    """
+
+    step_number: int
+    total_agents: int
+    total_resources: float
+    resources_consumed: float
+
+
+@dataclass
+class BasicPopulationStatistics:
+    """Basic population statistics for a simulation run.
+
+    Attributes
+    ----------
+    avg_population : float
+        Average population across all steps
+    death_step : int
+        Final step number of the simulation
+    peak_population : int
+        Maximum population reached
+    resources_consumed : float
+        Total resources consumed across all steps
+    resources_available : float
+        Total resources available across all steps
+    sum_squared : float
+        Sum of squared population counts (for variance calculations)
+    step_count : int
+        Total number of simulation steps
+    """
+
+    avg_population: float
+    death_step: int
+    peak_population: int
+    resources_consumed: float
+    resources_available: float
+    sum_squared: float
+    step_count: int

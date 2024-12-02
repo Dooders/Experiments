@@ -221,7 +221,7 @@ class DataRetriever:
         This method aggregates data from the PopulationStatisticsRetriever to provide
         a comprehensive view of population dynamics throughout the simulation.
         """
-        return self._retrievers["population_statistics"].execute()
+        return self._retrievers["population"].execute()
 
     @execute_query
     def resource_statistics(self, session) -> Dict[str, Any]:
