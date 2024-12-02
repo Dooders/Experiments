@@ -48,7 +48,74 @@ AgentStateData
 """
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
+
+
+@dataclass
+class SimulationState:
+    """Current state metrics for the simulation.
+
+    Attributes
+    ----------
+    total_agents : int
+        Total number of agents in the simulation
+    system_agents : int
+        Number of system-controlled agents
+    independent_agents : int
+        Number of independent agents
+    control_agents : int
+        Number of control group agents
+    total_resources : float
+        Total resources available in the environment
+    average_agent_resources : float
+        Mean resources per agent
+    births : int
+        Number of new agents created
+    deaths : int
+        Number of agent deaths
+    current_max_generation : int
+        Highest generation number among living agents
+    resource_efficiency : float
+        Measure of resource utilization efficiency
+    resource_distribution_entropy : float
+        Entropy measure of resource distribution
+    average_agent_health : float
+        Mean health level across all agents
+    average_agent_age : float
+        Mean age of all agents
+    average_reward : float
+        Mean reward across all agents
+    combat_encounters : int
+        Number of combat interactions
+    successful_attacks : int
+        Number of successful attack actions
+    resources_shared : float
+        Amount of resources shared between agents
+    genetic_diversity : float
+        Measure of genetic variation in population
+    dominant_genome_ratio : float
+        Ratio of agents sharing the most common genome
+    """
+
+    total_agents: int
+    system_agents: int
+    independent_agents: int
+    control_agents: int
+    total_resources: float
+    average_agent_resources: float
+    births: int
+    deaths: int
+    current_max_generation: int
+    resource_efficiency: float
+    resource_distribution_entropy: float
+    average_agent_health: float
+    average_agent_age: float
+    average_reward: float
+    combat_encounters: int
+    successful_attacks: int
+    resources_shared: float
+    genetic_diversity: float
+    dominant_genome_ratio: float
 
 
 @dataclass
@@ -455,6 +522,7 @@ class AgentStatesData:
         - current_health: float
         - is_defending: bool
     """
+
     agent_states: List[Tuple[int, int, str, float, float, float, float, bool]]
 
 
@@ -571,7 +639,7 @@ class InteractionMetrics:
 @dataclass
 class ActionMetrics:
     """Metrics for a specific action type.
-    
+
     Attributes
     ----------
     action_type : str
@@ -585,6 +653,7 @@ class ActionMetrics:
     max_reward : float
         Maximum reward received for this action
     """
+
     action_type: str
     decision_count: int
     avg_reward: float
@@ -609,6 +678,7 @@ class DecisionPatternStats:
         - min: Minimum reward received
         - max: Maximum reward received
     """
+
     count: int
     frequency: float
     reward_stats: Dict[str, float]
@@ -625,6 +695,7 @@ class SequencePattern:
     probability : float
         Probability of this sequence occurring
     """
+
     count: int
     probability: float
 
@@ -642,8 +713,9 @@ class ResourceImpact:
     resource_efficiency : float
         Efficiency of resource usage for this action
     """
+
     avg_resources_before: float
-    avg_resource_change: float 
+    avg_resource_change: float
     resource_efficiency: float
 
 
@@ -658,6 +730,7 @@ class TimePattern:
     reward_progression : List[float]
         Progression of rewards over time periods
     """
+
     time_distribution: List[int]
     reward_progression: List[float]
 
@@ -675,6 +748,7 @@ class InteractionStats:
     interaction_performance : float
         Average reward for interactive actions
     """
+
     interaction_rate: float
     solo_performance: float
     interaction_performance: float
@@ -697,6 +771,7 @@ class DecisionSummary:
     action_diversity : float
         Shannon entropy of action distribution
     """
+
     total_decisions: int
     unique_actions: int
     most_frequent: Optional[str]
@@ -723,9 +798,66 @@ class DecisionPatterns:
     decision_summary : DecisionSummary
         Overall decision-making summary
     """
+
     decision_patterns: Dict[str, DecisionPatternStats]
     sequence_analysis: Dict[str, SequencePattern]
     resource_impact: Dict[str, ResourceImpact]
     temporal_patterns: Dict[str, TimePattern]
     interaction_analysis: Dict[str, InteractionStats]
     decision_summary: DecisionSummary
+
+
+@dataclass
+class ResourceStates:
+    """Represents the state of a resource at a specific simulation step.
+
+    Attributes
+    ----------
+    resource_id : int
+        Unique identifier for the resource
+    amount : float
+        Current amount of the resource available
+    position_x : float
+        X coordinate of resource position in simulation grid
+    position_y : float
+        Y coordinate of resource position in simulation grid
+    """
+
+    resource_id: int
+    amount: float
+    position_x: float
+    position_y: float
+
+
+@dataclass
+class AgentStates:
+    """Data representing agent states from database queries.
+
+    Attributes
+    ----------
+    step_number : int
+        Simulation step number
+    agent_id : int
+        Unique identifier for the agent
+    agent_type : str
+        Type of the agent
+    position_x : float
+        X coordinate of the agent's position
+    position_y : float
+        Y coordinate of the agent's position
+    resource_level : float
+        Current resource level of the agent
+    current_health : float
+        Current health level of the agent
+    is_defending : bool
+        Whether the agent is defending
+    """
+
+    step_number: int
+    agent_id: int
+    agent_type: str
+    position_x: float
+    position_y: float
+    resource_level: float
+    current_health: float
+    is_defending: bool

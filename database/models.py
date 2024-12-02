@@ -20,9 +20,11 @@ between related tables.
 
 import logging
 from datetime import datetime
+from json import dumps, loads
 from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy import (
+    ARRAY,
     JSON,
     Boolean,
     Column,
@@ -33,11 +35,9 @@ from sqlalchemy import (
     Integer,
     String,
     func,
-    ARRAY,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-from json import dumps, loads
 
 logger = logging.getLogger(__name__)
 
@@ -118,14 +118,14 @@ class Agent(Base):
         "AgentAction",
         back_populates="agent",
         foreign_keys="[AgentAction.agent_id]",
-        primaryjoin="Agent.agent_id==AgentAction.agent_id"
+        primaryjoin="Agent.agent_id==AgentAction.agent_id",
     )
     health_incidents = relationship("HealthIncident", back_populates="agent")
     learning_experiences = relationship("LearningExperience", back_populates="agent")
     targeted_actions = relationship(
         "AgentAction",
         foreign_keys="[AgentAction.action_target_id]",
-        primaryjoin="Agent.agent_id==AgentAction.action_target_id"
+        primaryjoin="Agent.agent_id==AgentAction.action_target_id",
     )
 
 
@@ -424,22 +424,16 @@ class AgentAction(Base):
     reward = Column(Float(precision=6), nullable=True)
     details = Column(String(1024), nullable=True)
 
-    agent = relationship(
-        "Agent",
-        back_populates="actions",
-        foreign_keys=[agent_id]
-    )
+    agent = relationship("Agent", back_populates="actions", foreign_keys=[agent_id])
     target = relationship(
-        "Agent",
-        foreign_keys=[action_target_id],
-        backref="targeted_by"
+        "Agent", foreign_keys=[action_target_id], backref="targeted_by"
     )
 
     @property
     def position_before_array(self):
         """Convert stored JSON string back to array/list"""
         return loads(self.position_before) if self.position_before else None
-    
+
     @position_before_array.setter
     def position_before_array(self, value):
         """Convert array/list to JSON string for storage"""
@@ -448,6 +442,7 @@ class AgentAction(Base):
 
 class LearningExperience(Base):
     """Learning experience records."""
+
     __tablename__ = "learning_experiences"
     __table_args__ = (
         Index("idx_learning_experiences_step_number", "step_number"),
@@ -470,6 +465,7 @@ class LearningExperience(Base):
 
 class HealthIncident(Base):
     """Health incident records."""
+
     __tablename__ = "health_incidents"
     __table_args__ = (
         Index("idx_health_incidents_step_number", "step_number"),
@@ -489,6 +485,7 @@ class HealthIncident(Base):
 
 class SimulationConfig(Base):
     """Simulation configuration records."""
+
     __tablename__ = "simulation_config"
 
     config_id = Column(Integer, primary_key=True)
@@ -498,7 +495,7 @@ class SimulationConfig(Base):
 
 class Simulation(Base):
     """Simulation records."""
-    
+
     __tablename__ = "simulations"
 
     simulation_id = Column(Integer, primary_key=True, autoincrement=True)
