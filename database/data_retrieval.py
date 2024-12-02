@@ -45,10 +45,11 @@ from sqlalchemy import and_, case, exists, func, not_
 from sqlalchemy.orm import aliased
 
 from database.agent_lifespan import AgentLifespanRetriever
-from database.population import PopulationStatisticsRetriever
-from database.simulation import SimulationStateRetriever
-from database.resource import ResourceRetriever
 from database.learning import LearningRetriever
+from database.population import PopulationStatisticsRetriever
+from database.resource import ResourceRetriever
+from database.simulation import SimulationStateRetriever
+from database.utilities import execute_query
 
 from .data_types import (
     ActionMetrics,
@@ -86,32 +87,6 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def execute_query(func):
-    """Decorator to execute database queries within a transaction.
-
-    Wraps methods that contain database query logic, executing them within
-    the database transaction context.
-
-    Parameters
-    ----------
-    func : callable
-        The method containing the database query logic
-
-    Returns
-    -------
-    callable
-        Wrapped method that executes within a transaction
-    """
-
-    def wrapper(self, *args, **kwargs):
-        def query(session):
-            return func(self, session, *args, **kwargs)
-
-        return self.db._execute_in_transaction(query)
-
-    return wrapper
 
 
 class DataRetriever:
@@ -191,7 +166,7 @@ class DataRetriever:
         resource_states(), and simulation_state() into a single response.
         Returns None for any components that are not found for the given step.
         """
-        return self._retrievers["simulation_state"].execute(step_number)
+        return self._retrievers["simulation"].execute(step_number)
 
     def agent_lifespan_statistics(self) -> AgentLifespanStats:
         """Calculate comprehensive statistics about agent lifespans.

@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 from sqlalchemy import func
 
-from database.data_retrieval import execute_query
+from database.utilities import execute_query
 from database.models import ResourceState, SimulationStep
 
 class ResourceRetriever:

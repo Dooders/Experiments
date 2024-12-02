@@ -3,7 +3,7 @@ from typing import Dict
 import pandas as pd
 from sqlalchemy import func
 
-from database.data_retrieval import execute_query
+from database.utilities import execute_query
 from database.data_types import PopulationStatistics
 from database.models import AgentState, SimulationStep
 

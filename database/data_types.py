@@ -45,6 +45,12 @@ StepActionData
     Data about actions in a specific simulation step
 AgentStateData
     Comprehensive data about an agent's state
+LifespanStatistics
+    Statistics about agent lifespans by type and generation
+SurvivalRatesByGeneration
+    Statistics about survival rates by generation
+AgentLifespanResults
+    Combined agent lifespan statistics and survival rates.
 """
 
 from dataclasses import dataclass
@@ -867,3 +873,58 @@ class AgentStates:
     resource_level: float
     current_health: float
     is_defending: bool
+
+
+@dataclass
+class LifespanStatistics:
+    """Statistics about agent lifespans by type and generation.
+
+    Attributes
+    ----------
+    average_lifespan : float
+        Mean lifespan across all agents
+    lifespan_by_type : Dict[str, float]
+        Mean lifespan per agent type
+    lifespan_by_generation : Dict[int, float]
+        Mean lifespan per generation
+    maximum_lifespan : float
+        Maximum lifespan of any agent
+    minimum_lifespan : float
+        Minimum lifespan of any agent
+    """
+
+    average_lifespan: float
+    maximum_lifespan: float
+    minimum_lifespan: float
+    lifespan_by_type: Dict[str, float]
+    lifespan_by_generation: Dict[int, float]
+
+
+@dataclass
+class SurvivalRatesByGeneration:
+    """Statistics about survival rates by generation.
+
+    Attributes
+    ----------
+    rates : Dict[int, float]
+        Dictionary mapping generation numbers to their survival rates (0-100).
+        Survival rate is the percentage of agents still alive in each generation.
+    """
+    rates: Dict[int, float]
+
+
+@dataclass
+class AgentLifespanResults:
+    """Combined agent lifespan statistics and survival rates.
+
+    Attributes
+    ----------
+    lifespan_statistics : LifespanStatistics
+        Comprehensive lifespan statistics including averages and breakdowns
+        by type and generation
+    survival_rates : SurvivalRatesByGeneration
+        Survival rates for each generation of agents
+    """
+    lifespan_statistics: LifespanStatistics
+    survival_rates: SurvivalRatesByGeneration
+

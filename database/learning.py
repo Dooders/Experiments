@@ -12,7 +12,7 @@ from typing import Dict, Optional
 import pandas as pd
 from sqlalchemy import func
 
-from database.data_retrieval import execute_query
+from database.utilities import execute_query
 from database.data_types import LearningProgress, LearningStatistics, ModulePerformance
 from database.models import LearningExperience
 
