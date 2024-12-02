@@ -291,6 +291,12 @@ class Environment:
             else:
                 resource_distribution_entropy = 0.0
 
+            # Calculate resource consumption for this step
+            previous_resources = getattr(self, "previous_total_resources", 0)
+            current_resources = sum(r.amount for r in self.resources)
+            resources_consumed = max(0, previous_resources - current_resources)
+            self.previous_total_resources = current_resources
+
             # Return all metrics in a dictionary
             return {
                 "total_agents": total_agents,
@@ -299,6 +305,7 @@ class Environment:
                 "control_agents": control_agents,
                 "total_resources": total_resources,
                 "average_agent_resources": average_agent_resources,
+                "resources_consumed": resources_consumed,
                 "births": births,
                 "deaths": deaths,
                 "current_max_generation": current_max_generation,
@@ -323,6 +330,7 @@ class Environment:
                 "control_agents": 0,
                 "total_resources": 0,
                 "average_agent_resources": 0,
+                "resources_consumed": 0.0,
                 "births": 0,
                 "deaths": 0,
                 "current_max_generation": 0,

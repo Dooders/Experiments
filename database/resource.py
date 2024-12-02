@@ -3,8 +3,14 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 from sqlalchemy import func
 
-from database.utilities import execute_query
+from database.data_types import (
+    ConsumptionStats,
+    ResourceDistributionData,
+    ResourceDistributionStep,
+)
 from database.models import ResourceState, SimulationStep
+from database.utilities import execute_query
+
 
 class ResourceRetriever:
     """Handles retrieval and analysis of resource-related data.
@@ -24,15 +30,15 @@ class ResourceRetriever:
         self.db = database
 
     @execute_query
-    def resource_distribution(self, session) -> Dict[str, List[float]]:
+    def resource_distribution(self, session) -> List[ResourceDistributionStep]:
         """Get resource distribution over time.
 
         Returns
         -------
-        Dict[str, List[float]]
-            Dictionary containing:
-            - steps: List of step numbers
-            - total_resources: Total resources at each step
+        List[Dict[str, float]]
+            List of dictionaries, one per step, containing:
+            - step: Step number
+            - total_resources: Total resources at this step
             - average_per_cell: Average resources per grid cell
             - distribution_entropy: Resource distribution entropy
         """
@@ -40,27 +46,25 @@ class ResourceRetriever:
             session.query(
                 SimulationStep.step_number,
                 SimulationStep.total_resources,
-                SimulationStep.resource_density,
+                SimulationStep.average_agent_resources,
                 SimulationStep.resource_distribution_entropy,
             )
             .order_by(SimulationStep.step_number)
             .all()
         )
 
-        df = pd.DataFrame(
-            distribution_data,
-            columns=["step", "total", "density", "entropy"]
-        )
-
-        return {
-            "steps": df["step"].tolist(),
-            "total_resources": df["total"].tolist(),
-            "average_per_cell": df["density"].tolist(),
-            "distribution_entropy": df["entropy"].tolist(),
-        }
+        return [
+            ResourceDistributionStep(
+                step=step,
+                total_resources=total,
+                average_per_cell=density,
+                distribution_entropy=entropy,
+            )
+            for step, total, density, entropy in distribution_data
+        ]
 
     @execute_query
-    def consumption_patterns(self, session) -> Dict[str, float]:
+    def consumption_patterns(self, session) -> ConsumptionStats:
         """Analyze resource consumption patterns.
 
         Returns
@@ -72,15 +76,12 @@ class ResourceRetriever:
             - peak_consumption: Maximum consumption in a step
             - consumption_variance: Variance in consumption rate
         """
-        consumption_stats = (
-            session.query(
-                func.sum(SimulationStep.resources_consumed).label("total"),
-                func.avg(SimulationStep.resources_consumed).label("average"),
-                func.max(SimulationStep.resources_consumed).label("peak"),
-                func.variance(SimulationStep.resources_consumed).label("variance"),
-            )
-            .first()
-        )
+        consumption_stats = session.query(
+            func.sum(SimulationStep.resources_consumed).label("total"),
+            func.avg(SimulationStep.resources_consumed).label("average"),
+            func.max(SimulationStep.resources_consumed).label("peak"),
+            func.variance(SimulationStep.resources_consumed).label("variance"),
+        ).first()
 
         return {
             "total_consumed": float(consumption_stats[0] or 0),
@@ -126,15 +127,12 @@ class ResourceRetriever:
             - consumption_efficiency: Resource consumption efficiency
             - regeneration_rate: Resource regeneration rate
         """
-        metrics = (
-            session.query(
-                func.avg(SimulationStep.resource_efficiency).label("utilization"),
-                func.avg(SimulationStep.distribution_efficiency).label("distribution"),
-                func.avg(SimulationStep.consumption_efficiency).label("consumption"),
-                func.avg(SimulationStep.regeneration_rate).label("regeneration"),
-            )
-            .first()
-        )
+        metrics = session.query(
+            func.avg(SimulationStep.resource_efficiency).label("utilization"),
+            func.avg(SimulationStep.distribution_efficiency).label("distribution"),
+            func.avg(SimulationStep.consumption_efficiency).label("consumption"),
+            func.avg(SimulationStep.regeneration_rate).label("regeneration"),
+        ).first()
 
         return {
             "utilization_rate": float(metrics[0] or 0),

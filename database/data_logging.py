@@ -375,9 +375,6 @@ class DataLogger:
     ) -> None:
         """Log comprehensive simulation state data for a single time step.
 
-        Records the complete state of the simulation including all agent states,
-        resource states, and aggregate metrics for the given step.
-
         Parameters
         ----------
         step_number : int
@@ -397,6 +394,7 @@ class DataLogger:
             - control_agents: int
             - total_resources: float
             - average_agent_resources: float
+            - resources_consumed: float
             - births: int
             - deaths: int
             And other relevant metrics
@@ -408,47 +406,61 @@ class DataLogger:
         ValueError
             If input data is malformed or invalid
         """
+        try:
+            def _insert(session):
+                # Ensure resources_consumed has a default value if not provided
+                if 'resources_consumed' not in metrics:
+                    metrics['resources_consumed'] = 0.0
 
-        def _insert(session):
-            # Bulk insert agent states
-            if agent_states:
-                agent_state_mappings = [
-                    {
-                        "step_number": step_number,
-                        "agent_id": state[0],
-                        "position_x": state[1],
-                        "position_y": state[2],
-                        "resource_level": state[3],
-                        "current_health": state[4],
-                        "max_health": state[5],
-                        "starvation_threshold": state[6],
-                        "is_defending": bool(state[7]),
-                        "total_reward": state[8],
-                        "age": state[9],
-                    }
-                    for state in agent_states
-                ]
-                session.bulk_insert_mappings(AgentState, agent_state_mappings)
+                # Bulk insert agent states
+                if agent_states:
+                    agent_state_mappings = [
+                        {
+                            "step_number": step_number,
+                            "agent_id": state[0],
+                            "position_x": state[1],
+                            "position_y": state[2],
+                            "resource_level": state[3],
+                            "current_health": state[4],
+                            "max_health": state[5],
+                            "starvation_threshold": state[6],
+                            "is_defending": bool(state[7]),
+                            "total_reward": state[8],
+                            "age": state[9],
+                        }
+                        for state in agent_states
+                    ]
+                    session.bulk_insert_mappings(AgentState, agent_state_mappings)
 
-            # Bulk insert resource states
-            if resource_states:
-                resource_state_mappings = [
-                    {
-                        "step_number": step_number,
-                        "resource_id": state[0],
-                        "amount": state[1],
-                        "position_x": state[2],
-                        "position_y": state[3],
-                    }
-                    for state in resource_states
-                ]
-                session.bulk_insert_mappings(ResourceState, resource_state_mappings)
+                # Bulk insert resource states
+                if resource_states:
+                    resource_state_mappings = [
+                        {
+                            "step_number": step_number,
+                            "resource_id": state[0],
+                            "amount": state[1],
+                            "position_x": state[2],
+                            "position_y": state[3],
+                        }
+                        for state in resource_states
+                    ]
+                    session.bulk_insert_mappings(ResourceState, resource_state_mappings)
 
-            # Insert metrics
-            simulation_step = SimulationStep(step_number=step_number, **metrics)
-            session.add(simulation_step)
+                # Insert metrics
+                simulation_step = SimulationStep(step_number=step_number, **metrics)
+                session.add(simulation_step)
 
-        self.db._execute_in_transaction(_insert)
+            self.db._execute_in_transaction(_insert)
+
+        except (ValueError, TypeError) as e:
+            logger.error(f"Invalid data format in log_step: {e}")
+            raise
+        except SQLAlchemyError as e:
+            logger.error(f"Database error in log_step: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error in log_step: {e}")
+            raise
 
     def log_resource(
         self, resource_id: int, initial_amount: float, position: Tuple[float, float]

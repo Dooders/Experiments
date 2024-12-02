@@ -101,6 +101,8 @@ class SimulationState:
         Measure of genetic variation in population
     dominant_genome_ratio : float
         Ratio of agents sharing the most common genome
+    resources_consumed : float
+        Total resources consumed by the simulation
     """
 
     total_agents: int
@@ -122,6 +124,7 @@ class SimulationState:
     resources_shared: float
     genetic_diversity: float
     dominant_genome_ratio: float
+    resources_consumed: float
 
 
 @dataclass
@@ -242,22 +245,38 @@ class SurvivalMetrics:
 
 
 @dataclass
-class ResourceDistribution:
-    """Resource distribution statistics over time.
+class ResourceDistributionStep:
+    """Data for a single step's resource distribution.
 
     Attributes
     ----------
-    steps : List[int]
-        List of step numbers
-    total_resources : List[float]
-        Total resources per step
-    average_per_agent : List[float]
-        Average resources per agent per step
+    step : int
+        Step number
+    total_resources : float
+        Total resources at this step
+    average_per_cell : float
+        Average resources per grid cell
+    distribution_entropy : float
+        Resource distribution entropy
     """
 
-    steps: List[int]
-    total_resources: List[float]
-    average_per_agent: List[float]
+    step: int
+    total_resources: float
+    average_per_cell: float
+    distribution_entropy: float
+
+
+@dataclass
+class ResourceDistributionData:
+    """Resource distribution data over time.
+
+    Attributes
+    ----------
+    steps : List[ResourceDistributionStep]
+        List of resource distribution data for each step
+    """
+
+    steps: List[ResourceDistributionStep]
 
 
 @dataclass
@@ -982,3 +1001,47 @@ class BasicPopulationStatistics:
     resources_available: float
     sum_squared: float
     step_count: int
+
+
+@dataclass
+class ResourceDistributionData:
+    """Resource distribution data over time.
+
+    Attributes
+    ----------
+    steps : List[int]
+        List of step numbers
+    total_resources : List[float]
+        Total resources at each step
+    average_per_cell : List[float]
+        Average resources per grid cell
+    distribution_entropy : List[float]
+        Resource distribution entropy
+    """
+
+    steps: List[int]
+    total_resources: List[float]
+    average_per_cell: List[float]
+    distribution_entropy: List[float]
+
+
+@dataclass
+class ConsumptionStats:
+    """Statistics about resource consumption in the simulation.
+
+    Attributes
+    ----------
+    total_consumed : float
+        Total amount of resources consumed across all agents
+    avg_consumption_rate : float
+        Average rate of resource consumption per step
+    peak_consumption : float
+        Maximum resource consumption in any single step
+    consumption_variance : float
+        Variance in resource consumption rates
+    """
+
+    total_consumed: float
+    avg_consumption_rate: float
+    peak_consumption: float
+    consumption_variance: float

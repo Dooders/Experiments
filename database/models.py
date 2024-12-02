@@ -310,6 +310,8 @@ class SimulationStep(Base):
         Measure of genetic variation in population
     dominant_genome_ratio : float
         Proportion of agents sharing most common genome
+    resources_consumed : float
+        Total resources consumed by the simulation
 
     Methods
     -------
@@ -340,6 +342,7 @@ class SimulationStep(Base):
     resources_shared = Column(Float)
     genetic_diversity = Column(Float)
     dominant_genome_ratio = Column(Float)
+    resources_consumed = Column(Float, default=0.0)
 
     def as_dict(self) -> Dict[str, Any]:
         """Convert simulation step to dictionary."""
@@ -363,6 +366,7 @@ class SimulationStep(Base):
             "resources_shared": self.resources_shared,
             "genetic_diversity": self.genetic_diversity,
             "dominant_genome_ratio": self.dominant_genome_ratio,
+            "resources_consumed": self.resources_consumed,
         }
 
 
