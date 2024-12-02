@@ -20,7 +20,7 @@ between related tables.
 
 import logging
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy import (
     JSON,
@@ -33,9 +33,11 @@ from sqlalchemy import (
     Integer,
     String,
     func,
+    ARRAY,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
+from json import dumps, loads
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,52 @@ Base = declarative_base()
 
 # Define SQLAlchemy Models
 class Agent(Base):
+    """Represents a simulation agent and its core attributes.
+
+    This model stores the fundamental properties of agents in the simulation,
+    including their lifecycle data, physical attributes, and genetic information.
+
+    Attributes
+    ----------
+    agent_id : int
+        Unique identifier for the agent
+    birth_time : int
+        Step number when the agent was created
+    death_time : Optional[int]
+        Step number when the agent died (None if still alive)
+    agent_type : str
+        Type/category of the agent (e.g., 'system', 'independent', 'control')
+    position_x : float
+        X-coordinate of agent's position
+    position_y : float
+        Y-coordinate of agent's position
+    initial_resources : float
+        Starting resource level of the agent
+    max_health : float
+        Maximum health capacity of the agent
+    starvation_threshold : int
+        Resource level below which agent begins to starve
+    genome_id : str
+        Unique identifier for agent's genetic code
+    parent_id : Optional[int]
+        ID of the agent's parent (None for initial agents)
+    generation : int
+        Generational number in evolutionary lineage
+
+    Relationships
+    ------------
+    states : List[AgentState]
+        History of agent states over time
+    actions : List[AgentAction]
+        History of actions taken by the agent
+    health_incidents : List[HealthIncident]
+        Record of health-affecting events
+    learning_experiences : List[LearningExperience]
+        History of learning events and outcomes
+    targeted_actions : List[AgentAction]
+        Actions where this agent is the target
+    """
+
     __tablename__ = "agents"
     __table_args__ = (
         Index("idx_agents_agent_type", "agent_type"),
@@ -66,12 +114,65 @@ class Agent(Base):
 
     # Relationships
     states = relationship("AgentState", back_populates="agent")
-    actions = relationship("AgentAction", back_populates="agent")
+    actions = relationship(
+        "AgentAction",
+        back_populates="agent",
+        foreign_keys="[AgentAction.agent_id]",
+        primaryjoin="Agent.agent_id==AgentAction.agent_id"
+    )
     health_incidents = relationship("HealthIncident", back_populates="agent")
     learning_experiences = relationship("LearningExperience", back_populates="agent")
+    targeted_actions = relationship(
+        "AgentAction",
+        foreign_keys="[AgentAction.action_target_id]",
+        primaryjoin="Agent.agent_id==AgentAction.action_target_id"
+    )
 
 
 class AgentState(Base):
+    """Tracks the state of an agent at a specific simulation step.
+
+    This model captures the complete state of an agent at each time step,
+    including position, resources, health, and cumulative metrics.
+
+    Attributes
+    ----------
+    id : int
+        Unique identifier for the state record
+    step_number : int
+        Simulation step this state represents
+    agent_id : int
+        ID of the agent this state belongs to
+    position_x : float
+        Current X-coordinate position
+    position_y : float
+        Current Y-coordinate position
+    resource_level : float
+        Current resource amount held by agent
+    current_health : float
+        Current health level
+    max_health : float
+        Maximum possible health
+    starvation_threshold : int
+        Resource level that triggers starvation
+    is_defending : bool
+        Whether agent is in defensive stance
+    total_reward : float
+        Cumulative reward received
+    age : int
+        Number of steps agent has existed
+
+    Relationships
+    ------------
+    agent : Agent
+        The agent this state belongs to
+
+    Methods
+    -------
+    as_dict() -> Dict[str, Any]
+        Convert state to dictionary format for serialization
+    """
+
     __tablename__ = "agent_states"
     __table_args__ = (
         Index("idx_agent_states_agent_id", "agent_id"),
@@ -112,6 +213,32 @@ class AgentState(Base):
 
 # Additional SQLAlchemy Models
 class ResourceState(Base):
+    """Tracks the state of resources in the environment.
+
+    This model records the amount and location of resources at each simulation step,
+    enabling analysis of resource distribution and movement patterns.
+
+    Attributes
+    ----------
+    id : int
+        Unique identifier for the resource state record
+    step_number : int
+        Simulation step this state represents
+    resource_id : int
+        Identifier for the specific resource
+    amount : float
+        Quantity of resource available
+    position_x : float
+        X-coordinate of resource location
+    position_y : float
+        Y-coordinate of resource location
+
+    Methods
+    -------
+    as_dict() -> Dict[str, Any]
+        Convert resource state to dictionary format
+    """
+
     __tablename__ = "resource_states"
     __table_args__ = (
         Index("idx_resource_states_step_number", "step_number"),
@@ -135,6 +262,61 @@ class ResourceState(Base):
 
 
 class SimulationStep(Base):
+    """Records simulation-wide metrics for each time step.
+
+    This model captures aggregate statistics and metrics about the entire simulation
+    state at each step, including population counts, resource metrics, and various
+    performance indicators.
+
+    Attributes
+    ----------
+    step_number : int
+        Unique step identifier
+    total_agents : int
+        Total number of living agents
+    system_agents : int
+        Number of system-type agents
+    independent_agents : int
+        Number of independent-type agents
+    control_agents : int
+        Number of control-type agents
+    total_resources : float
+        Total resources in environment
+    average_agent_resources : float
+        Mean resources per agent
+    births : int
+        Number of new agents created this step
+    deaths : int
+        Number of agents that died this step
+    current_max_generation : int
+        Highest generation number present
+    resource_efficiency : float
+        Measure of resource utilization efficiency
+    resource_distribution_entropy : float
+        Measure of resource distribution evenness
+    average_agent_health : float
+        Mean health across all agents
+    average_agent_age : int
+        Mean age of all agents
+    average_reward : float
+        Mean reward received by agents
+    combat_encounters : int
+        Number of combat interactions
+    successful_attacks : int
+        Number of successful attack actions
+    resources_shared : float
+        Amount of resources transferred between agents
+    genetic_diversity : float
+        Measure of genetic variation in population
+    dominant_genome_ratio : float
+        Proportion of agents sharing most common genome
+
+    Methods
+    -------
+    as_dict() -> Dict[str, Any]
+        Convert step metrics to dictionary format
+    """
+
     __tablename__ = "simulation_steps"
     __table_args__ = (Index("idx_simulation_steps_step_number", "step_number"),)
 
@@ -185,6 +367,44 @@ class SimulationStep(Base):
 
 
 class AgentAction(Base):
+    """Record of an action taken by an agent during simulation.
+
+    This model tracks individual actions performed by agents, including the type of action,
+    target (if any), position changes, resource changes, and resulting rewards.
+
+    Attributes
+    ----------
+    action_id : int
+        Unique identifier for the action
+    step_number : int
+        Simulation step when the action occurred
+    agent_id : int
+        ID of the agent that performed the action
+    action_type : str
+        Type of action performed (e.g., 'move', 'attack', 'share')
+    action_target_id : Optional[int]
+        ID of the target agent, if the action involved another agent
+    position_before : Tuple[int, int]
+        Agent's position before the action
+    position_after : Tuple[int, int]
+        Agent's position after the action
+    resources_before : float
+        Agent's resource level before the action
+    resources_after : float
+        Agent's resource level after the action
+    reward : float
+        Reward received for the action
+    details : Optional[str]
+        JSON string containing additional action details
+
+    Relationships
+    ------------
+    agent : Agent
+        The agent that performed the action
+    target : Optional[Agent]
+        The target agent of the action, if any
+    """
+
     __tablename__ = "agent_actions"
     __table_args__ = (
         Index("idx_agent_actions_step_number", "step_number"),
@@ -196,18 +416,38 @@ class AgentAction(Base):
     step_number = Column(Integer, nullable=False)
     agent_id = Column(Integer, ForeignKey("agents.agent_id"), nullable=False)
     action_type = Column(String(20), nullable=False)
-    action_target_id = Column(Integer)
-    position_before = Column(String(32))
-    position_after = Column(String(32))
-    resources_before = Column(Float(precision=6))
-    resources_after = Column(Float(precision=6))
-    reward = Column(Float(precision=6))
-    details = Column(String(1024))
+    action_target_id = Column(Integer, ForeignKey("agents.agent_id"), nullable=True)
+    position_before = Column(String, nullable=True)
+    position_after = Column(String, nullable=True)
+    resources_before = Column(Float(precision=6), nullable=True)
+    resources_after = Column(Float(precision=6), nullable=True)
+    reward = Column(Float(precision=6), nullable=True)
+    details = Column(String(1024), nullable=True)
 
-    agent = relationship("Agent", back_populates="actions")
+    agent = relationship(
+        "Agent",
+        back_populates="actions",
+        foreign_keys=[agent_id]
+    )
+    target = relationship(
+        "Agent",
+        foreign_keys=[action_target_id],
+        backref="targeted_by"
+    )
+
+    @property
+    def position_before_array(self):
+        """Convert stored JSON string back to array/list"""
+        return loads(self.position_before) if self.position_before else None
+    
+    @position_before_array.setter
+    def position_before_array(self, value):
+        """Convert array/list to JSON string for storage"""
+        self.position_before = dumps(value) if value is not None else None
 
 
 class LearningExperience(Base):
+    """Learning experience records."""
     __tablename__ = "learning_experiences"
     __table_args__ = (
         Index("idx_learning_experiences_step_number", "step_number"),
@@ -229,6 +469,7 @@ class LearningExperience(Base):
 
 
 class HealthIncident(Base):
+    """Health incident records."""
     __tablename__ = "health_incidents"
     __table_args__ = (
         Index("idx_health_incidents_step_number", "step_number"),
@@ -247,6 +488,7 @@ class HealthIncident(Base):
 
 
 class SimulationConfig(Base):
+    """Simulation configuration records."""
     __tablename__ = "simulation_config"
 
     config_id = Column(Integer, primary_key=True)
@@ -255,6 +497,8 @@ class SimulationConfig(Base):
 
 
 class Simulation(Base):
+    """Simulation records."""
+    
     __tablename__ = "simulations"
 
     simulation_id = Column(Integer, primary_key=True, autoincrement=True)
