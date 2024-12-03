@@ -98,7 +98,7 @@ class BaseAgent:
         self.generation = generation
 
         # Initialize all modules first
-        self.move_module = MoveModule(self.config)
+        self.move_module = MoveModule(self.config, db=environment.db)
         self.attack_module = AttackModule(self.config)
         self.share_module = ShareModule(self.config)
         self.gather_module = GatherModule(self.config)

@@ -51,6 +51,7 @@ import numpy as np
 import torch
 
 from actions.base_dqn import BaseDQNConfig, BaseDQNModule, BaseQNetwork
+from database.database import SimulationDatabase
 
 if TYPE_CHECKING:
     from resource import Resource
@@ -96,9 +97,12 @@ class MoveModule(BaseDQNModule):
     """Movement-specific DQN module."""
 
     def __init__(
-        self, config: MoveConfig = DEFAULT_MOVE_CONFIG, device: torch.device = DEVICE
+        self,
+        config: MoveConfig = DEFAULT_MOVE_CONFIG,
+        device: torch.device = DEVICE,
+        db: Optional["SimulationDatabase"] = None,
     ) -> None:
-        super().__init__(input_dim=4, output_dim=4, config=config, device=device)
+        super().__init__(input_dim=4, output_dim=4, config=config, device=device, db=db)
         self._setup_action_space()
 
     def _setup_action_space(self) -> None:
