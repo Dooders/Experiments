@@ -51,6 +51,7 @@ import numpy as np
 import torch
 
 from actions.base_dqn import BaseDQNConfig, BaseDQNModule, BaseQNetwork
+from database.database import SimulationDatabase
 
 if TYPE_CHECKING:
     from resource import Resource
@@ -96,9 +97,12 @@ class MoveModule(BaseDQNModule):
     """Movement-specific DQN module."""
 
     def __init__(
-        self, config: MoveConfig = DEFAULT_MOVE_CONFIG, device: torch.device = DEVICE
+        self,
+        config: MoveConfig = DEFAULT_MOVE_CONFIG,
+        device: torch.device = DEVICE,
+        db: Optional["SimulationDatabase"] = None,
     ) -> None:
-        super().__init__(input_dim=4, output_dim=4, config=config, device=device)
+        super().__init__(input_dim=4, output_dim=4, config=config, device=device, db=db)
         self._setup_action_space()
 
     def _setup_action_space(self) -> None:
@@ -203,7 +207,7 @@ def move_action(agent: "BaseAgent") -> None:
 
     # Collect action for database
     if agent.environment.db is not None:
-        agent.environment.db.log_agent_action(
+        agent.environment.db.logger.log_agent_action(
             step_number=agent.environment.time,
             agent_id=agent.agent_id,
             action_type="move",
@@ -214,7 +218,7 @@ def move_action(agent: "BaseAgent") -> None:
             reward=DEFAULT_MOVE_CONFIG.move_base_cost,
             details={
                 "distance_moved": _calculate_distance(initial_position, new_position)
-            }
+            },
         )
 
     # Update position
@@ -289,9 +293,23 @@ def _store_and_train(agent: "BaseAgent", state: Any, reward: float) -> None:
     if agent.move_module.last_state is not None:
         next_state = _ensure_tensor(agent.get_state(), agent.move_module.device)
 
+        # Map action number to direction string
+        direction_map = {
+            MoveActionSpace.RIGHT: "right",
+            MoveActionSpace.LEFT: "left",
+            MoveActionSpace.UP: "up",
+            MoveActionSpace.DOWN: "down",
+        }
+        direction = direction_map[agent.move_module.last_action]
+
         agent.move_module.store_experience(
+            step_number=agent.environment.time,
+            agent_id=agent.agent_id,
+            module_type="move",
+            module_id=agent.move_module.module_id,
             state=agent.move_module.last_state,
             action=agent.move_module.last_action,
+            action_taken_mapped=direction,
             reward=reward,
             next_state=next_state,
             done=False,

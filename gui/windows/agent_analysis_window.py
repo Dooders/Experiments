@@ -10,8 +10,9 @@ import pandas as pd
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from sqlalchemy import func
 
-from core.database import Agent, AgentAction, AgentState, SimulationDatabase
+from database.database import Agent, AgentAction, AgentState, SimulationDatabase
 from gui.components.tooltips import ToolTip
+from database.data_retrieval import DataRetriever
 
 
 class AgentAnalysisWindow(ttk.Frame):
@@ -23,6 +24,8 @@ class AgentAnalysisWindow(ttk.Frame):
         super().__init__(parent)
         self.db_path = db_path
         self.chart_canvas = None
+        self.db = SimulationDatabase(db_path)
+        self.retriever = DataRetriever(self.db)
 
         self.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
         self.grid_columnconfigure(0, weight=1)
@@ -367,15 +370,29 @@ class AgentAnalysisWindow(ttk.Frame):
     def _load_agent_data(self, agent_id: int):
         """Load and display all data for selected agent."""
         try:
-            db = SimulationDatabase(self.db_path)
+            # Get comprehensive agent data using DataRetriever
+            agent_data = self.retriever.get_agent_data(agent_id)
+            agent_actions = self.retriever.get_agent_actions(agent_id)
+            agent_decisions = self.retriever.get_agent_decisions(agent_id)
             
-            # Load and update all data components
-            self._update_info_labels(self._load_basic_info(db, agent_id))
-            self._update_stat_labels(self._load_agent_stats(db, agent_id))
-            self._update_metric_labels(self._load_performance_metrics(db, agent_id))
-            self._update_metrics_chart(db, agent_id)
+            # Update info labels with basic info
+            self._update_info_labels(agent_data['basic_info'])
+            
+            # Update current state
+            self._update_stat_labels(agent_data['current_state'])
+            
+            # Update performance metrics
+            self._update_metric_labels(agent_data['historical_metrics'])
+            
+            # Update metrics chart with time series data
+            self._update_metrics_chart(agent_data, agent_actions)
+            
+            # Update children table
             self._update_children_table(agent_id)
-
+            
+            # Update action analysis
+            self._update_action_analysis(agent_actions, agent_decisions)
+            
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load agent data: {e}")
 
@@ -690,7 +707,7 @@ class AgentAnalysisWindow(ttk.Frame):
             db = SimulationDatabase(self.db_path)
             
             def _query(session):
-                from core.database import SimulationStep
+                from database.database import SimulationStep
                 
                 steps = (session.query(
                     SimulationStep.step_number,
@@ -1190,3 +1207,22 @@ Reward: {action_details['reward']:.2f}
         except Exception as e:
             print(f"Error updating children table: {e}")
             traceback.print_exc()
+
+    def _update_agent_info(self, agent_id: int):
+        """Update agent information display."""
+        try:
+            # Get agent data using DataRetriever
+            data = self.retriever.get_simulation_data(self.current_step)
+            agent_states = [s for s in data['agent_states'] if s[0] == agent_id]
+            
+            if agent_states:
+                state = agent_states[0]
+                self._update_info_labels({
+                    "Agent ID": state[0],
+                    "Type": state[1],
+                    "Position": f"({state[2]:.1f}, {state[3]:.1f})",
+                    "Resources": f"{state[4]:.1f}",
+                    "Health": f"{state[5]:.1f}",
+                })
+        except Exception as e:
+            self.show_error("Error", f"Failed to update agent info: {str(e)}")

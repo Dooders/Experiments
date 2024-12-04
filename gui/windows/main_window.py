@@ -5,10 +5,11 @@ import os.path
 import tkinter as tk
 from dataclasses import replace
 from tkinter import filedialog, messagebox, ttk
+from typing import Dict
 
 from core.config import SimulationConfig
-from core.database import SimulationDatabase
 from core.simulation import run_simulation
+from database.database import SimulationDatabase
 from gui.components.charts import SimulationChart
 from gui.components.chat_assistant import ChatAssistant
 from gui.components.controls import ControlPanel
@@ -18,6 +19,8 @@ from gui.components.stats import StatsPanel
 from gui.components.tooltips import ToolTip
 from gui.utils.styles import configure_ttk_styles
 from gui.windows.agent_analysis_window import AgentAnalysisWindow
+
+logger = logging.getLogger(__name__)
 
 
 class SimulationGUI:
@@ -37,6 +40,7 @@ class SimulationGUI:
         self.components = {}
         self.playback_timer = None
         self.last_config_path = "simulations/last_config.json"
+        self.playing = False
 
         # Configure styles
         self._configure_styles()
@@ -46,6 +50,10 @@ class SimulationGUI:
         self._setup_menu()
         self._setup_main_frame()
         self._show_welcome_screen()
+
+        # Initialize database components
+        self.db = None
+        self.logger = None
 
     def _configure_styles(self):
         """Configure custom styles for the application."""
@@ -427,6 +435,15 @@ class SimulationGUI:
 
         self.components["environment"].set_agent_selected_callback(on_agent_selected)
 
+        # Initialize database and loggers
+        self.db = SimulationDatabase(self.current_db_path)
+        self.logger = self.db.logger
+
+        # Update components to use logger
+        self.components["environment"].set_logger(self.logger)
+        self.components["stats"].set_logger(self.logger)
+        self.components["chart"].set_logger(self.logger)
+
     def _on_tab_changed(self, event):
         """Handle tab change events."""
         current_tab = self.notebook.select()
@@ -664,7 +681,7 @@ class SimulationGUI:
                 )
 
             # Reset to initial state (step 0)
-            initial_data = db.get_simulation_data(0)
+            initial_data = db.query.get_simulation_data(0)
             self.current_step = 0
 
             # Set up timeline interaction callbacks
@@ -770,7 +787,7 @@ class SimulationGUI:
 
     def _export_data(self) -> None:
         """Export simulation data."""
-        if not self.current_db_path:
+        if not self.db:
             messagebox.showwarning("No Data", "Please run or open a simulation first.")
             return
 
@@ -782,14 +799,18 @@ class SimulationGUI:
 
         if filepath:
             try:
-                db = SimulationDatabase(self.current_db_path)
-                db.export_data(filepath)
+                # Use data retriever to get data
+                data = self.db.query.get_simulation_data(self.current_step)
+
+                # Export using database
+                self.db.export_data(filepath)
                 messagebox.showinfo("Success", "Data exported successfully!")
             except Exception as e:
                 self.show_error("Export Error", f"Failed to export data: {str(e)}")
 
     def _toggle_playback(self, playing: bool) -> None:
         """Handle playback state change."""
+        self.playing = playing
         if playing:
             # Start playback
             self._play_simulation()
@@ -798,53 +819,79 @@ class SimulationGUI:
             self._stop_simulation()
 
     def _play_simulation(self):
-        """Start simulation playback."""
-        if not self.current_db_path:
+        """Handle simulation playback with better error handling."""
+        if not self.playing:
             return
 
         try:
-            # Cancel any existing timer
-            if self.playback_timer:
-                self.root.after_cancel(self.playback_timer)
-                self.playback_timer = None
+            # Get delay before any potential errors
+            delay = self.components["controls"].get_delay()
 
-            db = SimulationDatabase(self.current_db_path)
-            data = db.get_simulation_data(self.current_step + 1)
+            # Update simulation state
+            self._step_forward()
 
-            # Check if we've reached the end of the data
-            if not data or not data.get("metrics"):
-                # Stop playback
-                self.components["controls"].set_playing(False)
-                return
+            # Schedule next update if still playing and window exists
+            if self.playing and self.root.winfo_exists():
+                self.root.after(delay, self._play_simulation)
 
-            self.current_step += 1
+        except tk.TclError as e:
+            # Window was destroyed, stop playback silently
+            self.playing = False
+        except Exception as e:
+            # Handle other errors if window still exists
+            if self.root.winfo_exists():
+                self.show_error(
+                    "Playback Error", f"Failed to update simulation: {str(e)}"
+                )
+            self.playing = False
 
-            # Update each component with the data, except controls
-            for name, component in self.components.items():
-                if name != "controls" and hasattr(component, "update"):
+    def _on_closing(self):
+        """Handle window closing event."""
+        try:
+            # Stop playback
+            self.playing = False
+
+            # Clean up components
+            for component in self.components.values():
+                if hasattr(component, "cleanup"):
                     try:
-                        # Skip agent_analysis updates during playback
-                        if name == "agent_analysis":
-                            continue
+                        component.cleanup()
+                    except Exception as e:
+                        logger.error(f"Error cleaning up component: {e}")
 
-                        # Ensure data is passed as a dictionary
-                        if not isinstance(data, dict):
-                            logging.warning(
-                                f"Invalid data format for {name}: {type(data)}"
-                            )
-                            continue
-                        component.update(data)
-                    except Exception as comp_error:
-                        logging.error(f"Error updating {name}: {str(comp_error)}")
+            # Clean up database connection
+            if hasattr(self, "db"):
+                try:
+                    self.db.close()
+                except Exception as e:
+                    logger.error(f"Error closing database: {e}")
 
-            # Schedule next update if still playing
-            if self.components["controls"].playing:
-                delay = self.components["controls"].get_delay()
-                self.playback_timer = self.root.after(delay, self._play_simulation)
+            # Destroy root window
+            if self.root.winfo_exists():
+                self.root.destroy()
 
         except Exception as e:
-            self.show_error("Playback Error", f"Failed to update simulation: {str(e)}")
-            self.components["controls"].set_playing(False)
+            logger.error(f"Error during window cleanup: {e}")
+
+    def show_error(self, title: str, message: str):
+        """Show error dialog with better error handling."""
+        try:
+            if self.root.winfo_exists():
+                messagebox.showerror(title, message, parent=self.root)
+        except tk.TclError:
+            # Window was destroyed, log error instead
+            logger.error(f"{title}: {message}")
+        except Exception as e:
+            logger.error(f"Error showing error dialog: {e}")
+
+    def update_notes(self, notes_data: Dict):
+        """Update simulation notes with error handling."""
+        try:
+            if hasattr(self, "db"):
+                self.db.update_notes(notes_data)
+        except Exception as e:
+            logger.error(f"Error updating notes: {e}")
+            # Don't show error dialog - could cause recursive errors
 
     def _stop_simulation(self):
         """Stop simulation playback."""
@@ -869,7 +916,7 @@ class SimulationGUI:
             if step > max_step:
                 step = max_step
 
-            data = db.get_simulation_data(step)
+            data = db.query.get_simulation_data(step)
 
             if not isinstance(data, dict):
                 raise ValueError(
@@ -924,6 +971,27 @@ class SimulationGUI:
         self._show_welcome_screen()
         self.show_error("Simulation Error", error_msg)
 
-    def show_error(self, title: str, message: str):
-        """Display error message."""
-        messagebox.showerror(title, message, parent=self.root)
+    def _step_forward(self):
+        """Move simulation one step forward."""
+        try:
+            # Get data for next step
+            data = self.db.query.get_simulation_data(self.current_step + 1)
+
+            # Check if we've reached the end
+            if not data or not data.get("metrics"):
+                self.playing = False
+                self.components["controls"].set_playing(False)
+                return
+
+            # Update current step
+            self.current_step += 1
+
+            # Update visualization components
+            updatable_components = ["stats", "environment", "chart"]
+            for name in updatable_components:
+                if name in self.components and hasattr(self.components[name], "update"):
+                    self.components[name].update(data)
+
+        except Exception as e:
+            logger.error(f"Error stepping forward: {e}")
+            raise

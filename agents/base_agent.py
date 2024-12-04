@@ -98,7 +98,7 @@ class BaseAgent:
         self.generation = generation
 
         # Initialize all modules first
-        self.move_module = MoveModule(self.config)
+        self.move_module = MoveModule(self.config, db=environment.db)
         self.attack_module = AttackModule(self.config)
         self.share_module = ShareModule(self.config)
         self.gather_module = GatherModule(self.config)
@@ -109,7 +109,7 @@ class BaseAgent:
 
         # Log agent creation to database only if not skipped
         if not skip_logging:
-            environment.db.log_agent(
+            environment.db.logger.log_agent(
                 agent_id=self.agent_id,
                 birth_time=environment.time,
                 agent_type=self.__class__.__name__,

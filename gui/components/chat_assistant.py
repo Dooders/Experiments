@@ -5,7 +5,7 @@ import json
 import os
 from datetime import datetime
 from typing import Dict, Optional, List, Any, Tuple
-from core.database import SimulationDatabase
+from database.database import SimulationDatabase
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import pandas as pd

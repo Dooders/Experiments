@@ -1,15 +1,14 @@
 import logging
 import os
 import random
-import threading
 import time
-from typing import Dict, List
+from typing import Dict
 
 import numpy as np
 from scipy.spatial import cKDTree
 
 from agents import ControlAgent, IndependentAgent, SystemAgent
-from core.database import SimulationDatabase
+from database.database import SimulationDatabase
 from core.resources import Resource
 from core.state import EnvironmentState
 
@@ -169,7 +168,7 @@ class Environment:
             )
             self.resources.append(resource)
             # Log resource to database
-            self.db.log_resource(
+            self.db.logger.log_resource(
                 resource_id=resource.resource_id,
                 initial_amount=resource.amount,
                 position=resource.position,
@@ -183,8 +182,8 @@ class Environment:
 
     def collect_action(self, **action_data):
         """Collect an action for batch processing."""
-        if self.db is not None:
-            self.db.log_agent_action(
+        if self.logger is not None:
+            self.logger.log_agent_action(
                 step_number=action_data["step_number"],
                 agent_id=action_data["agent_id"],
                 action_type=action_data["action_type"],
@@ -222,7 +221,7 @@ class Environment:
 
         # Log simulation state using SQLAlchemy
         if self.db is not None:
-            self.db.log_step(
+            self.db.logger.log_step(
                 step_number=self.time,
                 agent_states=[
                     self._prepare_agent_state(agent) 
@@ -292,6 +291,12 @@ class Environment:
             else:
                 resource_distribution_entropy = 0.0
 
+            # Calculate resource consumption for this step
+            previous_resources = getattr(self, "previous_total_resources", 0)
+            current_resources = sum(r.amount for r in self.resources)
+            resources_consumed = max(0, previous_resources - current_resources)
+            self.previous_total_resources = current_resources
+
             # Return all metrics in a dictionary
             return {
                 "total_agents": total_agents,
@@ -300,6 +305,7 @@ class Environment:
                 "control_agents": control_agents,
                 "total_resources": total_resources,
                 "average_agent_resources": average_agent_resources,
+                "resources_consumed": resources_consumed,
                 "births": births,
                 "deaths": deaths,
                 "current_max_generation": current_max_generation,
@@ -324,6 +330,7 @@ class Environment:
                 "control_agents": 0,
                 "total_resources": 0,
                 "average_agent_resources": 0,
+                "resources_consumed": 0.0,
                 "births": 0,
                 "deaths": 0,
                 "current_max_generation": 0,
@@ -544,19 +551,18 @@ class Environment:
 
         # Batch log to database using SQLAlchemy
         if self.db is not None:
-            self.db.batch_log_agents(agent_data)
+            self.db.logger.log_agents_batch(agent_data)
 
     def cleanup(self):
-        """Clean up resources before shutdown."""
-        if hasattr(self, "db") and self.db is not None:
-            try:
-                # Ensure all pending data is saved
-                self.db.flush_all_buffers()
-                # Close database connection
+        """Clean up environment resources."""
+        try:
+            if self.db:
+                # Use logger for buffer flushing
+                if hasattr(self.db, 'logger'):
+                    self.db.logger.flush_all_buffers()
                 self.db.close()
-                self.db = None
-            except Exception as e:
-                logger.error(f"Error during environment cleanup: {e}")
+        except Exception as e:
+            logger.error(f"Error during environment cleanup: {str(e)}")
 
     def __del__(self):
         """Ensure cleanup on deletion."""
@@ -573,7 +579,7 @@ class Environment:
         try:
             # Log metrics to database
             if self.db:
-                self.db.log_step(
+                self.db.logger.log_step(
                     step_number=self.time,
                     agent_states=[
                         self._prepare_agent_state(agent) for agent in self.agents if agent.alive

@@ -118,7 +118,7 @@ def attack_action(agent: "BaseAgent") -> None:
 
         # Log defense action
         if agent.environment.db is not None:
-            agent.environment.db.log_agent_action(
+            agent.environment.db.logger.log_agent_action(
                 step_number=agent.environment.time,
                 agent_id=agent.agent_id,
                 action_type="defend",
@@ -142,7 +142,7 @@ def attack_action(agent: "BaseAgent") -> None:
     if not targets:
         # Log failed attack
         if agent.environment.db is not None:
-            agent.environment.db.log_agent_action(
+            agent.environment.db.logger.log_agent_action(
                 step_number=agent.environment.time,
                 agent_id=agent.agent_id,
                 action_type="attack",

@@ -43,6 +43,8 @@ class SimulationChart(ttk.Frame):
             "deaths": []
         }
         
+        self.logger = None
+        
         self._setup_chart()
         self._setup_interactions()
         self._setup_context_menu()
@@ -194,7 +196,7 @@ class SimulationChart(ttk.Frame):
             # Get current step from history length
             current_step = len(self.history["steps"])
             
-            # Update history (current data)
+            # Update history with current data
             self.history["steps"].append(current_step)
             self.history["system_agents"].append(metrics.get("system_agents", 0))
             self.history["independent_agents"].append(metrics.get("independent_agents", 0))
@@ -214,18 +216,18 @@ class SimulationChart(ttk.Frame):
                 self.history["total_resources"]
             )
 
-            # Update future data lines
-            for key in ["system_agents", "independent_agents", "control_agents"]:
-                self.future_lines[key].set_data(
-                    self.full_data["steps"][current_step:], 
-                    self.full_data[key][current_step:]
-                )
+            # Update future data lines using full data from DataRetriever
+            if hasattr(self, 'full_data'):
+                for key in ["system_agents", "independent_agents", "control_agents"]:
+                    self.future_lines[key].set_data(
+                        self.full_data["steps"][current_step:], 
+                        self.full_data[key][current_step:]
+                    )
 
-            # Update future resources line
-            self.future_lines["resources"].set_data(
-                self.full_data["steps"][current_step:], 
-                self.full_data["total_resources"][current_step:]
-            )
+                self.future_lines["resources"].set_data(
+                    self.full_data["steps"][current_step:], 
+                    self.full_data["total_resources"][current_step:]
+                )
 
             # Update current step line
             self.lines["current_step"].set_xdata([current_step, current_step])
@@ -237,12 +239,13 @@ class SimulationChart(ttk.Frame):
             # Update demographics chart
             self._update_demographics(data)
 
-            # Force redraw both canvases
+            # Force redraw
             self.canvas.draw()
             self.demo_canvas.draw()
 
         except Exception as e:
-            pass
+            if self.logger:
+                self.logger.error(f"Error updating chart: {e}")
 
     def _update_demographics(self, data: Dict):
         """Update the demographics chart with birth/death data."""
@@ -503,3 +506,7 @@ class SimulationChart(ttk.Frame):
     def set_playback_toggle_callback(self, callback):
         """Set callback for toggling playback."""
         self.on_playback_toggle = callback
+
+    def set_logger(self, logger):
+        """Set the data logger for this component."""
+        self.logger = logger

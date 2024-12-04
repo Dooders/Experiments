@@ -3,33 +3,36 @@ import sqlite3
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from core.database import SimulationDatabase
+from database.database import SimulationDatabase
+from database.data_retrieval import DataRetriever
 
 
 def fetch_reward_efficiency_data(db: SimulationDatabase) -> pd.DataFrame:
     """
-    Fetch reward efficiency data for each action type.
+    Fetch reward efficiency data using DataRetriever.
     :param db: SimulationDatabase instance
     :return: DataFrame with reward efficiency by action type and agent group
     """
-    query = """
-    SELECT
-        aa.action_type,
-        a.agent_type,
-        COUNT(aa.action_id) AS frequency,
-        SUM(aa.reward) AS total_reward,
-        (SUM(aa.reward) * 1.0 / COUNT(aa.action_id)) AS reward_efficiency
-    FROM
-        AgentActions AS aa
-    JOIN
-        Agents AS a
-    ON
-        aa.agent_id = a.agent_id
-    GROUP BY
-        aa.action_type, a.agent_type;
-    """
-    data = pd.read_sql_query(query, db.conn)
-    return data
+    retriever = DataRetriever(db)
+    
+    # Get action data for all steps
+    data = retriever.get_simulation_data(step_number=None)
+    
+    # Process action data
+    actions_df = pd.DataFrame(data['agent_actions'])
+    
+    # Calculate efficiency metrics
+    efficiency_data = (actions_df.groupby(['action_type', 'agent_type'])
+                      .agg({
+                          'action_id': 'count',
+                          'reward': ['sum', 'mean']
+                      })
+                      .reset_index())
+    
+    efficiency_data.columns = ['action_type', 'agent_type', 'frequency', 
+                             'total_reward', 'reward_efficiency']
+    
+    return efficiency_data
 
 
 def analyze_reward_efficiency(data: pd.DataFrame):

@@ -1,55 +1,37 @@
 import pandas as pd
+from database.data_retrieval import DataRetriever
+from database.database import SimulationDatabase
 
 
 class SimulationAnalyzer:
+    def __init__(self, db_path: str):
+        self.db = SimulationDatabase(db_path)
+        self.retriever = DataRetriever(self.db)
+
     def calculate_survival_rates(self) -> pd.DataFrame:
-        """Calculate survival rates for each agent type over time."""
-        query = """
-        SELECT 
-            step,
-            SUM(CASE WHEN agent_type = 'SystemAgent' AND death_time IS NULL THEN 1 ELSE 0 END) as system_alive,
-            SUM(CASE WHEN agent_type = 'IndependentAgent' AND death_time IS NULL THEN 1 ELSE 0 END) as independent_alive,
-            SUM(CASE WHEN agent_type = 'ControlAgent' AND death_time IS NULL THEN 1 ELSE 0 END) as control_alive
-        FROM agents
-        GROUP BY step
-        ORDER BY step
-        """
-        return pd.read_sql_query(query, self.conn)
+        """Calculate survival rates using DataRetriever."""
+        population_stats = self.retriever.get_population_statistics()
+        return pd.DataFrame(population_stats['population_over_time'])
 
     def analyze_resource_distribution(self) -> pd.DataFrame:
-        """Analyze resource distribution across agent types."""
-        query = """
-        SELECT 
-            step,
-            agent_type,
-            AVG(resource_level) as avg_resources,
-            MIN(resource_level) as min_resources,
-            MAX(resource_level) as max_resources
-        FROM agents
-        WHERE agent_type IN ('SystemAgent', 'IndependentAgent', 'ControlAgent')
-        GROUP BY step, agent_type
-        ORDER BY step, agent_type
-        """
-        return pd.read_sql_query(query, self.conn)
+        """Analyze resource distribution using DataRetriever."""
+        resource_stats = self.retriever.get_resource_statistics()
+        return pd.DataFrame({
+            'steps': resource_stats['resource_distribution']['steps'],
+            'total_resources': resource_stats['resource_distribution']['total_resources'],
+            'average_per_agent': resource_stats['resource_distribution']['average_per_agent']
+        })
 
     def get_control_agent_stats(self) -> str:
-        """Analyze Control Agent performance metrics."""
-        query = """
-        SELECT 
-            AVG(CASE WHEN death_time IS NULL THEN 1 ELSE 0 END) as survival_rate,
-            AVG(resource_level) as avg_resources,
-            COUNT(*) as total_agents,
-            AVG(JULIANDAY(death_time) - JULIANDAY(birth_time)) as avg_lifespan
-        FROM Agents 
-        WHERE agent_type = 'ControlAgent'
-        """
-        result = pd.read_sql_query(query, self.conn)
-
+        """Get control agent statistics using DataRetriever."""
+        lifespan_stats = self.retriever.get_agent_lifespan_statistics()
+        population_stats = self.retriever.get_population_statistics()
+        
         return f"""
-        Survival Rate: {result['survival_rate'][0]:.2%}
-        Average Resources: {result['avg_resources'][0]:.2f}
-        Total Agents: {result['total_agents'][0]}
-        Average Lifespan: {result['avg_lifespan'][0]:.2f} steps
+        Survival Rate: {lifespan_stats['survival_rate']:.2%}
+        Average Resources: {population_stats['resource_metrics']['average_per_agent']:.2f}
+        Total Agents: {population_stats['population_metrics']['total']}
+        Average Lifespan: {lifespan_stats['average_lifespan']:.2f} steps
         """
 
     def analyze_population_balance(self) -> str:

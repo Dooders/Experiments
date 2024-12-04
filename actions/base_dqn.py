@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 if TYPE_CHECKING:
-    from core.database import SimulationDatabase
+    from database.database import SimulationDatabase
 
 
 class BaseDQNConfig:
@@ -79,6 +79,11 @@ class BaseDQNModule:
         self.device = device
         self.config = config
         self.db = db
+        self.module_id = id(self.__class__)
+        if db is not None:
+            self.logger = db.logger
+        else:
+            self.logger = None
         self._setup_networks(input_dim, output_dim, config)
         self._setup_training(config)
         self.losses = []
@@ -116,11 +121,9 @@ class BaseDQNModule:
         step_number: int,
         agent_id: int,
         module_type: str,
-        state: torch.Tensor,
-        action: int,
+        action_taken: int,
+        action_taken_mapped: str,
         reward: float,
-        next_state: torch.Tensor,
-        loss: Optional[float] = None,
     ) -> None:
         """Log a learning experience to the database if available.
 
@@ -132,27 +135,21 @@ class BaseDQNModule:
             ID of the agent
         module_type : str
             Type of DQN module (e.g., 'movement', 'combat')
-        state : torch.Tensor
-            State before action
-        action : int
+        action_taken : int
             Action taken
         reward : float
             Reward received
-        next_state : torch.Tensor
-            State after action
-        loss : Optional[float]
-            Training loss value if available
+        action_taken_mapped : str
+            Mapped action taken
         """
         if self.db is not None:
             self.db.log_learning_experience(
                 step_number=step_number,
                 agent_id=agent_id,
                 module_type=module_type,
-                state_before=str(state.tolist()),
-                action_taken=action,
+                action_taken=action_taken,
+                action_taken_mapped=action_taken_mapped,
                 reward=reward,
-                state_after=str(next_state.tolist()),
-                loss=loss if loss is not None else 0.0,
             )
 
     def store_experience(
@@ -165,35 +162,22 @@ class BaseDQNModule:
         step_number: Optional[int] = None,
         agent_id: Optional[int] = None,
         module_type: Optional[str] = None,
+        module_id: Optional[int] = None,
+        action_taken_mapped: Optional[int] = None,
     ) -> None:
         """Store experience in replay memory and optionally log to database."""
         self.memory.append((state, action, reward, next_state, done))
         self.episode_rewards.append(reward)
 
-        # Collect experiences for batch logging
-        if all(x is not None for x in [step_number, agent_id, module_type]):
-            experience_data = {
-                "step_number": step_number,
-                "agent_id": agent_id,
-                "module_type": module_type,
-                "state_before": str(state.tolist()),
-                "action_taken": action,
-                "reward": reward,
-                "state_after": str(next_state.tolist()),
-                "loss": None
-            }
-            
-            if self.db is not None:
-                self.db.log_learning_experience(
-                    step_number=experience_data["step_number"],
-                    agent_id=experience_data["agent_id"],
-                    module_type=experience_data["module_type"],
-                    state_before=experience_data["state_before"],
-                    action_taken=experience_data["action_taken"],
-                    reward=experience_data["reward"],
-                    state_after=experience_data["state_after"],
-                    loss=0.0
-                )
+        self.logger.log_learning_experience(
+            step_number=step_number,
+            agent_id=agent_id,
+            module_type=module_type,
+            module_id=module_id,
+            action_taken=action,
+            action_taken_mapped=action_taken_mapped,
+            reward=reward,
+        )
 
     def train(
         self,
@@ -261,18 +245,16 @@ class BaseDQNModule:
         loss_value = loss.item()
         self.losses.append(loss_value)
 
-        if all(x is not None for x in [step_number, agent_id, module_type]):
-            last_experience = batch[-1]
-            self._log_experience(
-                step_number=step_number,
-                agent_id=agent_id,
-                module_type=module_type,
-                state=last_experience[0],
-                action=last_experience[1],
-                reward=last_experience[2],
-                next_state=last_experience[3],
-                loss=loss_value,
-            )
+        #! Need to fix this to work with all modules
+        # last_experience = batch[-1]
+        # self._log_experience(
+        #     step_number=step_number,
+        #     agent_id=agent_id,
+        #     module_type=module_type,
+        #     action_taken=self.last_action,
+        #     action_taken_mapped=self.last_action_mapped,
+        #     reward=reward,
+        # )
 
         return loss_value
 

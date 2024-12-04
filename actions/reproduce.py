@@ -132,7 +132,7 @@ def reproduce_action(agent: "BaseAgent") -> None:
     if not should_reproduce or not _check_reproduction_conditions(agent):
         # Log skipped reproduction action
         if agent.environment.db is not None:
-            agent.environment.db.log_agent_action(
+            agent.environment.db.logger.log_agent_action(
                 step_number=agent.environment.time,
                 agent_id=agent.agent_id,
                 action_type="reproduce",
@@ -160,7 +160,7 @@ def reproduce_action(agent: "BaseAgent") -> None:
 
         # Log successful reproduction action
         if agent.environment.db is not None:
-            agent.environment.db.log_agent_action(
+            agent.environment.db.logger.log_agent_action(
                 step_number=agent.environment.time,
                 agent_id=agent.agent_id,
                 action_type="reproduce",
@@ -181,7 +181,7 @@ def reproduce_action(agent: "BaseAgent") -> None:
         logger.error(f"Reproduction failed for agent {agent.agent_id}: {str(e)}")
         # Log failed reproduction action
         if agent.environment.db is not None:
-            agent.environment.db.log_agent_action(
+            agent.environment.db.logger.log_agent_action(
                 step_number=agent.environment.time,
                 agent_id=agent.agent_id,
                 action_type="reproduce",

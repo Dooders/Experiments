@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple
 from sqlalchemy import func, case, text
 
-from core.database import SimulationDatabase, SimulationStep, AgentState, Agent
+from database.database import SimulationDatabase, SimulationStep, AgentState, Agent
 
 
 class SimulationAnalyzer:

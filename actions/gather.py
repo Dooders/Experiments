@@ -277,7 +277,7 @@ def gather_action(agent: "BaseAgent") -> None:
     if not should_gather or not target_resource:
         # Log skipped gather action
         if agent.environment.db is not None:
-            agent.environment.db.log_agent_action(
+            agent.environment.db.logger.log_agent_action(
                 step_number=agent.environment.time,
                 agent_id=agent.agent_id,
                 action_type="gather",
@@ -314,7 +314,7 @@ def gather_action(agent: "BaseAgent") -> None:
 
         # Log successful gather action
         if agent.environment.db is not None:
-            agent.environment.db.log_agent_action(
+            agent.environment.db.logger.log_agent_action(
                 step_number=agent.environment.time,
                 agent_id=agent.agent_id,
                 action_type="gather",

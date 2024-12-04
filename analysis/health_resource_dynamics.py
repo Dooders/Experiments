@@ -11,7 +11,8 @@ from sklearn.cluster import KMeans
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
 
-from core.database import SimulationDatabase
+from database.database import SimulationDatabase
+from database.data_retrieval import DataRetriever
 
 
 def fetch_health_resource_data(db: SimulationDatabase) -> pd.DataFrame:
@@ -427,17 +428,24 @@ def analyze_health_resource_dynamics(db_path: str):
     """
     Main function to analyze health and resource dynamics.
     """
-    # Initialize database connection
+    # Initialize database and retriever
     db = SimulationDatabase(db_path)
+    retriever = DataRetriever(db)
 
     try:
-        # Fetch data
+        # Fetch data using DataRetriever
         print("Fetching data...")
-        data = fetch_health_resource_data(db)
+        data = retriever.get_simulation_data(step_number=None)  # Get all steps
+        
+        # Extract agent states
+        agent_states = pd.DataFrame(data['agent_states'], columns=[
+            'agent_id', 'agent_type', 'position_x', 'position_y',
+            'resource_level', 'current_health', 'is_defending'
+        ])
 
         # Create visualizations
         print("\nGenerating visualizations...")
-        figures = create_health_resource_visualizations(data)
+        figures = create_health_resource_visualizations(agent_states)
 
         # Save all figures
         for name, fig in figures.items():
@@ -446,7 +454,7 @@ def analyze_health_resource_dynamics(db_path: str):
 
         # Perform cross-correlation analysis
         print("\nPerforming cross-correlation analysis...")
-        corr_results, corr_fig = calculate_cross_correlation(data)
+        corr_results, corr_fig = calculate_cross_correlation(agent_states)
         print("Cross-correlation results:")
         print(corr_results)
         corr_fig.savefig("cross_correlation.png")
@@ -454,7 +462,7 @@ def analyze_health_resource_dynamics(db_path: str):
 
         # Perform Fourier analysis
         print("\nPerforming Fourier analysis...")
-        fourier_results, fourier_fig = perform_fourier_analysis(data)
+        fourier_results, fourier_fig = perform_fourier_analysis(agent_states)
         print("Fourier analysis results:")
         print(fourier_results)
         fourier_fig.savefig("fourier_analysis.png")
@@ -462,20 +470,20 @@ def analyze_health_resource_dynamics(db_path: str):
 
         # Build prediction model
         print("\nBuilding health prediction model...")
-        model, r2_score, feature_importance = build_health_prediction_model(data)
+        model, r2_score, feature_importance = build_health_prediction_model(agent_states)
         print(f"Model R-squared: {r2_score:.4f}")
         print("\nFeature importance:")
         print(feature_importance)
 
         # Calculate basic correlations
-        correlations = data[
+        correlations = agent_states[
             ["current_health", "resource_level", "age", "recent_actions"]
         ].corr()
         print("\nBasic correlations with health:")
         print(correlations["current_health"])
 
         # Generate summary statistics
-        summary = data.groupby("agent_type").agg(
+        summary = agent_states.groupby("agent_type").agg(
             {
                 "current_health": ["mean", "std", "min", "max"],
                 "resource_level": ["mean", "std", "min", "max"],
@@ -488,7 +496,7 @@ def analyze_health_resource_dynamics(db_path: str):
 
         # Add clustering analysis
         print("\nAnalyzing health strategies...")
-        cluster_stats, cluster_fig = analyze_health_strategies(data)
+        cluster_stats, cluster_fig = analyze_health_strategies(agent_states)
         print("\nCluster statistics:")
         print(cluster_stats)
         cluster_fig.savefig("health_strategies.png")

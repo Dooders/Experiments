@@ -24,6 +24,7 @@ class EnvironmentView(ttk.Frame):
         previous_agent_states (List): Agent states from previous frame
         birth_animations (Dict): Active birth animation states
         death_animations (Dict): Active death animation states
+        logger (Logger): Data logger for this component
     """
 
     def __init__(self, parent):
@@ -35,6 +36,7 @@ class EnvironmentView(ttk.Frame):
         self.previous_agent_states = []
         self.birth_animations = {}
         self.death_animations = {}
+        self.logger = None  # Initialize logger as None
         
         # Add selection tracking
         self.selected_agent_id = None
@@ -361,3 +363,12 @@ class EnvironmentView(ttk.Frame):
             fill=(255, 255, 255),  # White
             font=font
         ) 
+
+    def set_logger(self, logger):
+        """Set the data logger for this component."""
+        self.logger = logger
+
+    def collect_action(self, **action_data):
+        """Collect an action for batch processing."""
+        if self.logger is not None:
+            self.logger.log_agent_action(**action_data) 
