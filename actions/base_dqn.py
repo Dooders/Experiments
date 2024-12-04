@@ -79,6 +79,7 @@ class BaseDQNModule:
         self.device = device
         self.config = config
         self.db = db
+        self.module_id = id(self.__class__)
         if db is not None:
             self.logger = db.logger
         else:
@@ -115,49 +116,41 @@ class BaseDQNModule:
         self.tau = config.tau
         self.steps = 0
 
-    # def _log_experience(
-    #     self,
-    #     step_number: int,
-    #     agent_id: int,
-    #     module_type: str,
-    #     state: torch.Tensor,
-    #     action: int,
-    #     reward: float,
-    #     next_state: torch.Tensor,
-    #     loss: Optional[float] = None,
-    # ) -> None:
-    #     """Log a learning experience to the database if available.
+    def _log_experience(
+        self,
+        step_number: int,
+        agent_id: int,
+        module_type: str,
+        action_taken: int,
+        action_taken_mapped: str,
+        reward: float,
+    ) -> None:
+        """Log a learning experience to the database if available.
 
-    #     Parameters
-    #     ----------
-    #     step_number : int
-    #         Current simulation step
-    #     agent_id : int
-    #         ID of the agent
-    #     module_type : str
-    #         Type of DQN module (e.g., 'movement', 'combat')
-    #     state : torch.Tensor
-    #         State before action
-    #     action : int
-    #         Action taken
-    #     reward : float
-    #         Reward received
-    #     next_state : torch.Tensor
-    #         State after action
-    #     loss : Optional[float]
-    #         Training loss value if available
-    #     """
-    #     if self.db is not None:
-    #         self.db.log_learning_experience(
-    #             step_number=step_number,
-    #             agent_id=agent_id,
-    #             module_type=module_type,
-    #             state_before=str(state.tolist()),
-    #             action_taken=action,
-    #             reward=reward,
-    #             state_after=str(next_state.tolist()),
-    #             loss=loss if loss is not None else 0.0,
-    #         )
+        Parameters
+        ----------
+        step_number : int
+            Current simulation step
+        agent_id : int
+            ID of the agent
+        module_type : str
+            Type of DQN module (e.g., 'movement', 'combat')
+        action_taken : int
+            Action taken
+        reward : float
+            Reward received
+        action_taken_mapped : str
+            Mapped action taken
+        """
+        if self.db is not None:
+            self.db.log_learning_experience(
+                step_number=step_number,
+                agent_id=agent_id,
+                module_type=module_type,
+                action_taken=action_taken,
+                action_taken_mapped=action_taken_mapped,
+                reward=reward,
+            )
 
     def store_experience(
         self,
@@ -169,6 +162,8 @@ class BaseDQNModule:
         step_number: Optional[int] = None,
         agent_id: Optional[int] = None,
         module_type: Optional[str] = None,
+        module_id: Optional[int] = None,
+        action_taken_mapped: Optional[int] = None,
     ) -> None:
         """Store experience in replay memory and optionally log to database."""
         self.memory.append((state, action, reward, next_state, done))
@@ -178,11 +173,10 @@ class BaseDQNModule:
             step_number=step_number,
             agent_id=agent_id,
             module_type=module_type,
-            state_before=str(state.tolist()),
+            module_id=module_id,
             action_taken=action,
+            action_taken_mapped=action_taken_mapped,
             reward=reward,
-            state_after=str(next_state.tolist()),
-            loss=None
         )
 
     def train(
@@ -251,18 +245,16 @@ class BaseDQNModule:
         loss_value = loss.item()
         self.losses.append(loss_value)
 
-        # if all(x is not None for x in [step_number, agent_id, module_type]):
-        #     last_experience = batch[-1]
-        #     self._log_experience(
-        #         step_number=step_number,
-        #         agent_id=agent_id,
-        #         module_type=module_type,
-        #         state=last_experience[0],
-        #         action=last_experience[1],
-        #         reward=last_experience[2],
-        #         next_state=last_experience[3],
-        #         loss=loss_value,
-        #     )
+        #! Need to fix this to work with all modules
+        # last_experience = batch[-1]
+        # self._log_experience(
+        #     step_number=step_number,
+        #     agent_id=agent_id,
+        #     module_type=module_type,
+        #     action_taken=self.last_action,
+        #     action_taken_mapped=self.last_action_mapped,
+        #     reward=reward,
+        # )
 
         return loss_value
 

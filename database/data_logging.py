@@ -107,11 +107,10 @@ class DataLogger:
         step_number: int,
         agent_id: int,
         module_type: str,
-        state_before: str,
+        module_id: int,
         action_taken: int,
+        action_taken_mapped: str,
         reward: float,
-        state_after: str,
-        loss: Optional[float] = None,
     ) -> None:
         """Buffer a learning experience."""
         try:
@@ -119,11 +118,10 @@ class DataLogger:
                 "step_number": step_number,
                 "agent_id": agent_id,
                 "module_type": module_type,
-                "state_before": state_before,
+                "module_id": module_id,
                 "action_taken": action_taken,
+                "action_taken_mapped": action_taken_mapped,
                 "reward": reward,
-                "state_after": state_after,
-                "loss": loss,
             }
 
             self._learning_exp_buffer.append(exp_data)
@@ -407,10 +405,11 @@ class DataLogger:
             If input data is malformed or invalid
         """
         try:
+
             def _insert(session):
                 # Ensure resources_consumed has a default value if not provided
-                if 'resources_consumed' not in metrics:
-                    metrics['resources_consumed'] = 0.0
+                if "resources_consumed" not in metrics:
+                    metrics["resources_consumed"] = 0.0
 
                 # Bulk insert agent states
                 if agent_states:

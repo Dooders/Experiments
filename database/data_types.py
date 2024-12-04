@@ -300,34 +300,47 @@ class EfficiencyMetrics:
 
 @dataclass
 class LearningProgress:
-    """Learning and adaptation statistics, sorted by step number.
-
+    """Learning progress metrics for a single simulation step.
+    
     Attributes
     ----------
-    average_reward : List[float]
-        Mean reward per step
-    average_loss : List[float]
-        Mean loss per step
+    step : int
+        Step number
+    reward : float
+        Average reward for this step
+    action_count : int
+        Number of actions taken in this step
+    unique_actions : int
+        Number of unique actions used in this step
     """
-
-    average_reward: List[float]
-    average_loss: List[float]
+    step: int
+    reward: float
+    action_count: int
+    unique_actions: int
 
 
 @dataclass
 class ModulePerformance:
-    """Performance metrics for learning modules.
-
+    """Performance metrics for a learning module.
+    
     Attributes
     ----------
+    module_type : str
+        Type of learning module
+    module_id : str
+        Unique identifier for module instance
     avg_reward : float
-        Average reward for the module
-    avg_loss : float
-        Average loss for the module
+        Average reward achieved
+    total_actions : int
+        Total number of actions taken
+    unique_actions : int
+        Number of unique actions used
     """
-
+    module_type: str
+    module_id: str
     avg_reward: float
-    avg_loss: float
+    total_actions: int
+    unique_actions: int
 
 
 @dataclass
@@ -1108,3 +1121,42 @@ class ResourceAnalysis:
     consumption: ConsumptionStats
     hotspots: List[ResourceHotspot]
     efficiency: ResourceEfficiencyMetrics
+
+
+@dataclass
+class AgentLearningStats:
+    """Statistics about an agent's learning performance.
+    
+    Attributes
+    ----------
+    agent_id : int
+        Identifier of the agent
+    reward_mean : float
+        Average reward achieved by the agent
+    total_actions : int
+        Total number of actions taken by the agent
+    actions_used : List[str]
+        List of unique actions performed by the agent
+    """
+    agent_id: int
+    reward_mean: float
+    total_actions: int
+    actions_used: List[str]
+
+
+@dataclass
+class LearningEfficiencyMetrics:
+    """Represents efficiency metrics for learning performance.
+
+    Attributes
+    ----------
+    reward_efficiency : float
+        Average reward across all learning experiences
+    action_diversity : float
+        Ratio of unique actions to total actions (0-1)
+    learning_stability : float
+        Measure of learning consistency based on reward variance (0-1)
+    """
+    reward_efficiency: float
+    action_diversity: float
+    learning_stability: float

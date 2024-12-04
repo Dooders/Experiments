@@ -458,11 +458,10 @@ class LearningExperience(Base):
     step_number = Column(Integer)
     agent_id = Column(Integer, ForeignKey("agents.agent_id"))
     module_type = Column(String(50))
-    state_before = Column(String(512))
+    module_id = Column(String(64))
     action_taken = Column(Integer)
+    action_taken_mapped = Column(String(20))
     reward = Column(Float(precision=6))
-    state_after = Column(String(512))
-    loss = Column(Float(precision=6))
 
     agent = relationship("Agent", back_populates="learning_experiences")
 
