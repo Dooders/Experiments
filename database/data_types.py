@@ -301,7 +301,7 @@ class EfficiencyMetrics:
 @dataclass
 class LearningProgress:
     """Learning progress metrics for a single simulation step.
-    
+
     Attributes
     ----------
     step : int
@@ -313,6 +313,7 @@ class LearningProgress:
     unique_actions : int
         Number of unique actions used in this step
     """
+
     step: int
     reward: float
     action_count: int
@@ -322,7 +323,7 @@ class LearningProgress:
 @dataclass
 class ModulePerformance:
     """Performance metrics for a learning module.
-    
+
     Attributes
     ----------
     module_type : str
@@ -336,6 +337,7 @@ class ModulePerformance:
     unique_actions : int
         Number of unique actions used
     """
+
     module_type: str
     module_id: str
     avg_reward: float
@@ -997,12 +999,18 @@ class BasicPopulationStatistics:
         Final step number of the simulation
     peak_population : int
         Maximum population reached
+    lowest_population : int
+        Minimum population reached
     resources_consumed : float
         Total resources consumed across all steps
     resources_available : float
         Total resources available across all steps
     sum_squared : float
         Sum of squared population counts (for variance calculations)
+    initial_population : int
+        Initial population at the start of the simulation
+    final_population : int
+        Final population at the end of the simulation
     step_count : int
         Total number of simulation steps
     """
@@ -1010,9 +1018,12 @@ class BasicPopulationStatistics:
     avg_population: float
     death_step: int
     peak_population: int
+    lowest_population: int
     resources_consumed: float
     resources_available: float
     sum_squared: float
+    initial_population: int
+    final_population: int
     step_count: int
 
 
@@ -1126,7 +1137,7 @@ class ResourceAnalysis:
 @dataclass
 class AgentLearningStats:
     """Statistics about an agent's learning performance.
-    
+
     Attributes
     ----------
     agent_id : int
@@ -1138,6 +1149,7 @@ class AgentLearningStats:
     actions_used : List[str]
         List of unique actions performed by the agent
     """
+
     agent_id: int
     reward_mean: float
     total_actions: int
@@ -1157,6 +1169,7 @@ class LearningEfficiencyMetrics:
     learning_stability : float
         Measure of learning consistency based on reward variance (0-1)
     """
+
     reward_efficiency: float
     action_diversity: float
     learning_stability: float

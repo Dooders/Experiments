@@ -250,124 +250,6 @@ class DataRetriever:
         """
         return self._retrievers["learning"].execute()
 
-    @execute_query
-    def historical_data(self, session) -> HistoricalMetrics:
-        """Retrieve historical metrics for the entire simulation."""
-
-        steps = session.query(SimulationStep).order_by(SimulationStep.step_number).all()
-
-        return {
-            "steps": [step.step_number for step in steps],
-            "metrics": {
-                "total_agents": [step.total_agents for step in steps],
-                "system_agents": [step.system_agents for step in steps],
-                "independent_agents": [step.independent_agents for step in steps],
-                "control_agents": [step.control_agents for step in steps],
-                "total_resources": [step.total_resources for step in steps],
-                "average_agent_resources": [
-                    step.average_agent_resources for step in steps
-                ],
-                "births": [step.births for step in steps],
-                "deaths": [step.deaths for step in steps],
-            },
-        }
-
-    def population_momentum(self) -> float:
-        """Calculate population momentum using simpler SQL queries.
-
-        Returns
-        -------
-        float
-            Population momentum metric, calculated as:
-            (final_step * max_population) / initial_population
-            Returns 0.0 if initial population is 0.
-        """
-
-        def _query(session):
-            # Get initial population
-            initial = (
-                session.query(SimulationStep.total_agents)
-                .order_by(SimulationStep.step_number)
-                .first()
-            )
-
-            # Get max population and final step
-            stats = session.query(
-                func.max(SimulationStep.total_agents).label("max_count"),
-                func.max(SimulationStep.step_number).label("final_step"),
-            ).first()
-
-            if initial and stats and initial[0] > 0:
-                return (float(stats[1]) * float(stats[0])) / float(initial[0])
-
-        return self.db._execute_in_transaction(_query)
-
-    def population_stats(self, session) -> Dict[str, Any]:
-        """Get basic population statistics.
-        #! already exists above. Is this different????
-
-        Parameters
-        ----------
-        session : Session
-            SQLAlchemy database session
-
-        Returns
-        -------
-        Dict[str, Any]
-            Dictionary containing:
-            - average_population: Average number of agents
-            - peak_population: Maximum population reached
-            - minimum_population: Minimum population reached
-            - total_steps: Total simulation steps
-            - average_health: Average agent health
-        """
-        stats = session.query(
-            func.avg(SimulationStep.total_agents).label("avg_pop"),
-            func.max(SimulationStep.total_agents).label("peak_pop"),
-            func.min(SimulationStep.total_agents).label("min_pop"),
-            func.count(SimulationStep.step_number).label("total_steps"),
-            func.avg(SimulationStep.average_agent_health).label("avg_health"),
-        ).first()
-
-        return {
-            "average_population": float(stats[0] or 0),
-            "peak_population": int(stats[1] or 0),
-            "minimum_population": int(stats[2] or 0),
-            "total_steps": int(stats[3] or 0),
-            "average_health": float(stats[4] or 0),
-        }
-
-    def agent_type_ratios(self, session) -> Dict[str, float]:
-        """Get distribution of agent types.
-
-        Parameters
-        ----------
-        session : Session
-            SQLAlchemy database session
-
-        Returns
-        -------
-        Dict[str, float]
-            Dictionary containing:
-            - system_ratio: Proportion of system agents
-            - independent_ratio: Proportion of independent agents
-            - control_ratio: Proportion of control agents
-        """
-        stats = session.query(
-            func.avg(SimulationStep.system_agents).label("avg_system"),
-            func.avg(SimulationStep.independent_agents).label("avg_independent"),
-            func.avg(SimulationStep.control_agents).label("avg_control"),
-            func.avg(SimulationStep.total_agents).label("avg_total"),
-        ).first()
-
-        total = float(stats[3] or 1)  # Avoid division by zero
-        ratios = [float(count or 0) / total for count in stats[:3]]
-
-        return {
-            "system_ratio": ratios[0],
-            "independent_ratio": ratios[1],
-            "control_ratio": ratios[2],
-        }
 
     def basic_interaction_metrics(self, session) -> Dict[str, float]:
         """Get basic interaction statistics.
@@ -396,41 +278,13 @@ class DataRetriever:
             ).label("reproductions"),
         ).first()
 
-        return {"total_actions": int(basic_stats[0] or 0)}
-
-    def reward_metrics(self, session) -> Dict[str, float]:
-        # Get reward statistics for different interaction types
-        reward_stats = session.query(
-            func.avg(
-                case(
-                    [
-                        (
-                            AgentAction.action_type.in_(["attack", "defend"]),
-                            AgentAction.reward,
-                        )
-                    ],
-                    else_=None,
-                )
-            ).label("conflict_reward"),
-            func.avg(
-                case(
-                    [
-                        (
-                            AgentAction.action_type.in_(["share", "help"]),
-                            AgentAction.reward,
-                        )
-                    ],
-                    else_=None,
-                )
-            ).label("coop_reward"),
-            func.count(case([(AgentAction.reward > 0, 1)])).label(
-                "successful_interactions"
-            ),
-            func.count(case([(AgentAction.action_target_id.isnot(None), 1)])).label(
-                "total_interactions"
-            ),
-        ).first()
-
+        return {
+            "total_actions": int(basic_stats[0] or 0),
+            "conflicts": int(basic_stats[1] or 0),
+            "cooperations": int(basic_stats[2] or 0),
+            "reproductions": int(basic_stats[3] or 0),
+        }
+        
     def interaction_metrics(self, session) -> InteractionMetrics:
         """Get interaction statistics.
 
