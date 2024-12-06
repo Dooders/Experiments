@@ -2,6 +2,7 @@ from typing import List
 
 from sqlalchemy import func
 
+from database.base_repository import BaseRepository
 from database.data_types import (
     ConsumptionStats,
     ResourceAnalysis,
@@ -13,7 +14,7 @@ from database.models import ResourceState, SimulationStep
 from database.utilities import execute_query
 
 
-class ResourceRetriever:
+class ResourceRepository(BaseRepository[ResourceState]):
     """Handles retrieval and analysis of resource-related data from simulation database.
 
     Provides methods for analyzing resource dynamics including distribution patterns,
@@ -35,14 +36,14 @@ class ResourceRetriever:
     """
 
     def __init__(self, database):
-        """Initialize the ResourceRetriever.
+        """Initialize the ResourceRepository.
 
         Parameters
         ----------
         database : SimulationDatabase
             Database connection instance used to execute queries
         """
-        self.db = database
+        super().__init__(database, ResourceState)
 
     @execute_query
     def resource_distribution(self, session) -> List[ResourceDistributionStep]:
