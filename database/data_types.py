@@ -1173,3 +1173,78 @@ class LearningEfficiencyMetrics:
     reward_efficiency: float
     action_diversity: float
     learning_stability: float
+
+
+@dataclass
+class BasicAgentStats:
+    """Basic statistics for an agent.
+
+    Attributes
+    ----------
+    average_health : float
+        Mean health level over lifetime
+    average_resources : float
+        Mean resource level over lifetime
+    lifespan : int
+        Number of steps lived
+    total_reward : float
+        Total reward accumulated
+    """
+    average_health: float
+    average_resources: float
+    lifespan: int
+    total_reward: float
+
+
+@dataclass
+class AgentPerformance:
+    """Performance metrics for an agent.
+
+    Attributes
+    ----------
+    total_actions : int
+        Total number of actions taken
+    average_reward : float
+        Mean reward per action
+    action_diversity : int
+        Number of unique actions used
+    """
+    total_actions: int
+    average_reward: float
+    action_diversity: int
+
+
+@dataclass
+class AgentMetrics:
+    """Combined metrics for an agent.
+
+    Attributes
+    ----------
+    basic_stats : BasicAgentStats
+        Basic statistical measures
+    performance : AgentPerformance
+        Performance-related metrics
+    """
+    basic_stats: BasicAgentStats
+    performance: AgentPerformance
+
+
+@dataclass
+class AgentEvolutionMetrics:
+    """Evolution metrics for agents.
+
+    Attributes
+    ----------
+    total_agents : int
+        Total number of agents
+    unique_genomes : int
+        Number of unique genomes
+    average_lifespan : float
+        Mean lifespan across agents
+    generation : Optional[int]
+        Generation number if specific to one generation
+    """
+    total_agents: int
+    unique_genomes: int
+    average_lifespan: float
+    generation: Optional[int]

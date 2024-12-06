@@ -50,6 +50,8 @@ from database.population import PopulationStatisticsRetriever
 from database.resource import ResourceRetriever
 from database.simulation import SimulationStateRetriever
 from database.utilities import execute_query
+from database.actions import ActionsRetriever
+from database.agent import AgentRetriever
 
 from .data_types import (
     ActionMetrics,
@@ -100,6 +102,8 @@ class DataRetriever:
             "population": PopulationStatisticsRetriever(database),
             "resource": ResourceRetriever(database),
             "learning": LearningRetriever(database),
+            "actions": ActionsRetriever(database),
+            "agent": AgentRetriever(database),
         }
 
     def __getattr__(self, name):
@@ -250,362 +254,6 @@ class DataRetriever:
         """
         return self._retrievers["learning"].execute()
 
-
-    def basic_interaction_metrics(self, session) -> Dict[str, float]:
-        """Get basic interaction statistics.
-
-        Parameters
-        ----------
-        session : Session
-            SQLAlchemy database session
-
-        Returns
-        -------
-        Dict[str, float]
-            Dictionary containing:
-            - total_actions: Total number of actions
-        """
-        basic_stats = session.query(
-            func.count(AgentAction.action_id).label("total_actions"),
-            func.sum(
-                case([(AgentAction.action_type.in_(["attack", "defend"]), 1)], else_=0)
-            ).label("conflicts"),
-            func.sum(
-                case([(AgentAction.action_type.in_(["share", "help"]), 1)], else_=0)
-            ).label("cooperation"),
-            func.sum(
-                case([(AgentAction.action_type == "reproduce", 1)], else_=0)
-            ).label("reproductions"),
-        ).first()
-
-        return {
-            "total_actions": int(basic_stats[0] or 0),
-            "conflicts": int(basic_stats[1] or 0),
-            "cooperations": int(basic_stats[2] or 0),
-            "reproductions": int(basic_stats[3] or 0),
-        }
-        
-    def interaction_metrics(self, session) -> InteractionMetrics:
-        """Get interaction statistics.
-
-        Parameters
-        ----------
-        session : Session
-            SQLAlchemy database session
-
-        Returns
-        -------
-        InteractionMetrics
-            - total_actions: int
-                Total number of actions
-            - conflict_rate: float
-                Rate of conflict actions (attack/defend)
-            - cooperation_rate: float
-                Rate of cooperative actions (share/help)
-            - reproduction_rate: float
-                Rate of reproduction actions
-            - interaction_density: float
-                Ratio of interactive to total actions
-            - avg_reward_conflict: float
-                Average reward for conflict actions
-            - avg_reward_coop: float
-                Average reward for cooperative actions
-            - interaction_success: float
-                Rate of successful interactions (positive reward)
-        """
-        # Get basic interaction counts and rates
-        basic_stats = self.basic_interaction_metrics(session)
-
-        # Get reward statistics for different interaction types
-        reward_stats = self.reward_metrics(session)
-
-        total = float(basic_stats[0] or 1)  # Avoid division by zero
-        total_interactions = float(reward_stats[3] or 1)  # Avoid division by zero
-
-        return {
-            "total_actions": int(basic_stats[0] or 0),
-            "conflict_rate": float(basic_stats[1] or 0) / total,
-            "cooperation_rate": float(basic_stats[2] or 0) / total,
-            "reproduction_rate": float(basic_stats[3] or 0) / total,
-            "interaction_density": float(reward_stats[3] or 0) / total,
-            "avg_reward_conflict": float(reward_stats[0] or 0),
-            "avg_reward_coop": float(reward_stats[1] or 0),
-            "interaction_success": float(reward_stats[2] or 0) / total_interactions,
-        }
-
-    def resource_metrics(self, session) -> Dict[str, float]:
-        """Get resource efficiency metrics.
-
-        Parameters
-        ----------
-        session : Session
-            SQLAlchemy database session
-
-        Returns
-        -------
-        Dict[str, float]
-            Dictionary containing:
-            - average_efficiency: Mean resource utilization efficiency
-            - average_total_resources: Mean total resources available
-            - average_agent_resources: Mean resources per agent
-            - resource_utilization: Resource usage efficiency ratio
-        """
-        stats = session.query(
-            func.avg(SimulationStep.resource_efficiency).label("avg_efficiency"),
-            func.avg(SimulationStep.total_resources).label("avg_resources"),
-            func.avg(SimulationStep.average_agent_resources).label(
-                "avg_agent_resources"
-            ),
-        ).first()
-
-        return {
-            "average_efficiency": float(stats[0] or 0),
-            "average_total_resources": float(stats[1] or 0),
-            "average_agent_resources": float(stats[2] or 0),
-            "resource_utilization": float(stats[2] or 0) / float(stats[1] or 1),
-        }
-
-    def _calculate_diversity_index(self, ratios: List[float]) -> float:
-        """Calculate Shannon entropy for agent type diversity.
-
-        Parameters
-        ----------
-        ratios : List[float]
-            List of agent type proportions
-
-        Returns
-        -------
-        float
-            Shannon entropy diversity index
-        """
-        import math
-
-        return sum(-ratio * math.log(ratio) if ratio > 0 else 0 for ratio in ratios)
-
-    def advanced_statistics(self) -> AdvancedStatistics:
-        """Calculate advanced simulation statistics using optimized queries.
-
-        Returns
-        -------
-        AdvancedStatistics: Dict[str, Any]
-            Data containing:
-            - Population metrics (peak, average, diversity)
-            - Interaction statistics (conflict/cooperation ratios)
-            - Resource efficiency metrics
-            - Agent type distribution
-            - Survival and adaptation metrics
-        """
-
-        def _query(session):
-            # Get component statistics using helper methods
-            pop_stats = self.population_stats(session)
-            type_ratios = self.agent_type_ratios(session)
-            interaction_metrics = self.interaction_metrics(session)
-            resource_metrics = self.resource_metrics(session)
-
-            # Calculate diversity index
-            diversity = self._calculate_diversity_index(list(type_ratios.values()))
-
-            return AdvancedStatistics(
-                population_metrics=PopulationStatistics(
-                    population_metrics=PopulationMetrics(**pop_stats),
-                    population_variance=PopulationVariance(
-                        total_agents=pop_stats["total_agents"],
-                        system_agents=pop_stats["system_agents"],
-                        independent_agents=pop_stats["independent_agents"],
-                        control_agents=pop_stats["control_agents"],
-                    ),
-                ),
-                interaction_metrics=InteractionPattern(
-                    **interaction_metrics,
-                    conflict_cooperation_ratio=(
-                        interaction_metrics["conflict_rate"]
-                        / interaction_metrics["cooperation_rate"]
-                        if interaction_metrics["cooperation_rate"] > 0
-                        else float("inf")
-                    ),
-                ),
-                resource_metrics=ResourceMetrics(**resource_metrics),
-                agent_distribution=AgentDistribution(
-                    **type_ratios,
-                    type_entropy=diversity,
-                ),
-                survival_metrics=SurvivalMetrics(
-                    population_stability=(
-                        pop_stats["minimum_population"] / pop_stats["peak_population"]
-                    ),
-                    health_maintenance=(pop_stats["average_health"] / 100.0),
-                    interaction_rate=(
-                        interaction_metrics["total_actions"]
-                        / pop_stats["total_steps"]
-                        / pop_stats["average_population"]
-                    ),
-                ),
-            )
-
-        return self.db._execute_in_transaction(_query)
-
-    def get_agent_data(self, agent_id: int) -> AgentStateData:
-        """Get comprehensive data for a specific agent.
-
-        Parameters
-        ----------
-        agent_id : int
-            The unique identifier of the agent
-
-        Returns
-        -------
-        AgentStateData
-            Data containing:
-            - basic_info: Dict[str, Any]
-                - agent_id: Agent ID
-                - agent_type: Agent type
-                - birth_time: Birth step
-                - death_time: Death step (None if alive)
-                - lifespan: Lifespan in steps (None if alive)
-                - initial_resources: Initial resource level
-                - max_health: Maximum health
-                - starvation_threshold: Starvation threshold
-            - genetic_info: Dict[str, Any]
-                - genome_id: Genome ID
-                - parent_id: Parent ID (None if no parent)
-                - generation: Generation number
-            - current_state: Dict[str, Any]
-                - current_health: Current health
-                - resource_level: Current resource level
-                - total_reward: Total reward received
-                - age: Age in steps
-                - is_defending: Whether the agent is defending
-                - position: (x, y) position
-                - step_number: Current step number
-            - historical_metrics: Dict[str, float]
-                - average_health: Average health over lifetime
-                - average_resources: Average resource level over lifetime
-                - total_steps: Total steps lived
-                - total_reward: Total reward received
-            - action_history: Dict[str, Dict[str, float]]
-                Per action type statistics including:
-                - count: Number of occurrences
-                - average_reward: Average reward for the action
-            - health_incidents: List[Dict[str, Any]]
-                List of health incidents including:
-                - step: Step number
-                - health_before: Health before the incident
-                - health_after: Health after the incident
-                - cause: Cause of the incident
-                - details: Additional details
-        """
-
-        def _query(session):
-            # Get basic agent information
-            agent = session.query(Agent).filter(Agent.agent_id == agent_id).first()
-
-            if not agent:
-                return {}
-
-            # Get latest state
-            latest_state = (
-                session.query(AgentState)
-                .filter(AgentState.agent_id == agent_id)
-                .order_by(AgentState.step_number.desc())
-                .first()
-            )
-
-            # Get historical metrics
-            historical_metrics = (
-                session.query(
-                    func.avg(AgentState.current_health).label("avg_health"),
-                    func.avg(AgentState.resource_level).label("avg_resources"),
-                    func.count(AgentState.step_number).label("total_steps"),
-                    func.max(AgentState.total_reward).label("total_reward"),
-                )
-                .filter(AgentState.agent_id == agent_id)
-                .first()
-            )
-
-            # Get action statistics
-            action_stats = (
-                session.query(
-                    AgentAction.action_type,
-                    func.count().label("count"),
-                    func.avg(AgentAction.reward).label("avg_reward"),
-                )
-                .filter(AgentAction.agent_id == agent_id)
-                .group_by(AgentAction.action_type)
-                .all()
-            )
-
-            # Get health incidents
-            health_incidents = (
-                session.query(HealthIncident)
-                .filter(HealthIncident.agent_id == agent_id)
-                .order_by(HealthIncident.step_number)
-                .all()
-            )
-
-            # Format the response
-            response = {
-                "basic_info": {
-                    "agent_id": agent.agent_id,
-                    "agent_type": agent.agent_type,
-                    "birth_time": agent.birth_time,
-                    "death_time": agent.death_time,
-                    "lifespan": (
-                        agent.death_time - agent.birth_time
-                        if agent.death_time
-                        else None
-                    ),
-                    "initial_resources": agent.initial_resources,
-                    "max_health": agent.max_health,
-                    "starvation_threshold": agent.starvation_threshold,
-                },
-                "genetic_info": {
-                    "genome_id": agent.genome_id,
-                    "parent_id": agent.parent_id,
-                    "generation": agent.generation,
-                },
-                "current_state": (
-                    {
-                        "current_health": latest_state.current_health,
-                        "resource_level": latest_state.resource_level,
-                        "total_reward": latest_state.total_reward,
-                        "age": latest_state.age,
-                        "is_defending": latest_state.is_defending,
-                        "position": (latest_state.position_x, latest_state.position_y),
-                        "step_number": latest_state.step_number,
-                    }
-                    if latest_state
-                    else None
-                ),
-                "historical_metrics": {
-                    "average_health": float(historical_metrics[0] or 0),
-                    "average_resources": float(historical_metrics[1] or 0),
-                    "total_steps": int(historical_metrics[2] or 0),
-                    "total_reward": float(historical_metrics[3] or 0),
-                },
-                "action_history": {
-                    action_type: {
-                        "count": count,
-                        "average_reward": float(avg_reward or 0),
-                    }
-                    for action_type, count, avg_reward in action_stats
-                },
-                "health_incidents": [
-                    {
-                        "step": incident.step_number,
-                        "health_before": incident.health_before,
-                        "health_after": incident.health_after,
-                        "cause": incident.cause,
-                        "details": incident.details,
-                    }
-                    for incident in health_incidents
-                ],
-            }
-
-            return response
-
-        return self.db._execute_in_transaction(_query)
-
     def get_agent_actions(
         self,
         agent_id: int,
@@ -613,6 +261,15 @@ class DataRetriever:
         end_step: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Get detailed action history for a specific agent.
+
+        Parameters
+        ----------
+        agent_id : int
+            ID of the agent to analyze
+        start_step : Optional[int]
+            Starting step for analysis window
+        end_step : Optional[int]
+            Ending step for analysis window
 
         Returns
         -------
@@ -624,48 +281,24 @@ class DataRetriever:
             - reward_analysis: RewardStats
             - resource_impact: ResourceBehavior
         """
+        # Use ActionsRetriever for analysis
+        actions_retriever = self._retrievers["actions"]
 
         def _query(session):
-            # Build base query
-            base_query = session.query(AgentAction).filter(
+            # Get decision patterns with time range filter
+            patterns = actions_retriever.decision_patterns(session, agent_id)
+
+            # Get chronological action list
+            actions = session.query(AgentAction).filter(
                 AgentAction.agent_id == agent_id
             )
 
-            # Apply time range filters if provided
             if start_step is not None:
-                base_query = base_query.filter(AgentAction.step_number >= start_step)
+                actions = actions.filter(AgentAction.step_number >= start_step)
             if end_step is not None:
-                base_query = base_query.filter(AgentAction.step_number <= end_step)
+                actions = actions.filter(AgentAction.step_number <= end_step)
 
-            # Get chronological action list
-            actions = base_query.order_by(AgentAction.step_number).all()
-
-            # Get action type statistics
-            action_stats = (
-                base_query.with_entities(
-                    AgentAction.action_type,
-                    func.count().label("count"),
-                    func.avg(AgentAction.reward).label("avg_reward"),
-                    func.sum(AgentAction.reward).label("total_reward"),
-                    func.avg(
-                        AgentAction.resources_after - AgentAction.resources_before
-                    ).label("avg_resource_change"),
-                )
-                .group_by(AgentAction.action_type)
-                .all()
-            )
-
-            # Get interaction patterns
-            interaction_stats = (
-                base_query.filter(AgentAction.action_target_id.isnot(None))
-                .with_entities(
-                    AgentAction.action_target_id,
-                    func.count().label("interaction_count"),
-                    func.avg(AgentAction.reward).label("avg_interaction_reward"),
-                )
-                .group_by(AgentAction.action_target_id)
-                .all()
-            )
+            actions = actions.order_by(AgentAction.step_number).all()
 
             # Format chronological action list
             action_list = [
@@ -683,21 +316,6 @@ class DataRetriever:
                 for action in actions
             ]
 
-            # Calculate reward statistics
-            rewards = [action.reward for action in actions if action.reward is not None]
-            reward_stats = {
-                "total_reward": sum(rewards),
-                "average_reward": sum(rewards) / len(rewards) if rewards else 0,
-                "max_reward": max(rewards) if rewards else 0,
-                "min_reward": min(rewards) if rewards else 0,
-                "reward_variance": (
-                    sum((r - (sum(rewards) / len(rewards))) ** 2 for r in rewards)
-                    / len(rewards)
-                    if rewards
-                    else 0
-                ),
-            }
-
             return {
                 "action_history": {
                     "chronological_actions": action_list,
@@ -712,40 +330,10 @@ class DataRetriever:
                         ),
                     },
                 },
-                "action_statistics": {
-                    action_type: {
-                        "count": count,
-                        "frequency": count / len(actions) if actions else 0,
-                        "avg_reward": float(avg_reward or 0),
-                        "total_reward": float(total_reward or 0),
-                        "avg_resource_change": float(avg_resource_change or 0),
-                    }
-                    for action_type, count, avg_reward, total_reward, avg_resource_change in action_stats
-                },
-                "interaction_patterns": {
-                    str(target_id): {
-                        "interaction_count": count,
-                        "avg_reward": float(avg_reward or 0),
-                    }
-                    for target_id, count, avg_reward in interaction_stats
-                },
-                "reward_analysis": reward_stats,
-                "resource_impact": {
-                    "total_resource_gain": sum(
-                        max(0, a.resources_after - a.resources_before)
-                        for a in actions
-                        if a.resources_after is not None
-                        and a.resources_before is not None
-                    ),
-                    "total_resource_loss": abs(
-                        sum(
-                            min(0, a.resources_after - a.resources_before)
-                            for a in actions
-                            if a.resources_after is not None
-                            and a.resources_before is not None
-                        )
-                    ),
-                },
+                "action_statistics": patterns.decision_patterns,
+                "interaction_patterns": patterns.interaction_analysis,
+                "reward_analysis": patterns.decision_summary,
+                "resource_impact": patterns.resource_impact,
             }
 
         return self.db._execute_in_transaction(_query)
@@ -917,21 +505,6 @@ class DataRetriever:
                 },
                 detailed_actions=action_list,
             )
-
-        return self.db._execute_in_transaction(_query)
-
-    def get_agent_types(self) -> List[str]:
-        """Get list of all unique agent types in the simulation.
-
-        Returns
-        -------
-        List[str]
-            List of unique agent type names
-        """
-
-        def _query(session):
-            types = session.query(Agent.agent_type).distinct().all()
-            return [t[0] for t in types]
 
         return self.db._execute_in_transaction(_query)
 
@@ -1128,111 +701,85 @@ class DataRetriever:
 
         return self.db._execute_in_transaction(_query)
 
-    def action_rewards(
-        self,
-        session,
-        action_type: str,
-        agent_id: Optional[int] = None,
-    ) -> List[float]:
-        """Get all rewards for a specific action type.
-
-        Parameters
-        ----------
-        session : Session
-            SQLAlchemy database session
-        action_type : str
-            Type of action to get rewards for
-        agent_id : Optional[int]
-            Specific agent ID to filter by
+    def advanced_statistics(self) -> AdvancedStatistics:
+        """Calculate advanced simulation statistics using optimized queries.
 
         Returns
         -------
-        List[float]
-            List of reward values for the action type
+        AdvancedStatistics: Dict[str, Any]
+            Data containing:
+            - Population metrics (peak, average, diversity)
+            - Interaction statistics (conflict/cooperation ratios)
+            - Resource efficiency metrics
+            - Agent type distribution
+            - Survival and adaptation metrics
         """
-        rewards = session.query(AgentAction.reward).filter(
-            AgentAction.action_type == action_type
-        )
-        if agent_id is not None:
-            rewards = rewards.filter(AgentAction.agent_id == agent_id)
-        return [r[0] for r in rewards.all() if r[0] is not None]
 
-    def rewards_by_type(self, session, stats, agent_id=None):
-        """Get rewards for each action type.
+        def _query(session):
+            # Get component statistics using helper methods
+            pop_stats = self.population_stats(session)
+            type_ratios = self.agent_type_ratios(session)
+            interaction_metrics = self.interaction_metrics(session)
+            resource_metrics = self.resource_metrics(session)
 
-        Parameters
-        ----------
-        session : Session
-            SQLAlchemy database session
-        stats : List[Tuple]
-            List of action type statistics tuples
-        agent_id : Optional[int]
-            Specific agent ID to filter by
+            # Calculate diversity index
+            diversity = self._calculate_diversity_index(list(type_ratios.values()))
 
-        Returns
-        -------
-        Dict[str, List[float]]
-            Dictionary mapping action types to lists of reward values
-        """
-        rewards_by_type = {}
-        for action_type in set(s[0] for s in stats):
-            rewards_by_type[action_type] = self.action_rewards(
-                session, action_type, agent_id
+            return AdvancedStatistics(
+                population_metrics=PopulationStatistics(
+                    population_metrics=PopulationMetrics(**pop_stats),
+                    population_variance=PopulationVariance(
+                        total_agents=pop_stats["total_agents"],
+                        system_agents=pop_stats["system_agents"],
+                        independent_agents=pop_stats["independent_agents"],
+                        control_agents=pop_stats["control_agents"],
+                    ),
+                ),
+                interaction_metrics=InteractionPattern(
+                    **interaction_metrics,
+                    conflict_cooperation_ratio=(
+                        interaction_metrics["conflict_rate"]
+                        / interaction_metrics["cooperation_rate"]
+                        if interaction_metrics["cooperation_rate"] > 0
+                        else float("inf")
+                    ),
+                ),
+                resource_metrics=ResourceMetrics(**resource_metrics),
+                agent_distribution=AgentDistribution(
+                    **type_ratios,
+                    type_entropy=diversity,
+                ),
+                survival_metrics=SurvivalMetrics(
+                    population_stability=(
+                        pop_stats["minimum_population"] / pop_stats["peak_population"]
+                    ),
+                    health_maintenance=(pop_stats["average_health"] / 100.0),
+                    interaction_rate=(
+                        interaction_metrics["total_actions"]
+                        / pop_stats["total_steps"]
+                        / pop_stats["average_population"]
+                    ),
+                ),
             )
-        return rewards_by_type
 
-    def action_metrics(
-        self,
-        session,
-        agent_id: Optional[int] = None,
-        start_step: Optional[int] = None,
-        end_step: Optional[int] = None,
-    ) -> List[ActionMetrics]:
-        """Get basic metrics for agent actions with optional filters.
+        return self.db._execute_in_transaction(_query)
+
+    def _calculate_diversity_index(self, ratios: List[float]) -> float:
+        """Calculate Shannon entropy for agent type diversity.
 
         Parameters
         ----------
-        session : Session
-            SQLAlchemy database session
-        agent_id : Optional[int]
-            Specific agent ID to filter by
-        start_step : Optional[int]
-            Starting step number for analysis window
-        end_step : Optional[int]
-            Ending step number for analysis window
+        ratios : List[float]
+            List of agent type proportions
 
         Returns
         -------
-        List[ActionMetrics]
-            List of action metrics containing counts and reward statistics
+        float
+            Shannon entropy diversity index
         """
-        base_query = session.query(
-            AgentAction.action_type,
-            func.count().label("decision_count"),
-            func.avg(AgentAction.reward).label("avg_reward"),
-            func.min(AgentAction.reward).label("min_reward"),
-            func.max(AgentAction.reward).label("max_reward"),
-        )
+        import math
 
-        if agent_id is not None:
-            base_query = base_query.filter(AgentAction.agent_id == agent_id)
-        if start_step is not None:
-            base_query = base_query.filter(AgentAction.step_number >= start_step)
-        if end_step is not None:
-            base_query = base_query.filter(AgentAction.step_number <= end_step)
-
-        # Get basic stats grouped by action type and convert to ActionMetrics objects
-        results = base_query.group_by(AgentAction.action_type).all()
-        return [
-            ActionMetrics(
-                action_type=result[0],
-                decision_count=int(result[1]),
-                avg_reward=float(result[2] or 0),
-                min_reward=float(result[3] or 0),
-                max_reward=float(result[4] or 0),
-            )
-            for result in results
-        ]
+        return sum(-ratio * math.log(ratio) if ratio > 0 else 0 for ratio in ratios)
 
     def _format_interaction_patterns(
         self, interaction_patterns
@@ -1686,7 +1233,6 @@ class DataRetriever:
             }
 
         return self.db._execute_in_transaction(_query)
-
     def _create_decision_summary(
         self, decision_patterns: Dict[str, Any]
     ) -> DecisionSummary:
@@ -1734,3 +1280,4 @@ class DataRetriever:
                 if p["frequency"] > 0
             ),  # Shannon entropy
         }
+
