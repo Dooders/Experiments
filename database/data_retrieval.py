@@ -44,14 +44,14 @@ import pandas as pd
 from sqlalchemy import and_, case, exists, func, not_
 from sqlalchemy.orm import aliased
 
+from database.actions import ActionsRetriever
+from database.agent import AgentRetriever
 from database.agent_lifespan import AgentLifespanRetriever
 from database.learning import LearningRetriever
 from database.population import PopulationStatisticsRetriever
 from database.resource import ResourceRetriever
 from database.simulation import SimulationStateRetriever
 from database.utilities import execute_query
-from database.actions import ActionsRetriever
-from database.agent import AgentRetriever
 
 from .data_types import (
     ActionMetrics,
@@ -1233,6 +1233,7 @@ class DataRetriever:
             }
 
         return self.db._execute_in_transaction(_query)
+
     def _create_decision_summary(
         self, decision_patterns: Dict[str, Any]
     ) -> DecisionSummary:
@@ -1280,4 +1281,3 @@ class DataRetriever:
                 if p["frequency"] > 0
             ),  # Shannon entropy
         }
-

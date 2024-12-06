@@ -54,6 +54,7 @@ AgentLifespanResults
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 
@@ -1190,6 +1191,7 @@ class BasicAgentStats:
     total_reward : float
         Total reward accumulated
     """
+
     average_health: float
     average_resources: float
     lifespan: int
@@ -1209,6 +1211,7 @@ class AgentPerformance:
     action_diversity : int
         Number of unique actions used
     """
+
     total_actions: int
     average_reward: float
     action_diversity: int
@@ -1225,6 +1228,7 @@ class AgentMetrics:
     performance : AgentPerformance
         Performance-related metrics
     """
+
     basic_stats: BasicAgentStats
     performance: AgentPerformance
 
@@ -1244,7 +1248,143 @@ class AgentEvolutionMetrics:
     generation : Optional[int]
         Generation number if specific to one generation
     """
+
     total_agents: int
     unique_genomes: int
     average_lifespan: float
     generation: Optional[int]
+
+
+@dataclass
+class AgentInfo:
+    """Basic information about an agent.
+
+    Attributes
+    ----------
+    agent_id : int
+        The unique identifier of the agent
+    agent_type : str
+        The type of agent
+    birth_time : datetime
+        When the agent was created
+    death_time : Optional[datetime]
+        When the agent died (None if still alive)
+    lifespan : Optional[timedelta]
+        How long the agent lived (None if still alive)
+    initial_resources : float
+        Starting resource amount
+    max_health : float
+        Maximum possible health value
+    starvation_threshold : float
+        Resource level below which agent starts starving
+    """
+
+    agent_id: int
+    agent_type: str
+    birth_time: datetime
+    death_time: Optional[datetime]
+    lifespan: Optional[timedelta]
+    initial_resources: float
+    max_health: float
+    starvation_threshold: float
+
+
+@dataclass
+class AgentGenetics:
+    """Genetic information about an agent.
+
+    Attributes
+    ----------
+    genome_id : str
+        Unique identifier for this genome
+    parent_id : Optional[int]
+        ID of parent agent (None if original agent)
+    generation : int
+        Which generation this agent belongs to
+    """
+
+    genome_id: str
+    parent_id: Optional[int]
+    generation: int
+
+
+@dataclass
+class AgentHistory:
+    """Historical metrics for an agent.
+
+    Attributes
+    ----------
+    average_health : float
+        Mean health value across all states
+    average_resources : float
+        Mean resource level across all states
+    total_steps : int
+        Total number of simulation steps
+    total_reward : float
+        Cumulative reward earned
+    """
+
+    average_health: float
+    average_resources: float
+    total_steps: int
+    total_reward: float
+
+
+@dataclass
+class HealthIncidentData:
+    """Data about a single health incident.
+
+    Attributes
+    ----------
+    step : int
+        Simulation step when incident occurred
+    health_before : float
+        Health value before incident
+    health_after : float
+        Health value after incident
+    cause : str
+        Reason for health change
+    details : Dict[str, Any]
+        Additional incident-specific information
+    """
+
+    step: int
+    health_before: float
+    health_after: float
+    cause: str
+    details: Dict[str, Any]
+
+
+@dataclass
+class ActionStats:
+    """Statistics about a specific action type.
+
+    Attributes
+    ----------
+    count : int
+        Number of times this action was taken
+    average_reward : float
+        Mean reward received for this action
+    total_actions : int
+        Total number of actions taken by the agent
+    action_diversity : int
+        Number of unique action types used
+    """
+
+    count: int
+    average_reward: float
+    total_actions: int
+    action_diversity: int
+
+
+@dataclass
+class AgentActionHistory:
+    """Complete action history for an agent.
+
+    Attributes
+    ----------
+    actions : Dict[str, ActionStats]
+        Dictionary mapping action types to their statistics
+    """
+
+    actions: Dict[str, ActionStats]
