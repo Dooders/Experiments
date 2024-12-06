@@ -1,17 +1,6 @@
-"""Learning retrieval module for simulation database.
-
-This module provides specialized queries and analysis methods for learning-related
-data, including learning experiences, module performance, and adaptation metrics.
-
-The LearningRetriever class handles learning-specific database operations with
-optimized queries and efficient data aggregation methods.
-"""
-
 from typing import Any, Dict, List, Optional
 
-import pandas as pd
-from sqlalchemy import distinct, func
-
+from database.base_repository import BaseRepository
 from database.data_types import (
     AgentLearningStats,
     LearningEfficiencyMetrics,
@@ -23,7 +12,7 @@ from database.models import LearningExperience
 from database.utilities import execute_query
 
 
-class LearningRetriever:
+class LearningRepository(BaseRepository[LearningExperience]):
     """Handles learning-related data retrieval and analysis.
 
     This class provides methods for analyzing learning experiences, module performance,
@@ -44,15 +33,15 @@ class LearningRetriever:
         Generates comprehensive learning statistics report
     """
 
-    def __init__(self, database):
+    def __init__(self, db):
         """Initialize with database connection.
 
         Parameters
         ----------
-        database : SimulationDatabase
+        db : SimulationDatabase
             Database instance to use for queries
         """
-        self.db = database
+        super().__init__(db, LearningExperience)
 
     @execute_query
     def learning_progress(self, session) -> List[LearningProgress]:

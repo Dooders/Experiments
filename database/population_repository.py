@@ -2,6 +2,7 @@ from typing import List, Optional
 
 from sqlalchemy import func
 
+from database.base_repository import BaseRepository
 from database.data_types import (
     AgentDistribution,
     BasicPopulationStatistics,
@@ -14,7 +15,7 @@ from database.models import AgentState, SimulationStep
 from database.utilities import execute_query
 
 
-class PopulationStatisticsRetriever:
+class PopulationRepository(BaseRepository):
     """Handles retrieval and analysis of population statistics.
 
     This class encapsulates methods for analyzing population dynamics, resource utilization,
@@ -41,7 +42,7 @@ class PopulationStatisticsRetriever:
         database : SimulationDatabase
             Database instance to use for queries
         """
-        self.db = database
+        super().__init__(database, SimulationStep)
 
     @execute_query
     def population_data(self, session) -> List[Population]:
