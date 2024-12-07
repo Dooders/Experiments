@@ -983,8 +983,10 @@ class ActionMetrics:
     ----------
     action_type : str
         The type of action
-    decision_count : int
+    count : int
         Number of times this action was taken
+    frequency : float
+        Frequency of this action as a proportion of total actions
     avg_reward : float
         Average reward received for this action
     min_reward : float
@@ -994,7 +996,8 @@ class ActionMetrics:
     """
 
     action_type: str
-    decision_count: int
+    count: int
+    frequency: float
     avg_reward: float
     min_reward: float
     max_reward: float

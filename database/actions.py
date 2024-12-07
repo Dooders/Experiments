@@ -27,7 +27,8 @@ ActionsRetriever
 """
 
 import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
+from enum import Enum, auto
 
 from sqlalchemy import case, func
 
@@ -62,6 +63,26 @@ from database.data_types import (
 from database.models import AgentAction, AgentState
 from database.retrievers import BaseRetriever
 from database.utilities import execute_query
+
+
+class AnalysisScope(str, Enum):
+    """Scope levels for analysis queries."""
+
+    SIMULATION = "simulation"  # All data (no filters)
+    STEP = "step"  # Single step
+    STEP_RANGE = "step_range"  # Range of steps
+    AGENT = "agent"  # Single agent
+
+    @classmethod
+    def from_string(cls, scope_str: str) -> "AnalysisScope":
+        """Convert string to AnalysisScope, case-insensitive."""
+        try:
+            return cls(scope_str.lower())
+        except ValueError:
+            valid_scopes = [s.value for s in cls]
+            raise ValueError(
+                f"Invalid scope '{scope_str}'. Must be one of: {valid_scopes}"
+            )
 
 
 class ActionsRetriever(BaseRetriever):
@@ -113,60 +134,64 @@ class ActionsRetriever(BaseRetriever):
     >>> patterns = retriever.decision_patterns()
     >>> learning = retriever.get_learning_curve()
     """
-    
+
     @execute_query
     def get_action_stats(
-        self, session, agent_id: Optional[int] = None
-    ) -> List[ActionStats]:
+        self,
+        session,
+        scope: Union[str, AnalysisScope] = AnalysisScope.SIMULATION,
+        agent_id: Optional[int] = None,
+        step: Optional[int] = None,
+        step_range: Optional[Tuple[int, int]] = None,
+    ) -> List[ActionMetrics]:
         """Get comprehensive statistics for each action type.
 
         Retrieves and analyzes usage patterns and reward metrics for all action types,
-        optionally filtered by a specific agent.
+        with flexible scoping options for the analysis level.
 
         Parameters
         ----------
+        scope : Union[str, AnalysisScope]
+            Level at which to perform the analysis:
+            - "simulation": Analyze all data without filters
+            - "step": Analyze a specific step
+            - "step_range": Analyze a range of steps
+            - "agent": Analyze a specific agent
         agent_id : Optional[int]
-            Specific agent ID to analyze. If None, analyzes all agents.
+            Required when scope is "agent"
+        step : Optional[int]
+            Required when scope is "step"
+        step_range : Optional[Tuple[int, int]]
+            Required when scope is "step_range"
 
         Returns
         -------
-        List[ActionStats]
-            List of statistics for each action type, containing:
-            - action_type : str
-                The type of action performed
-            - count : int
-                Number of times this action was taken
-            - frequency : float
-                Proportion of total actions (0.0 to 1.0)
-            - avg_reward : float
-                Average reward received for this action
-            - min_reward : float
-                Minimum reward received for this action
-            - max_reward : float
-                Maximum reward received for this action
+        List[ActionMetrics]
+            List of statistics for each action type
 
         Examples
         --------
-        >>> stats = retriever.get_action_stats(agent_id=1)
-        >>> for stat in stats:
-        ...     print(f"{stat.action_type}:")
-        ...     print(f"  Count: {stat.count} ({stat.frequency:.1%})")
-        ...     print(f"  Rewards: {stat.avg_reward:.2f} (min: {stat.min_reward:.2f}, max: {stat.max_reward:.2f})")
-        attack:
-          Count: 245 (32.5%)
-          Rewards: 1.85 (min: -0.50, max: 4.25)
-        defend:
-          Count: 180 (23.9%)
-          Rewards: 0.95 (min: -0.25, max: 2.75)
-        explore:
-          Count: 320 (42.4%)
-          Rewards: 1.45 (min: 0.00, max: 3.50)
-
-        Notes
-        -----
-        Frequencies sum to 1.0 across all action types. Reward values of 0.0 indicate
-        no rewards were recorded for that action type.
+        >>> # Get simulation-wide stats
+        >>> stats = retriever.get_action_stats()
+        >>> # Get stats for a specific agent
+        >>> stats = retriever.get_action_stats(scope="agent", agent_id=1)
+        >>> # Get stats for a specific step
+        >>> stats = retriever.get_action_stats(scope="step", step=100)
+        >>> # Get stats for a step range
+        >>> stats = retriever.get_action_stats(scope="step_range", step_range=(100, 200))
         """
+        # Convert string scope to enum if needed
+        if isinstance(scope, str):
+            scope = AnalysisScope.from_string(scope)
+
+        # Validate parameters based on scope
+        if scope == AnalysisScope.AGENT and agent_id is None:
+            raise ValueError("agent_id is required when scope is AGENT")
+        if scope == AnalysisScope.STEP and step is None:
+            raise ValueError("step is required when scope is STEP")
+        if scope == AnalysisScope.STEP_RANGE and step_range is None:
+            raise ValueError("step_range is required when scope is STEP_RANGE")
+
         query = session.query(
             AgentAction.action_type,
             func.count().label("count"),
@@ -175,15 +200,25 @@ class ActionsRetriever(BaseRetriever):
             func.max(AgentAction.reward).label("max_reward"),
         )
 
-        if agent_id is not None:
+        # Apply filters based on scope
+        if scope == AnalysisScope.AGENT:
             query = query.filter(AgentAction.agent_id == agent_id)
+        elif scope == AnalysisScope.STEP:
+            query = query.filter(AgentAction.step_number == step)
+        elif scope == AnalysisScope.STEP_RANGE:
+            start_step, end_step = step_range
+            query = query.filter(
+                AgentAction.step_number >= start_step,
+                AgentAction.step_number <= end_step,
+            )
+        # SIMULATION scope requires no filters
 
         results = query.group_by(AgentAction.action_type).all()
 
         total_actions = sum(r[1] for r in results)
 
         return [
-            ActionStats(
+            ActionMetrics(
                 action_type=r[0],
                 count=r[1],
                 frequency=r[1] / total_actions if total_actions > 0 else 0,
@@ -1182,8 +1217,7 @@ class ActionsRetriever(BaseRetriever):
 
         # Get interactions (actions with targets)
         interactions = [
-            action for action in actions 
-            if action.action_target_id is not None
+            action for action in actions if action.action_target_id is not None
         ]
 
         # Calculate action statistics
@@ -1248,11 +1282,14 @@ class ActionsRetriever(BaseRetriever):
                 ),
             ),
             performance_metrics=PerformanceMetrics(
-                success_rate=len([a for a in actions if a.reward and a.reward > 0]) / len(actions),
-                average_reward=sum(a.reward for a in actions if a.reward is not None) / len(actions),
+                success_rate=len([a for a in actions if a.reward and a.reward > 0])
+                / len(actions),
+                average_reward=sum(a.reward for a in actions if a.reward is not None)
+                / len(actions),
                 action_efficiency=len(
                     [a for a in actions if a.state_before_id != a.state_after_id]
-                ) / len(actions),
+                )
+                / len(actions),
             ),
             detailed_actions=action_list,
         )

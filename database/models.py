@@ -126,6 +126,8 @@ class Agent(Base):
         "AgentAction",
         foreign_keys="[AgentAction.action_target_id]",
         primaryjoin="Agent.agent_id==AgentAction.action_target_id",
+        backref="target",
+        overlaps="targeted_by",
     )
 
 
@@ -405,8 +407,6 @@ class AgentAction(Base):
     ------------
     agent : Agent
         The agent that performed the action
-    target : Optional[Agent]
-        The target agent of the action, if any
     state_before : Optional[AgentState]
         The agent's state before the action
     state_after : Optional[AgentState]
@@ -433,9 +433,6 @@ class AgentAction(Base):
     details = Column(String(1024), nullable=True)
 
     agent = relationship("Agent", back_populates="actions", foreign_keys=[agent_id])
-    target = relationship(
-        "Agent", foreign_keys=[action_target_id], backref="targeted_by"
-    )
     state_before = relationship("AgentState", foreign_keys=[state_before_id])
     state_after = relationship("AgentState", foreign_keys=[state_after_id])
 
