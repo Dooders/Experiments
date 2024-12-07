@@ -368,8 +368,6 @@ class ActionsRetriever(BaseRetriever):
         -----
         Time periods are determined by grouping steps into bins of 100 steps each.
         Empty periods will have 0 counts and rewards.
-        #! Future update: allow custom time period sizes, maybe even dynamic
-        #! Also get this at the agent level. (Maybe call it scope)
 
         Examples
         --------
