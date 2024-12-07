@@ -17,10 +17,14 @@ from database.data_types import (
     DecisionPatterns,
     DecisionPatternStats,
     DecisionSummary,
+    InteractionNetwork,
     InteractionStats,
+    PerformanceMetrics,
     ResourceImpact,
+    ResourceMetricsStep,
     SequencePattern,
     StepActionData,
+    StepSummary,
     TimePattern,
 )
 from database.models import Agent, AgentAction
@@ -48,10 +52,16 @@ class ActionsRetriever(BaseRetriever):
         Analyze resource impacts of different actions
     execute() -> DecisionPatterns
         Generate comprehensive action analysis
+
+    Examples
+    --------
+    >>> retriever = ActionsRetriever(session)
+    >>> metrics = retriever.action_metrics(agent_id=1)
+    >>> patterns = retriever.decision_patterns()
     """
 
     @execute_query
-    def action_metrics(
+    def summary(
         self, session, agent_id: Optional[int] = None
     ) -> List[ActionMetrics]:
         """Calculate basic metrics for agent actions.
@@ -91,7 +101,7 @@ class ActionsRetriever(BaseRetriever):
         ]
 
     @execute_query
-    def interaction_statistics(self, session) -> Dict[str, InteractionStats]:
+    def interactions(self, session) -> Dict[str, InteractionStats]:
         """Calculate statistics about agent interactions.
 
         Returns
@@ -224,35 +234,35 @@ class ActionsRetriever(BaseRetriever):
         -------
         DecisionPatterns
             Comprehensive decision pattern analysis with the following components:
-            
+
             decision_patterns : Dict[str, DecisionPatternStats]
                 Statistics for each action type, containing:
                 - count: Total number of times the action was taken
                 - frequency: Proportion of times this action was chosen
                 - reward_stats: Dict containing average/min/max rewards
-            
+
             sequence_analysis : Dict[str, SequencePattern]
                 Analysis of action sequences (e.g., "action1->action2"), containing:
                 - count: Number of times this sequence occurred
                 - probability: Likelihood of the second action following the first
-            
+
             resource_impact : Dict[str, ResourceImpact]
                 Resource effects for each action type, containing:
                 - avg_resources_before: Average resources before action
                 - avg_resource_change: Average change in resources
                 - resource_efficiency: Resource change per action
-            
+
             temporal_patterns : Dict[str, TimePattern]
                 Time-based analysis for each action, containing:
                 - time_distribution: List of action counts per time period
                 - reward_progression: List of average rewards per time period
-            
+
             interaction_analysis : Dict[str, InteractionStats]
                 Statistics about agent interactions, containing:
                 - interaction_rate: Proportion of actions involving other agents
                 - solo_performance: Average reward for solo actions
                 - interaction_performance: Average reward for interactive actions
-            
+
             decision_summary : DecisionSummary
                 Overall decision-making metrics, containing:
                 - total_decisions: Total number of decisions made
@@ -283,18 +293,6 @@ class ActionsRetriever(BaseRetriever):
             for m in metrics
         }
 
-        # Get interaction statistics
-        interaction_stats = self.interaction_statistics()
-
-        # Get temporal patterns
-        temporal_patterns = self.temporal_patterns()
-
-        # Get resource impacts
-        resource_impacts = self.resource_impacts()
-
-        # Calculate sequence patterns
-        sequence_patterns = self._calculate_sequence_patterns(session, agent_id)
-
         # Create decision summary
         summary = DecisionSummary(
             total_decisions=total_decisions,
@@ -312,70 +310,190 @@ class ActionsRetriever(BaseRetriever):
 
         return DecisionPatterns(
             decision_patterns=patterns,
-            sequence_analysis=sequence_patterns,
-            resource_impact=resource_impacts,
-            temporal_patterns=temporal_patterns,
-            interaction_analysis=interaction_stats,
+            sequence_analysis=self._calculate_sequence_patterns(session, agent_id),
+            resource_impact=self.resource_impacts(),
+            temporal_patterns=self.temporal_patterns(),
+            interaction_analysis=self.interaction_statistics(),
             decision_summary=summary,
         )
 
     @execute_query
-    def step_actions(self, session, step_number: int) -> StepActionData:
+    def step(self, session, step_number: int) -> StepActionData:
         """Get all actions performed during a specific simulation step.
+
+        Retrieves and analyzes all actions performed during a given simulation step,
+        including action statistics, resource changes, interaction networks, and
+        performance metrics.
 
         Parameters
         ----------
         step_number : int
-            The simulation step number to query
+            The simulation step number to analyze (must be >= 0)
 
         Returns
         -------
         StepActionData
-            Data containing:
-            - step_summary: Dict[str, int]
-                - total_actions: Total number of actions
-                - unique_agents: Number of unique agents
-                - action_types: Number of unique action types
-                - total_interactions: Total number of interactions
-                - total_reward: Total reward received
-            - action_statistics: Dict[str, Dict[str, float]]
-                Per action type statistics including:
-                - count: Number of occurrences
-                - frequency: Frequency of the action type
-                - avg_reward: Average reward for the action
-                - total_reward: Total reward for the action
-            - resource_metrics: Dict[str, float]
-                - net_resource_change: Net resource change
-                - average_resource_change: Average resource change
-                - resource_transactions: Number of resource transactions
-            - interaction_network: Dict[str, Any]
-                - interactions: List[Dict[str, Any]]
-                    List of interactions, each containing:
-                    - source: Source agent ID
-                    - target: Target agent ID
-                    - action_type: Action type
-                    - reward: Reward received
-                - unique_interacting_agents: Number of unique interacting agents
-            - performance_metrics: Dict[str, float]
-                - success_rate: Success rate of actions
-                - average_reward: Average reward per action
-                - action_efficiency: Efficiency of actions
-            - detailed_actions: List[Dict[str, Any]]
-                Detailed list of all actions
+            Comprehensive data about the step's actions, containing:
+
+            step_summary : StepSummary
+                Overall statistics including total actions, unique agents, etc.
+
+            action_statistics : Dict[str, Dict]
+                Statistics for each action type, including counts and rewards
+
+            resource_metrics : ResourceMetricsStep
+                Analysis of resource changes during the step
+
+            interaction_network : InteractionNetwork
+                Network of agent interactions and their outcomes
+
+            performance_metrics : PerformanceMetrics
+                Success rates and efficiency metrics
+
+            detailed_actions : List[Dict]
+                Detailed list of all actions with complete metadata
+
+        Examples
+        --------
+        >>> retriever = ActionsRetriever(session)
+        >>> step_data = retriever.step_actions(step_number=5)
+        >>> print(f"Total actions: {step_data.step_summary.total_actions}")
+        >>> print(f"Success rate: {step_data.performance_metrics.success_rate}")
         """
-        # Get all actions for the step
-        actions = (
+        # Get all component data
+        actions = self._get_step_actions(session, step_number)
+        if not actions:
+            return {}
+
+        action_stats = self._get_action_statistics(session, step_number)
+        resource_changes = self._get_resource_changes(session, step_number)
+
+        # Build interaction network
+        interactions = [
+            action for action in actions if action.action_target_id is not None
+        ]
+
+        # Format detailed action list with state references
+        action_list = [
+            {
+                "agent_id": action.agent_id,
+                "action_type": action.action_type,
+                "action_target_id": action.action_target_id,
+                "state_before_id": action.state_before_id,
+                "state_after_id": action.state_after_id,
+                "resources_before": action.resources_before,
+                "resources_after": action.resources_after,
+                "reward": action.reward,
+                "details": json.loads(action.details) if action.details else None,
+            }
+            for action in actions
+        ]
+
+        return StepActionData(
+            step_summary=StepSummary(
+                total_actions=len(actions),
+                unique_agents=len(set(a.agent_id for a in actions)),
+                action_types=len(set(a.action_type for a in actions)),
+                total_interactions=len(interactions),
+                total_reward=sum(a.reward for a in actions if a.reward is not None),
+            ),
+            action_statistics={
+                action_type: {
+                    "count": count,
+                    "frequency": count / len(actions),
+                    "avg_reward": float(avg_reward or 0),
+                    "total_reward": float(total_reward or 0),
+                }
+                for action_type, count, avg_reward, total_reward in action_stats
+            },
+            resource_metrics=ResourceMetricsStep(
+                net_resource_change=float(resource_changes[0] or 0),
+                average_resource_change=float(resource_changes[1] or 0),
+                resource_transactions=len(
+                    [a for a in actions if a.resources_before != a.resources_after]
+                ),
+            ),
+            interaction_network=InteractionNetwork(
+                interactions=[
+                    {
+                        "source": action.agent_id,
+                        "target": action.action_target_id,
+                        "action_type": action.action_type,
+                        "reward": action.reward,
+                    }
+                    for action in interactions
+                ],
+                unique_interacting_agents=len(
+                    set(
+                        [a.agent_id for a in interactions]
+                        + [a.action_target_id for a in interactions]
+                    )
+                ),
+            ),
+            performance_metrics=PerformanceMetrics(
+                success_rate=len([a for a in actions if a.reward and a.reward > 0]),
+                average_reward=sum(a.reward for a in actions if a.reward is not None),
+                action_efficiency=len(
+                    [a for a in actions if a.state_before_id != a.state_after_id]
+                )
+                / len(actions),
+            ),
+            detailed_actions=action_list,
+        )
+
+    def _get_step_actions(self, session, step_number: int) -> List[AgentAction]:
+        """Get all actions for a specific step.
+
+        Parameters
+        ----------
+        session : Session
+            Database session for executing queries
+        step_number : int
+            The simulation step number to query (must be >= 0)
+
+        Returns
+        -------
+        List[AgentAction]
+            List of actions performed during the step, ordered by agent_id.
+            Each action contains complete metadata including rewards and resource changes.
+
+        Examples
+        --------
+        >>> actions = retriever._get_step_actions(session, step_number=5)
+        >>> for action in actions:
+        ...     print(f"Agent {action.agent_id}: {action.action_type}")
+        """
+        return (
             session.query(AgentAction)
             .filter(AgentAction.step_number == step_number)
             .order_by(AgentAction.agent_id)
             .all()
         )
 
-        if not actions:
-            return {}
+    def _get_action_statistics(self, session, step_number: int) -> List[Tuple]:
+        """Get action type statistics for a specific step.
 
-        # Get action type statistics
-        action_stats = (
+        Parameters
+        ----------
+        session : Session
+            Database session for executing queries
+        step_number : int
+            The simulation step number to query (must be >= 0)
+
+        Returns
+        -------
+        List[Tuple]
+            List of tuples containing:
+            - action_type (str): The type of action performed
+            - count (int): Number of times this action was taken
+            - avg_reward (float): Average reward for this action type
+            - total_reward (float): Total reward accumulated for this action type
+
+        Notes
+        -----
+        Rewards may be None if no reward was recorded for an action.
+        """
+        return (
             session.query(
                 AgentAction.action_type,
                 func.count().label("count"),
@@ -387,8 +505,29 @@ class ActionsRetriever(BaseRetriever):
             .all()
         )
 
-        # Calculate resource changes
-        resource_changes = (
+    def _get_resource_changes(self, session, step_number: int) -> Tuple:
+        """Get resource change statistics for a specific step.
+
+        Parameters
+        ----------
+        session : Session
+            Database session for executing queries
+        step_number : int
+            The simulation step number to query (must be >= 0)
+
+        Returns
+        -------
+        Tuple
+            Two-element tuple containing:
+            - net_change (float): Total resource change across all agents
+            - avg_change (float): Average resource change per agent
+
+        Notes
+        -----
+        Only considers actions where both resources_before and resources_after
+        are not None. Changes are calculated as (resources_after - resources_before).
+        """
+        return (
             session.query(
                 func.sum(
                     AgentAction.resources_after - AgentAction.resources_before
@@ -403,87 +542,6 @@ class ActionsRetriever(BaseRetriever):
                 AgentAction.resources_after.isnot(None),
             )
             .first()
-        )
-
-        # Build interaction network
-        interactions = [
-            action for action in actions if action.action_target_id is not None
-        ]
-
-        # Format detailed action list with state references
-        action_list = [
-            {
-                "agent_id": action.agent_id,
-                "action_type": action.action_type,
-                "action_target_id": action.action_target_id,
-                "state_before_id": action.state_before_id,  # Reference to state table
-                "state_after_id": action.state_after_id,    # Reference to state table
-                "resources_before": action.resources_before,
-                "resources_after": action.resources_after,
-                "reward": action.reward,
-                "details": json.loads(action.details) if action.details else None,
-            }
-            for action in actions
-        ]
-
-        return StepActionData(
-            step_summary={
-                "total_actions": len(actions),
-                "unique_agents": len(set(a.agent_id for a in actions)),
-                "action_types": len(set(a.action_type for a in actions)),
-                "total_interactions": len(interactions),
-                "total_reward": sum(
-                    a.reward for a in actions if a.reward is not None
-                ),
-            },
-            action_statistics={
-                action_type: {
-                    "count": count,
-                    "frequency": count / len(actions),
-                    "avg_reward": float(avg_reward or 0),
-                    "total_reward": float(total_reward or 0),
-                }
-                for action_type, count, avg_reward, total_reward in action_stats
-            },
-            resource_metrics={
-                "net_resource_change": float(resource_changes[0] or 0),
-                "average_resource_change": float(resource_changes[1] or 0),
-                "resource_transactions": len(
-                    [a for a in actions if a.resources_before != a.resources_after]
-                ),
-            },
-            interaction_network={
-                "interactions": [
-                    {
-                        "source": action.agent_id,
-                        "target": action.action_target_id,
-                        "action_type": action.action_type,
-                        "reward": action.reward,
-                    }
-                    for action in interactions
-                ],
-                "unique_interacting_agents": len(
-                    set(
-                        [a.agent_id for a in interactions]
-                        + [a.action_target_id for a in interactions]
-                    )
-                ),
-            },
-            performance_metrics={
-                "success_rate": len(
-                    [a for a in actions if a.reward and a.reward > 0]
-                )
-                / len(actions),
-                "average_reward": sum(
-                    a.reward for a in actions if a.reward is not None
-                )
-                / len(actions),
-                "action_efficiency": len(
-                    [a for a in actions if a.position_before != a.position_after]
-                )
-                / len(actions),
-            },
-            detailed_actions=action_list,
         )
 
     def _calculate_sequence_patterns(

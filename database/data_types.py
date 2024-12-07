@@ -135,11 +135,18 @@ class SimulationResults:
     Attributes
     ----------
     agent_states : List[Tuple]
-        List of agent state records
+        List of agent state records containing:
+        (step_number, agent_id, agent_type, position_x, position_y,
+         resource_level, current_health, is_defending)
     resource_states : List[Tuple]
-        List of resource state records
+        List of resource state records containing:
+        (resource_id, amount, position_x, position_y)
     simulation_state : Dict[str, Any]
-        Dictionary of simulation metrics for the step
+        Dictionary of simulation metrics for the step including:
+        - total_agents: Total number of agents
+        - total_resources: Total available resources
+        - average_agent_health: Mean health across agents
+        - resource_efficiency: Resource utilization efficiency
     """
 
     agent_states: List[Tuple]
@@ -491,30 +498,135 @@ class AgentDecisionMetrics:
 
 
 @dataclass
+class StepSummary:
+    """Summary statistics for a simulation step.
+
+    Attributes
+    ----------
+    total_actions : int
+        Total number of actions taken in this step
+    unique_agents : int
+        Number of unique agents that took actions
+    action_types : int
+        Number of different action types used
+    total_interactions : int
+        Number of interactions between agents
+    total_reward : float
+        Sum of all rewards received in this step
+    """
+
+    total_actions: int
+    unique_agents: int
+    action_types: int
+    total_interactions: int
+    total_reward: float
+
+
+@dataclass
+class ActionTypeStats:
+    """Statistics for a specific action type in a step.
+
+    Attributes
+    ----------
+    count : int
+        Number of times this action was taken
+    frequency : float
+        Proportion of total actions this type represents
+    avg_reward : float
+        Average reward received for this action type
+    total_reward : float
+        Total reward accumulated for this action type
+    """
+
+    count: int
+    frequency: float
+    avg_reward: float
+    total_reward: float
+
+
+@dataclass
+class ResourceMetricsStep:
+    """Resource-related metrics for a simulation step.
+
+    Attributes
+    ----------
+    net_resource_change : float
+        Total change in resources across all agents
+    average_resource_change : float
+        Average change in resources per agent
+    resource_transactions : int
+        Number of actions that affected resources
+    """
+
+    net_resource_change: float
+    average_resource_change: float
+    resource_transactions: int
+
+
+@dataclass
+class InteractionNetwork:
+    """Network of agent interactions in a step.
+
+    Attributes
+    ----------
+    interactions : List[Dict[str, Any]]
+        List of interaction records containing:
+        - source: ID of initiating agent
+        - target: ID of target agent
+        - action_type: Type of interaction
+        - reward: Reward received
+    unique_interacting_agents : int
+        Number of unique agents involved in interactions
+    """
+
+    interactions: List[Dict[str, Any]]
+    unique_interacting_agents: int
+
+
+@dataclass
+class PerformanceMetrics:
+    """Performance metrics for a simulation step.
+
+    Attributes
+    ----------
+    success_rate : float
+        Proportion of actions with positive rewards
+    average_reward : float
+        Mean reward across all actions
+    action_efficiency : float
+        Proportion of actions that changed agent state
+    """
+
+    success_rate: float
+    average_reward: float
+    action_efficiency: float
+
+
+@dataclass
 class StepActionData:
     """Data about actions in a specific simulation step.
 
     Attributes
     ----------
-    step_summary : Dict[str, int]
+    step_summary : StepSummary
         Summary statistics for the step
-    action_statistics : Dict[str, Dict[str, float]]
+    action_statistics : Dict[str, ActionTypeStats]
         Statistics about different action types
-    resource_metrics : Dict[str, float]
+    resource_metrics : ResourceMetricsStep
         Resource-related metrics
-    interaction_network : Dict[str, Any]
+    interaction_network : InteractionNetwork
         Network of agent interactions
-    performance_metrics : Dict[str, float]
+    performance_metrics : PerformanceMetrics
         Performance-related metrics
     detailed_actions : List[Dict[str, Any]]
         Detailed list of all actions
     """
 
-    step_summary: Dict[str, int]
-    action_statistics: Dict[str, Dict[str, float]]
-    resource_metrics: Dict[str, float]
-    interaction_network: Dict[str, Any]
-    performance_metrics: Dict[str, float]
+    step_summary: StepSummary
+    action_statistics: Dict[str, ActionTypeStats]
+    resource_metrics: ResourceMetricsStep
+    interaction_network: InteractionNetwork
+    performance_metrics: PerformanceMetrics
     detailed_actions: List[Dict[str, Any]]
 
 
@@ -861,13 +973,13 @@ class ResourceStates:
     Attributes
     ----------
     resource_id : int
-        Unique identifier for the resource
+        Unique identifier for the resource instance
     amount : float
-        Current amount of the resource available
+        Current amount of the resource available (0.0 to max_amount)
     position_x : float
-        X coordinate of resource position in simulation grid
+        X coordinate of resource position in simulation grid (0.0 to grid_width)
     position_y : float
-        Y coordinate of resource position in simulation grid
+        Y coordinate of resource position in simulation grid (0.0 to grid_height)
     """
 
     resource_id: int
@@ -883,21 +995,21 @@ class AgentStates:
     Attributes
     ----------
     step_number : int
-        Simulation step number
+        Simulation step number when this state was recorded
     agent_id : int
         Unique identifier for the agent
     agent_type : str
-        Type of the agent
+        Type of the agent (system, independent, or control)
     position_x : float
-        X coordinate of the agent's position
+        X coordinate of the agent's position in the simulation grid
     position_y : float
-        Y coordinate of the agent's position
+        Y coordinate of the agent's position in the simulation grid
     resource_level : float
-        Current resource level of the agent
+        Current resource level of the agent (0.0 to max_resources)
     current_health : float
-        Current health level of the agent
+        Current health level of the agent (0.0 to max_health)
     is_defending : bool
-        Whether the agent is defending
+        Whether the agent is currently in a defensive state
     """
 
     step_number: int
@@ -975,11 +1087,11 @@ class Population:
     step_number : int
         Step number in the simulation
     total_agents : int
-        Total number of agents
+        Total number of agents alive at this step
     total_resources : float
-        Total resources available
+        Total resources available across all grid cells
     resources_consumed : float
-        Amount of resources consumed by agents
+        Total amount of resources consumed by agents in this step
     """
 
     step_number: int

@@ -450,7 +450,9 @@ class AgentAction(Base):
     def position_before_array(self, value):
         """Convert array/list to JSON string for storage"""
         # This property is now deprecated as we use state references
-        logger.warning("position_before_array setter is deprecated, use state references instead")
+        logger.warning(
+            "position_before_array setter is deprecated, use state references instead"
+        )
 
 
 class LearningExperience(Base):
