@@ -790,6 +790,8 @@ class InteractionStats:
 
     Attributes
     ----------
+    action_type : str
+        Type of action analyzed
     interaction_rate : float
         Rate of interactive vs solo actions
     solo_performance : float
@@ -798,6 +800,7 @@ class InteractionStats:
         Average reward for interactive actions
     """
 
+    action_type: str
     interaction_rate: float
     solo_performance: float
     interaction_performance: float
@@ -1083,6 +1086,8 @@ class InteractionStats:
 
     Attributes
     ----------
+    action_type : str
+        Type of action analyzed
     interaction_rate : float
         Rate of interactive vs solo actions
     solo_performance : float
@@ -1091,6 +1096,7 @@ class InteractionStats:
         Average reward for interactive actions
     """
 
+    action_type: str
     interaction_rate: float
     solo_performance: float
     interaction_performance: float
