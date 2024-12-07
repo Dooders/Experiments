@@ -54,6 +54,7 @@ AgentLifespanResults
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 
@@ -301,7 +302,7 @@ class EfficiencyMetrics:
 @dataclass
 class LearningProgress:
     """Learning progress metrics for a single simulation step.
-    
+
     Attributes
     ----------
     step : int
@@ -313,6 +314,7 @@ class LearningProgress:
     unique_actions : int
         Number of unique actions used in this step
     """
+
     step: int
     reward: float
     action_count: int
@@ -322,7 +324,7 @@ class LearningProgress:
 @dataclass
 class ModulePerformance:
     """Performance metrics for a learning module.
-    
+
     Attributes
     ----------
     module_type : str
@@ -336,6 +338,7 @@ class ModulePerformance:
     unique_actions : int
         Number of unique actions used
     """
+
     module_type: str
     module_id: str
     avg_reward: float
@@ -997,12 +1000,18 @@ class BasicPopulationStatistics:
         Final step number of the simulation
     peak_population : int
         Maximum population reached
+    lowest_population : int
+        Minimum population reached
     resources_consumed : float
         Total resources consumed across all steps
     resources_available : float
         Total resources available across all steps
     sum_squared : float
         Sum of squared population counts (for variance calculations)
+    initial_population : int
+        Initial population at the start of the simulation
+    final_population : int
+        Final population at the end of the simulation
     step_count : int
         Total number of simulation steps
     """
@@ -1010,9 +1019,12 @@ class BasicPopulationStatistics:
     avg_population: float
     death_step: int
     peak_population: int
+    lowest_population: int
     resources_consumed: float
     resources_available: float
     sum_squared: float
+    initial_population: int
+    final_population: int
     step_count: int
 
 
@@ -1126,7 +1138,7 @@ class ResourceAnalysis:
 @dataclass
 class AgentLearningStats:
     """Statistics about an agent's learning performance.
-    
+
     Attributes
     ----------
     agent_id : int
@@ -1138,6 +1150,7 @@ class AgentLearningStats:
     actions_used : List[str]
         List of unique actions performed by the agent
     """
+
     agent_id: int
     reward_mean: float
     total_actions: int
@@ -1157,6 +1170,221 @@ class LearningEfficiencyMetrics:
     learning_stability : float
         Measure of learning consistency based on reward variance (0-1)
     """
+
     reward_efficiency: float
     action_diversity: float
     learning_stability: float
+
+
+@dataclass
+class BasicAgentStats:
+    """Basic statistics for an agent.
+
+    Attributes
+    ----------
+    average_health : float
+        Mean health level over lifetime
+    average_resources : float
+        Mean resource level over lifetime
+    lifespan : int
+        Number of steps lived
+    total_reward : float
+        Total reward accumulated
+    """
+
+    average_health: float
+    average_resources: float
+    lifespan: int
+    total_reward: float
+
+
+@dataclass
+class AgentPerformance:
+    """Performance metrics for an agent.
+
+    Attributes
+    ----------
+    total_actions : int
+        Total number of actions taken
+    average_reward : float
+        Mean reward per action
+    action_diversity : int
+        Number of unique actions used
+    """
+
+    total_actions: int
+    average_reward: float
+    action_diversity: int
+
+
+@dataclass
+class AgentMetrics:
+    """Combined metrics for an agent.
+
+    Attributes
+    ----------
+    basic_stats : BasicAgentStats
+        Basic statistical measures
+    performance : AgentPerformance
+        Performance-related metrics
+    """
+
+    basic_stats: BasicAgentStats
+    performance: AgentPerformance
+
+
+@dataclass
+class AgentEvolutionMetrics:
+    """Evolution metrics for agents.
+
+    Attributes
+    ----------
+    total_agents : int
+        Total number of agents
+    unique_genomes : int
+        Number of unique genomes
+    average_lifespan : float
+        Mean lifespan across agents
+    generation : Optional[int]
+        Generation number if specific to one generation
+    """
+
+    total_agents: int
+    unique_genomes: int
+    average_lifespan: float
+    generation: Optional[int]
+
+
+@dataclass
+class AgentInfo:
+    """Basic information about an agent.
+
+    Attributes
+    ----------
+    agent_id : int
+        The unique identifier of the agent
+    agent_type : str
+        The type of agent
+    birth_time : datetime
+        When the agent was created
+    death_time : Optional[datetime]
+        When the agent died (None if still alive)
+    lifespan : Optional[timedelta]
+        How long the agent lived (None if still alive)
+    initial_resources : float
+        Starting resource amount
+    max_health : float
+        Maximum possible health value
+    starvation_threshold : float
+        Resource level below which agent starts starving
+    """
+
+    agent_id: int
+    agent_type: str
+    birth_time: datetime
+    death_time: Optional[datetime]
+    lifespan: Optional[timedelta]
+    initial_resources: float
+    max_health: float
+    starvation_threshold: float
+
+
+@dataclass
+class AgentGenetics:
+    """Genetic information about an agent.
+
+    Attributes
+    ----------
+    genome_id : str
+        Unique identifier for this genome
+    parent_id : Optional[int]
+        ID of parent agent (None if original agent)
+    generation : int
+        Which generation this agent belongs to
+    """
+
+    genome_id: str
+    parent_id: Optional[int]
+    generation: int
+
+
+@dataclass
+class AgentHistory:
+    """Historical metrics for an agent.
+
+    Attributes
+    ----------
+    average_health : float
+        Mean health value across all states
+    average_resources : float
+        Mean resource level across all states
+    total_steps : int
+        Total number of simulation steps
+    total_reward : float
+        Cumulative reward earned
+    """
+
+    average_health: float
+    average_resources: float
+    total_steps: int
+    total_reward: float
+
+
+@dataclass
+class HealthIncidentData:
+    """Data about a single health incident.
+
+    Attributes
+    ----------
+    step : int
+        Simulation step when incident occurred
+    health_before : float
+        Health value before incident
+    health_after : float
+        Health value after incident
+    cause : str
+        Reason for health change
+    details : Dict[str, Any]
+        Additional incident-specific information
+    """
+
+    step: int
+    health_before: float
+    health_after: float
+    cause: str
+    details: Dict[str, Any]
+
+
+@dataclass
+class ActionStats:
+    """Statistics about a specific action type.
+
+    Attributes
+    ----------
+    count : int
+        Number of times this action was taken
+    average_reward : float
+        Mean reward received for this action
+    total_actions : int
+        Total number of actions taken by the agent
+    action_diversity : int
+        Number of unique action types used
+    """
+
+    count: int
+    average_reward: float
+    total_actions: int
+    action_diversity: int
+
+
+@dataclass
+class AgentActionHistory:
+    """Complete action history for an agent.
+
+    Attributes
+    ----------
+    actions : Dict[str, ActionStats]
+        Dictionary mapping action types to their statistics
+    """
+
+    actions: Dict[str, ActionStats]

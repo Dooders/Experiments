@@ -11,37 +11,45 @@ from database.data_types import (
     PopulationVariance,
 )
 from database.models import AgentState, SimulationStep
+from database.retrievers import BaseRetriever
 from database.utilities import execute_query
 
 
-class PopulationStatisticsRetriever:
-    """Handles retrieval and analysis of population statistics.
+class PopulationStatisticsRetriever(BaseRetriever):
+    """Retrieves and analyzes population statistics from simulation data.
 
-    This class encapsulates methods for analyzing population dynamics, resource utilization,
-    and agent distributions across the simulation steps. It provides comprehensive statistics
-    about agent populations, resource consumption, and survival metrics.
+    Provides comprehensive analysis of population dynamics, resource utilization,
+    and agent distributions across simulation steps. Calculates statistics about
+    agent populations, resource consumption, and survival metrics.
 
     Methods
     -------
-    population_data()
-        Retrieves raw population and resource data for each simulation step
-    basic_population_statistics(pop_data)
-        Calculates fundamental population statistics from raw data
-    agent_type_distribution()
-        Analyzes the distribution of different agent types
-    execute()
-        Generates comprehensive population statistics and metrics
+    population_data() -> List[Population]
+        Retrieves population and resource data for each step
+    basic_population_statistics(pop_data: Optional[List[Population]]) -> BasicPopulationStatistics
+        Calculates fundamental population statistics
+    agent_type_distribution() -> AgentDistribution
+        Analyzes distribution of agent types across steps
+    population_momentum() -> float
+        Calculates population sustainability metric
+    population_metrics() -> PopulationMetrics
+        Calculates total agents and type distribution
+    population_variance(basic_stats: Optional[BasicPopulationStatistics]) -> PopulationVariance
+        Calculates statistical variance measures
+    execute() -> PopulationStatistics
+        Generates comprehensive population analysis
     """
 
-    def __init__(self, database):
-        """Initialize with database connection.
+    def _execute(self) -> PopulationStatistics:
+        """Execute comprehensive population statistics calculation.
 
-        Parameters
-        ----------
-        database : SimulationDatabase
-            Database instance to use for queries
+        Returns
+        -------
+        PopulationStatistics
+            Complete population analysis including metrics, variance,
+            momentum, and agent distribution.
         """
-        self.db = database
+        return self.execute()  # Calls the existing execute method
 
     @execute_query
     def population_data(self, session) -> List[Population]:
@@ -127,9 +135,12 @@ class PopulationStatisticsRetriever:
             "avg_population": sum(p.total_agents for p in pop_data) / len(pop_data),
             "death_step": max(p.step_number for p in pop_data),
             "peak_population": max(p.total_agents for p in pop_data),
+            "lowest_population": min(p.total_agents for p in pop_data),
             "resources_consumed": sum(p.resources_consumed for p in pop_data),
             "resources_available": sum(p.total_resources for p in pop_data),
             "sum_squared": sum(p.total_agents * p.total_agents for p in pop_data),
+            "initial_population": pop_data[0].total_agents,
+            "final_population": pop_data[-1].total_agents,
             "step_count": len(pop_data),
         }
 
@@ -137,9 +148,12 @@ class PopulationStatisticsRetriever:
             avg_population=float(stats["avg_population"] or 0),
             death_step=int(stats["death_step"] or 0),
             peak_population=int(stats["peak_population"] or 0),
+            lowest_population=int(stats["lowest_population"] or 0),
             resources_consumed=float(stats["resources_consumed"] or 0),
             resources_available=float(stats["resources_available"] or 0),
             sum_squared=float(stats["sum_squared"] or 0),
+            initial_population=int(stats["initial_population"] or 0),
+            final_population=int(stats["final_population"] or 0),
             step_count=int(stats["step_count"] or 1),
         )
 
@@ -174,80 +188,153 @@ class PopulationStatisticsRetriever:
         )
 
     @execute_query
-    def execute(self, session) -> PopulationStatistics:
-        """Calculate comprehensive population statistics for the entire simulation.
-
-        Combines data from multiple analyses to create a complete statistical overview
-        of the simulation's population dynamics, resource usage, and agent behavior.
+    def population_momentum(self, session) -> float:
+        """Population momentum is a metric that captures the relationship between
+        population growth and simulation duration, calculated as:
+        (final_step * max_population) / initial_population
 
         Returns
         -------
-        PopulationStatistics
-            Comprehensive statistics containing:
-            - basic_stats : BasicPopulationStatistics
-                Fundamental population metrics (avg, peak, steps, etc.)
-            - resource_metrics : ResourceMetrics
-                Resource consumption and utilization statistics
-            - population_variance : PopulationVariance
-                Statistical measures of population variation
-            - agent_distribution : AgentDistribution
-                Distribution of different agent types
-            - survival_metrics : SurvivalMetrics
-                Population survival rates and average lifespans
+        float
+            Population momentum metric. Returns 0.0 if initial population is 0.
 
         Notes
         -----
-        This method aggregates data from multiple queries and calculations to provide
-        a complete statistical analysis of the simulation. If no data is available,
-        it returns a PopulationStatistics object with zero values.
+        This metric helps understand how well the population sustained and grew
+        over time. Higher values indicate better population sustainability.
         """
-        # Get base population data
+        # Get initial population
+        initial = (
+            session.query(SimulationStep.total_agents)
+            .order_by(SimulationStep.step_number)
+            .first()
+        )
+
+        # Get max population and final step
+        stats = session.query(
+            func.max(SimulationStep.total_agents).label("max_count"),
+            func.max(SimulationStep.step_number).label("final_step"),
+        ).first()
+
+        if initial and stats and initial[0] > 0:
+            return (float(stats[1]) * float(stats[0])) / float(initial[0])
+
+        return 0.0
+
+    @execute_query
+    def population_metrics(self, session) -> PopulationMetrics:
+        """Calculate population metrics including total agents and distribution by type.
+
+        Returns
+        -------
+        PopulationMetrics
+            Object containing:
+            - total_agents : int
+                Peak population reached during simulation
+            - system_agents : int
+                Number of system-controlled agents
+            - independent_agents : int
+                Number of independently operating agents
+            - control_agents : int
+                Number of control group agents
+
+        Notes
+        -----
+        This method combines data from basic population statistics and agent type
+        distribution to provide a complete picture of population composition.
+        """
+        # Get basic statistics for peak population
         pop_data = self.population_data()
-
-        # Get basic statistics
         basic_stats = self.basic_population_statistics(pop_data)
-        if not basic_stats:
-            return PopulationStatistics(
-                population_metrics=PopulationMetrics(
-                    total_agents=0,
-                    system_agents=0,
-                    independent_agents=0,
-                    control_agents=0,
-                ),
-                population_variance=PopulationVariance(
-                    variance=0.0, standard_deviation=0.0, coefficient_variation=0.0
-                ),
-            )
-
-        # Calculate variance statistics
-        variance = (basic_stats.sum_squared / basic_stats.step_count) - (
-            basic_stats.avg_population**2
-        )
-        std_dev = variance**0.5
-        cv = (
-            std_dev / basic_stats.avg_population
-            if basic_stats.avg_population > 0
-            else 0
-        )
 
         # Get agent type distribution
         type_stats = self.agent_type_distribution()
 
-        # Create PopulationMetrics
-        population_metrics = PopulationMetrics(
+        return PopulationMetrics(
             total_agents=basic_stats.peak_population,
             system_agents=int(type_stats.system_agents),
             independent_agents=int(type_stats.independent_agents),
             control_agents=int(type_stats.control_agents),
         )
 
-        # Create PopulationVariance
-        population_variance = PopulationVariance(
+    def population_variance(
+        self, basic_stats: Optional[BasicPopulationStatistics] = None
+    ) -> PopulationVariance:
+        """Calculate statistical measures of population variation.
+
+        Parameters
+        ----------
+        basic_stats : Optional[BasicPopulationStatistics]
+            Pre-calculated basic statistics. If None, will be calculated.
+
+        Returns
+        -------
+        PopulationVariance
+            Object containing:
+            - variance : float
+                Statistical variance of population size
+            - standard_deviation : float
+                Standard deviation of population size
+            - coefficient_variation : float
+                Coefficient of variation (std_dev / mean)
+
+        Notes
+        -----
+        Variance calculations use the formula:
+        variance = (sum_squared / n) - (mean)^2
+        where sum_squared is the sum of squared population counts
+        and n is the number of steps.
+        """
+        if not basic_stats:
+            pop_data = self.population_data()
+            basic_stats = self.basic_population_statistics(pop_data)
+
+        # Calculate variance using the sum of squares method
+        variance = (basic_stats.sum_squared / basic_stats.step_count) - (
+            basic_stats.avg_population**2
+        )
+
+        # Calculate standard deviation
+        std_dev = variance**0.5
+
+        # Calculate coefficient of variation
+        cv = (
+            std_dev / basic_stats.avg_population
+            if basic_stats.avg_population > 0
+            else 0
+        )
+
+        return PopulationVariance(
             variance=variance, standard_deviation=std_dev, coefficient_variation=cv
         )
 
+    @execute_query
+    def execute(self, session) -> PopulationStatistics:
+        """Execute comprehensive population statistics calculation.
+
+        Analyzes population data to generate complete statistical overview
+        including population metrics, variance measures, momentum, and
+        agent type distribution.
+
+        Returns
+        -------
+        PopulationStatistics
+            Complete analysis containing:
+            - population_metrics: Total agents and distribution by type
+            - population_variance: Statistical variation measures
+            - population_momentum: Population sustainability metric
+            - agent_distribution: Distribution of agent types
+        """
+        # Get base population data
+        pop_data = self.population_data()
+
+        # Get basic statistics
+        basic_stats = self.basic_population_statistics(pop_data)
+
         # Return PopulationStatistics with the correct structure
         return PopulationStatistics(
-            population_metrics=population_metrics,
-            population_variance=population_variance,
+            population_metrics=self.population_metrics(),
+            population_variance=self.population_variance(basic_stats),
+            population_momentum=self.population_momentum(),
+            agent_distribution=self.agent_type_distribution(),
         )
