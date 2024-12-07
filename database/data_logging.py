@@ -27,6 +27,7 @@ from .models import (
     ResourceState,
     SimulationStep,
 )
+from .unit_of_work import UnitOfWork
 
 logger = logging.getLogger(__name__)
 
@@ -169,11 +170,8 @@ class DataLogger:
 
         buffer_copy = list(self._action_buffer)
         try:
-
-            def _insert(session):
-                session.bulk_insert_mappings(AgentAction, buffer_copy)
-
-            self.db._execute_in_transaction(_insert)
+            with UnitOfWork(self.db.Session) as uow:
+                uow.session.bulk_insert_mappings(AgentAction, buffer_copy)
             self._action_buffer.clear()
         except SQLAlchemyError as e:
             logger.error(f"Failed to flush action buffer: {e}")
@@ -186,11 +184,8 @@ class DataLogger:
 
         buffer_copy = list(self._learning_exp_buffer)
         try:
-
-            def _insert(session):
-                session.bulk_insert_mappings(LearningExperience, buffer_copy)
-
-            self.db._execute_in_transaction(_insert)
+            with UnitOfWork(self.db.Session) as uow:
+                uow.session.bulk_insert_mappings(LearningExperience, buffer_copy)
             self._learning_exp_buffer.clear()
         except SQLAlchemyError as e:
             logger.error(f"Failed to flush learning buffer: {e}")
@@ -203,11 +198,8 @@ class DataLogger:
 
         buffer_copy = list(self._health_incident_buffer)
         try:
-
-            def _insert(session):
-                session.bulk_insert_mappings(HealthIncident, buffer_copy)
-
-            self.db._execute_in_transaction(_insert)
+            with UnitOfWork(self.db.Session) as uow:
+                uow.session.bulk_insert_mappings(HealthIncident, buffer_copy)
             self._health_incident_buffer.clear()
         except SQLAlchemyError as e:
             logger.error(f"Failed to flush health buffer: {e}")
@@ -273,8 +265,7 @@ class DataLogger:
             If database operation fails
         """
         try:
-
-            def _batch_insert(session):
+            with UnitOfWork(self.db.Session) as uow:
                 mappings = [
                     {
                         "agent_id": data["agent_id"],
@@ -291,9 +282,7 @@ class DataLogger:
                     }
                     for data in agent_data_list
                 ]
-                session.bulk_insert_mappings(Agent, mappings)
-
-            self.db._execute_in_transaction(_batch_insert)
+                uow.session.bulk_insert_mappings(Agent, mappings)
 
         except (ValueError, TypeError) as e:
             logger.error(f"Invalid agent data format: {e}")
@@ -405,8 +394,7 @@ class DataLogger:
             If input data is malformed or invalid
         """
         try:
-
-            def _insert(session):
+            with UnitOfWork(self.db.Session) as uow:
                 # Ensure resources_consumed has a default value if not provided
                 if "resources_consumed" not in metrics:
                     metrics["resources_consumed"] = 0.0
@@ -429,7 +417,7 @@ class DataLogger:
                         }
                         for state in agent_states
                     ]
-                    session.bulk_insert_mappings(AgentState, agent_state_mappings)
+                    uow.session.bulk_insert_mappings(AgentState, agent_state_mappings)
 
                 # Bulk insert resource states
                 if resource_states:
@@ -443,13 +431,11 @@ class DataLogger:
                         }
                         for state in resource_states
                     ]
-                    session.bulk_insert_mappings(ResourceState, resource_state_mappings)
+                    uow.session.bulk_insert_mappings(ResourceState, resource_state_mappings)
 
                 # Insert metrics
                 simulation_step = SimulationStep(step_number=step_number, **metrics)
-                session.add(simulation_step)
-
-            self.db._execute_in_transaction(_insert)
+                uow.session.add(simulation_step)
 
         except (ValueError, TypeError) as e:
             logger.error(f"Invalid data format in log_step: {e}")
@@ -490,11 +476,8 @@ class DataLogger:
                 "position_x": position[0],
                 "position_y": position[1],
             }
-
-            def _insert(session):
-                session.add(ResourceState(**resource_data))
-
-            self.db._execute_in_transaction(_insert)
+            with UnitOfWork(self.db.Session) as uow:
+                uow.session.add(ResourceState(**resource_data))
 
         except (ValueError, TypeError) as e:
             logger.error(f"Invalid resource data format: {e}")

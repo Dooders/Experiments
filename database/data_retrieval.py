@@ -80,6 +80,8 @@ from .data_types import (
     TimePattern,
 )
 from .models import Agent, AgentAction, AgentState, HealthIncident, SimulationStep
+from .services.agent_service import AgentService
+from .unit_of_work import UnitOfWork
 
 logger = logging.getLogger(__name__)
 
