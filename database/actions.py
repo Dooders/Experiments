@@ -83,8 +83,8 @@ class ActionsRetriever(BaseRetriever):
 
     Methods
     -------
-    summary(agent_id: Optional[int] = None) -> List[ActionMetrics]
-        Calculate basic metrics for agent actions
+    get_agent_stats(agent_id: Optional[int] = None) -> List[ActionStats]
+        Get comprehensive statistics for each action type
     interactions() -> Dict[str, InteractionStats]
         Analyze agent interaction patterns and outcomes
     temporal_patterns() -> Dict[str, TimePattern]
@@ -113,14 +113,15 @@ class ActionsRetriever(BaseRetriever):
     >>> patterns = retriever.decision_patterns()
     >>> learning = retriever.get_learning_curve()
     """
-
+    
     @execute_query
-    def summary(self, session, agent_id: Optional[int] = None) -> List[ActionMetrics]:
-        #! Exactly the same as ActionStats from get_action_stats method
-        """Calculate basic metrics for agent actions.
+    def get_action_stats(
+        self, session, agent_id: Optional[int] = None
+    ) -> List[ActionStats]:
+        """Get comprehensive statistics for each action type.
 
-        Computes fundamental statistics about agent actions, including counts,
-        rewards, and basic performance metrics.
+        Retrieves and analyzes usage patterns and reward metrics for all action types,
+        optionally filtered by a specific agent.
 
         Parameters
         ----------
@@ -129,34 +130,46 @@ class ActionsRetriever(BaseRetriever):
 
         Returns
         -------
-        List[ActionMetrics]
-            List of metrics for each action type, containing:
-            - action_type: The type of action
-            - decision_count: Number of times action was taken
-            - avg_reward: Average reward received
-            - min_reward: Minimum reward received
-            - max_reward: Maximum reward received
+        List[ActionStats]
+            List of statistics for each action type, containing:
+            - action_type : str
+                The type of action performed
+            - count : int
+                Number of times this action was taken
+            - frequency : float
+                Proportion of total actions (0.0 to 1.0)
+            - avg_reward : float
+                Average reward received for this action
+            - min_reward : float
+                Minimum reward received for this action
+            - max_reward : float
+                Maximum reward received for this action
 
         Examples
         --------
-        >>> metrics = retriever.summary(agent_id=1)
-        >>> for m in metrics:
-        ...     print(f"{m.action_type}:")
-        ...     print(f"  Decisions: {m.decision_count}")
-        ...     print(f"  Rewards: {m.avg_reward:.2f} (min: {m.min_reward:.2f}, max: {m.max_reward:.2f})")
+        >>> stats = retriever.get_action_stats(agent_id=1)
+        >>> for stat in stats:
+        ...     print(f"{stat.action_type}:")
+        ...     print(f"  Count: {stat.count} ({stat.frequency:.1%})")
+        ...     print(f"  Rewards: {stat.avg_reward:.2f} (min: {stat.min_reward:.2f}, max: {stat.max_reward:.2f})")
         attack:
-          Decisions: 245
+          Count: 245 (32.5%)
           Rewards: 1.85 (min: -0.50, max: 4.25)
         defend:
-          Decisions: 180
+          Count: 180 (23.9%)
           Rewards: 0.95 (min: -0.25, max: 2.75)
         explore:
-          Decisions: 320
+          Count: 320 (42.4%)
           Rewards: 1.45 (min: 0.00, max: 3.50)
+
+        Notes
+        -----
+        Frequencies sum to 1.0 across all action types. Reward values of 0.0 indicate
+        no rewards were recorded for that action type.
         """
         query = session.query(
             AgentAction.action_type,
-            func.count().label("decision_count"),
+            func.count().label("count"),
             func.avg(AgentAction.reward).label("avg_reward"),
             func.min(AgentAction.reward).label("min_reward"),
             func.max(AgentAction.reward).label("max_reward"),
@@ -167,15 +180,18 @@ class ActionsRetriever(BaseRetriever):
 
         results = query.group_by(AgentAction.action_type).all()
 
+        total_actions = sum(r[1] for r in results)
+
         return [
-            ActionMetrics(
-                action_type=result[0],
-                decision_count=int(result[1]),
-                avg_reward=float(result[2] or 0),
-                min_reward=float(result[3] or 0),
-                max_reward=float(result[4] or 0),
+            ActionStats(
+                action_type=r[0],
+                count=r[1],
+                frequency=r[1] / total_actions if total_actions > 0 else 0,
+                avg_reward=float(r[2] or 0),
+                min_reward=float(r[3] or 0),
+                max_reward=float(r[4] or 0),
             )
-            for result in results
+            for r in results
         ]
 
     @execute_query
@@ -988,93 +1004,6 @@ class ActionsRetriever(BaseRetriever):
             "reward_analysis": patterns.decision_summary,
             "resource_impact": patterns.resource_impact,
         }
-
-    @execute_query
-    def get_action_stats(
-        self, session, agent_id: Optional[int] = None
-    ) -> List[ActionStats]:
-        #! same as summary???
-        #! maybe add a scope parameter to get the different perspectives
-        """Get comprehensive statistics for each action type.
-
-        Retrieves and analyzes usage patterns and reward metrics for all action types,
-        optionally filtered by a specific agent.
-
-        Parameters
-        ----------
-        agent_id : Optional[int]
-            Specific agent ID to analyze. If None, analyzes all agents.
-
-        Returns
-        -------
-        List[ActionStats]
-            List of statistics for each action type, containing:
-            - action_type : str
-                The type of action performed
-            - count : int
-                Number of times this action was taken
-            - frequency : float
-                Proportion of total actions (0.0 to 1.0)
-            - avg_reward : float
-                Average reward received for this action
-            - min_reward : float
-                Minimum reward received for this action
-            - max_reward : float
-                Maximum reward received for this action
-
-        Examples
-        --------
-        >>> stats = retriever.get_action_stats(agent_id=1)
-        >>> for stat in stats:
-        ...     print(f"{stat.action_type}:")
-        ...     print(f"  Count: {stat.count} ({stat.frequency:.1%})")
-        ...     print(f"  Rewards: {stat.avg_reward:.2f} (min: {stat.min_reward:.2f}, max: {stat.max_reward:.2f})")
-        attack:
-          Count: 245 (32.5%)
-          Rewards: 1.85 (min: -0.50, max: 4.25)
-        defend:
-          Count: 180 (23.9%)
-          Rewards: 0.95 (min: -0.25, max: 2.75)
-        explore:
-          Count: 320 (42.4%)
-          Rewards: 1.45 (min: 0.00, max: 3.50)
-
-        Notes
-        -----
-        Frequencies sum to 1.0 across all action types. Reward values of 0.0 indicate
-        no rewards were recorded for that action type.
-
-        See Also
-        --------
-        summary : Get basic metrics for all actions
-        decision_patterns : Get comprehensive decision-making analysis
-        """
-        query = session.query(
-            AgentAction.action_type,
-            func.count().label("count"),
-            func.avg(AgentAction.reward).label("avg_reward"),
-            func.min(AgentAction.reward).label("min_reward"),
-            func.max(AgentAction.reward).label("max_reward"),
-        )
-
-        if agent_id is not None:
-            query = query.filter(AgentAction.agent_id == agent_id)
-
-        results = query.group_by(AgentAction.action_type).all()
-
-        total_actions = sum(r[1] for r in results)
-
-        return [
-            ActionStats(
-                action_type=r[0],
-                count=r[1],
-                frequency=r[1] / total_actions if total_actions > 0 else 0,
-                avg_reward=float(r[2] or 0),
-                min_reward=float(r[3] or 0),
-                max_reward=float(r[4] or 0),
-            )
-            for r in results
-        ]
 
     @execute_query
     def get_action_analysis(self, session, action_type: str) -> ActionAnalysis:
