@@ -7,6 +7,7 @@ The ActionsRetriever class handles action-specific database operations with
 optimized queries and efficient data aggregation methods.
 """
 
+import json
 from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy import case, distinct, func
@@ -19,6 +20,7 @@ from database.data_types import (
     InteractionStats,
     ResourceImpact,
     SequencePattern,
+    StepActionData,
     TimePattern,
 )
 from database.models import Agent, AgentAction
@@ -210,6 +212,9 @@ class ActionsRetriever(BaseRetriever):
     ) -> DecisionPatterns:
         """Analyze comprehensive decision-making patterns.
 
+        Performs a detailed analysis of agent decision-making patterns, including action
+        frequencies, rewards, sequences, resource impacts, and temporal trends.
+
         Parameters
         ----------
         agent_id : Optional[int]
@@ -218,7 +223,43 @@ class ActionsRetriever(BaseRetriever):
         Returns
         -------
         DecisionPatterns
-            Comprehensive decision pattern analysis
+            Comprehensive decision pattern analysis with the following components:
+            
+            decision_patterns : Dict[str, DecisionPatternStats]
+                Statistics for each action type, containing:
+                - count: Total number of times the action was taken
+                - frequency: Proportion of times this action was chosen
+                - reward_stats: Dict containing average/min/max rewards
+            
+            sequence_analysis : Dict[str, SequencePattern]
+                Analysis of action sequences (e.g., "action1->action2"), containing:
+                - count: Number of times this sequence occurred
+                - probability: Likelihood of the second action following the first
+            
+            resource_impact : Dict[str, ResourceImpact]
+                Resource effects for each action type, containing:
+                - avg_resources_before: Average resources before action
+                - avg_resource_change: Average change in resources
+                - resource_efficiency: Resource change per action
+            
+            temporal_patterns : Dict[str, TimePattern]
+                Time-based analysis for each action, containing:
+                - time_distribution: List of action counts per time period
+                - reward_progression: List of average rewards per time period
+            
+            interaction_analysis : Dict[str, InteractionStats]
+                Statistics about agent interactions, containing:
+                - interaction_rate: Proportion of actions involving other agents
+                - solo_performance: Average reward for solo actions
+                - interaction_performance: Average reward for interactive actions
+            
+            decision_summary : DecisionSummary
+                Overall decision-making metrics, containing:
+                - total_decisions: Total number of decisions made
+                - unique_actions: Number of different action types used
+                - most_frequent: Most commonly chosen action
+                - most_rewarding: Action with highest average reward
+                - action_diversity: Shannon entropy of action distribution
         """
         # Get basic action metrics
         metrics = self.action_metrics(agent_id)
@@ -276,6 +317,173 @@ class ActionsRetriever(BaseRetriever):
             temporal_patterns=temporal_patterns,
             interaction_analysis=interaction_stats,
             decision_summary=summary,
+        )
+
+    @execute_query
+    def step_actions(self, session, step_number: int) -> StepActionData:
+        """Get all actions performed during a specific simulation step.
+
+        Parameters
+        ----------
+        step_number : int
+            The simulation step number to query
+
+        Returns
+        -------
+        StepActionData
+            Data containing:
+            - step_summary: Dict[str, int]
+                - total_actions: Total number of actions
+                - unique_agents: Number of unique agents
+                - action_types: Number of unique action types
+                - total_interactions: Total number of interactions
+                - total_reward: Total reward received
+            - action_statistics: Dict[str, Dict[str, float]]
+                Per action type statistics including:
+                - count: Number of occurrences
+                - frequency: Frequency of the action type
+                - avg_reward: Average reward for the action
+                - total_reward: Total reward for the action
+            - resource_metrics: Dict[str, float]
+                - net_resource_change: Net resource change
+                - average_resource_change: Average resource change
+                - resource_transactions: Number of resource transactions
+            - interaction_network: Dict[str, Any]
+                - interactions: List[Dict[str, Any]]
+                    List of interactions, each containing:
+                    - source: Source agent ID
+                    - target: Target agent ID
+                    - action_type: Action type
+                    - reward: Reward received
+                - unique_interacting_agents: Number of unique interacting agents
+            - performance_metrics: Dict[str, float]
+                - success_rate: Success rate of actions
+                - average_reward: Average reward per action
+                - action_efficiency: Efficiency of actions
+            - detailed_actions: List[Dict[str, Any]]
+                Detailed list of all actions
+        """
+        # Get all actions for the step
+        actions = (
+            session.query(AgentAction)
+            .filter(AgentAction.step_number == step_number)
+            .order_by(AgentAction.agent_id)
+            .all()
+        )
+
+        if not actions:
+            return {}
+
+        # Get action type statistics
+        action_stats = (
+            session.query(
+                AgentAction.action_type,
+                func.count().label("count"),
+                func.avg(AgentAction.reward).label("avg_reward"),
+                func.sum(AgentAction.reward).label("total_reward"),
+            )
+            .filter(AgentAction.step_number == step_number)
+            .group_by(AgentAction.action_type)
+            .all()
+        )
+
+        # Calculate resource changes
+        resource_changes = (
+            session.query(
+                func.sum(
+                    AgentAction.resources_after - AgentAction.resources_before
+                ).label("net_change"),
+                func.avg(
+                    AgentAction.resources_after - AgentAction.resources_before
+                ).label("avg_change"),
+            )
+            .filter(
+                AgentAction.step_number == step_number,
+                AgentAction.resources_before.isnot(None),
+                AgentAction.resources_after.isnot(None),
+            )
+            .first()
+        )
+
+        # Build interaction network
+        interactions = [
+            action for action in actions if action.action_target_id is not None
+        ]
+
+        # Format detailed action list with state references
+        action_list = [
+            {
+                "agent_id": action.agent_id,
+                "action_type": action.action_type,
+                "action_target_id": action.action_target_id,
+                "state_before_id": action.state_before_id,  # Reference to state table
+                "state_after_id": action.state_after_id,    # Reference to state table
+                "resources_before": action.resources_before,
+                "resources_after": action.resources_after,
+                "reward": action.reward,
+                "details": json.loads(action.details) if action.details else None,
+            }
+            for action in actions
+        ]
+
+        return StepActionData(
+            step_summary={
+                "total_actions": len(actions),
+                "unique_agents": len(set(a.agent_id for a in actions)),
+                "action_types": len(set(a.action_type for a in actions)),
+                "total_interactions": len(interactions),
+                "total_reward": sum(
+                    a.reward for a in actions if a.reward is not None
+                ),
+            },
+            action_statistics={
+                action_type: {
+                    "count": count,
+                    "frequency": count / len(actions),
+                    "avg_reward": float(avg_reward or 0),
+                    "total_reward": float(total_reward or 0),
+                }
+                for action_type, count, avg_reward, total_reward in action_stats
+            },
+            resource_metrics={
+                "net_resource_change": float(resource_changes[0] or 0),
+                "average_resource_change": float(resource_changes[1] or 0),
+                "resource_transactions": len(
+                    [a for a in actions if a.resources_before != a.resources_after]
+                ),
+            },
+            interaction_network={
+                "interactions": [
+                    {
+                        "source": action.agent_id,
+                        "target": action.action_target_id,
+                        "action_type": action.action_type,
+                        "reward": action.reward,
+                    }
+                    for action in interactions
+                ],
+                "unique_interacting_agents": len(
+                    set(
+                        [a.agent_id for a in interactions]
+                        + [a.action_target_id for a in interactions]
+                    )
+                ),
+            },
+            performance_metrics={
+                "success_rate": len(
+                    [a for a in actions if a.reward and a.reward > 0]
+                )
+                / len(actions),
+                "average_reward": sum(
+                    a.reward for a in actions if a.reward is not None
+                )
+                / len(actions),
+                "action_efficiency": len(
+                    [a for a in actions if a.position_before != a.position_after]
+                )
+                / len(actions),
+            },
+            detailed_actions=action_list,
         )
 
     def _calculate_sequence_patterns(

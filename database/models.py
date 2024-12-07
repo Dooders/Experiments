@@ -388,10 +388,10 @@ class AgentAction(Base):
         Type of action performed (e.g., 'move', 'attack', 'share')
     action_target_id : Optional[int]
         ID of the target agent, if the action involved another agent
-    position_before : Tuple[int, int]
-        Agent's position before the action
-    position_after : Tuple[int, int]
-        Agent's position after the action
+    state_before_id : Optional[int]
+        Reference to agent's state before the action
+    state_after_id : Optional[int]
+        Reference to agent's state after the action
     resources_before : float
         Agent's resource level before the action
     resources_after : float
@@ -407,6 +407,10 @@ class AgentAction(Base):
         The agent that performed the action
     target : Optional[Agent]
         The target agent of the action, if any
+    state_before : Optional[AgentState]
+        The agent's state before the action
+    state_after : Optional[AgentState]
+        The agent's state after the action
     """
 
     __tablename__ = "agent_actions"
@@ -421,8 +425,8 @@ class AgentAction(Base):
     agent_id = Column(Integer, ForeignKey("agents.agent_id"), nullable=False)
     action_type = Column(String(20), nullable=False)
     action_target_id = Column(Integer, ForeignKey("agents.agent_id"), nullable=True)
-    position_before = Column(String, nullable=True)
-    position_after = Column(String, nullable=True)
+    state_before_id = Column(Integer, ForeignKey("agent_states.id"), nullable=True)
+    state_after_id = Column(Integer, ForeignKey("agent_states.id"), nullable=True)
     resources_before = Column(Float(precision=6), nullable=True)
     resources_after = Column(Float(precision=6), nullable=True)
     reward = Column(Float(precision=6), nullable=True)
@@ -432,16 +436,21 @@ class AgentAction(Base):
     target = relationship(
         "Agent", foreign_keys=[action_target_id], backref="targeted_by"
     )
+    state_before = relationship("AgentState", foreign_keys=[state_before_id])
+    state_after = relationship("AgentState", foreign_keys=[state_after_id])
 
     @property
     def position_before_array(self):
         """Convert stored JSON string back to array/list"""
-        return loads(self.position_before) if self.position_before else None
+        if self.state_before:
+            return [self.state_before.position_x, self.state_before.position_y]
+        return None
 
     @position_before_array.setter
     def position_before_array(self, value):
         """Convert array/list to JSON string for storage"""
-        self.position_before = dumps(value) if value is not None else None
+        # This property is now deprecated as we use state references
+        logger.warning("position_before_array setter is deprecated, use state references instead")
 
 
 class LearningExperience(Base):
