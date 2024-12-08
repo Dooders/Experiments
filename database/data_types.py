@@ -808,18 +808,20 @@ class InteractionStats:
 
 @dataclass
 class ResourceImpact:
-    """Impact of an action on resources.
+    """Resource impact statistics for an action type.
 
     Attributes
     ----------
+    action_type : str
+        The type of action being analyzed
     avg_resources_before : float
-        Average resources before taking the action
+        Mean resources available before action execution
     avg_resource_change : float
-        Average change in resources from the action
+        Average change in resources from action execution
     resource_efficiency : float
-        Efficiency of resource usage for this action
+        Resource change per action execution (change/count)
     """
-
+    action_type: str
     avg_resources_before: float
     avg_resource_change: float
     resource_efficiency: float
@@ -1043,25 +1045,6 @@ class SequencePattern:
 
     count: int
     probability: float
-
-
-@dataclass
-class ResourceImpact:
-    """Impact of an action on resources.
-
-    Attributes
-    ----------
-    avg_resources_before : float
-        Average resources before taking the action
-    avg_resource_change : float
-        Average change in resources from the action
-    resource_efficiency : float
-        Efficiency of resource usage for this action
-    """
-
-    avg_resources_before: float
-    avg_resource_change: float
-    resource_efficiency: float
 
 
 @dataclass
