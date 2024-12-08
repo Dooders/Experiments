@@ -135,11 +135,18 @@ class SimulationResults:
     Attributes
     ----------
     agent_states : List[Tuple]
-        List of agent state records
+        List of agent state records containing:
+        (step_number, agent_id, agent_type, position_x, position_y,
+         resource_level, current_health, is_defending)
     resource_states : List[Tuple]
-        List of resource state records
+        List of resource state records containing:
+        (resource_id, amount, position_x, position_y)
     simulation_state : Dict[str, Any]
-        Dictionary of simulation metrics for the step
+        Dictionary of simulation metrics for the step including:
+        - total_agents: Total number of agents
+        - total_resources: Total available resources
+        - average_agent_health: Mean health across agents
+        - resource_efficiency: Resource utilization efficiency
     """
 
     agent_states: List[Tuple]
@@ -491,30 +498,208 @@ class AgentDecisionMetrics:
 
 
 @dataclass
+class StepSummary:
+    """Summary statistics for a simulation step.
+
+    Attributes
+    ----------
+    total_actions : int
+        Total number of actions taken in this step
+    unique_agents : int
+        Number of unique agents that took actions
+    action_types : int
+        Number of different action types used
+    total_interactions : int
+        Number of interactions between agents
+    total_reward : float
+        Sum of all rewards received in this step
+    """
+
+    total_actions: int
+    unique_agents: int
+    action_types: int
+    total_interactions: int
+    total_reward: float
+
+
+@dataclass
+class ActionTypeStats:
+    """Statistics for a specific action type in a step.
+
+    Attributes
+    ----------
+    count : int
+        Number of times this action was taken
+    frequency : float
+        Proportion of total actions this type represents
+    avg_reward : float
+        Average reward received for this action type
+    total_reward : float
+        Total reward accumulated for this action type
+    """
+
+    count: int
+    frequency: float
+    avg_reward: float
+    total_reward: float
+
+
+@dataclass
+class ActionMetrics:
+    """Metrics for a specific action type.
+
+    Attributes
+    ----------
+    action_type : str
+        The type of action
+    decision_count : int
+        Number of times this action was taken
+    avg_reward : float
+        Average reward received for this action
+    min_reward : float
+        Minimum reward received for this action
+    max_reward : float
+        Maximum reward received for this action
+    """
+
+    action_type: str
+    decision_count: int
+    avg_reward: float
+    min_reward: float
+    max_reward: float
+
+
+@dataclass
+class DecisionPatternStats:
+    """Statistics for a single decision/action type.
+
+    Attributes
+    ----------
+    count : int
+        Number of times this action was taken
+    frequency : float
+        Frequency of this action relative to total decisions
+    reward_stats : Dict[str, float]
+        Statistics about rewards for this action type including:
+        - average: Mean reward
+        - stddev: Standard deviation of rewards
+        - min: Minimum reward received
+        - max: Maximum reward received
+    """
+
+    count: int
+    frequency: float
+    reward_stats: Dict[str, float]
+
+
+@dataclass
+class DecisionSummary:
+    """Summary statistics about decision making.
+
+    Attributes
+    ----------
+    total_decisions : int
+        Total number of decisions made
+    unique_actions : int
+        Number of unique action types used
+    most_frequent : Optional[str]
+        Most frequently taken action
+    most_rewarding : Optional[str]
+        Action with highest average reward
+    action_diversity : float
+        Shannon entropy of action distribution
+    """
+
+    total_decisions: int
+    unique_actions: int
+    most_frequent: Optional[str]
+    most_rewarding: Optional[str]
+    action_diversity: float
+
+
+@dataclass
+class ResourceMetricsStep:
+    """Resource-related metrics for a simulation step.
+
+    Attributes
+    ----------
+    net_resource_change : float
+        Total change in resources across all agents
+    average_resource_change : float
+        Average change in resources per agent
+    resource_transactions : int
+        Number of actions that affected resources
+    """
+
+    net_resource_change: float
+    average_resource_change: float
+    resource_transactions: int
+
+
+@dataclass
+class InteractionNetwork:
+    """Network of agent interactions in a step.
+
+    Attributes
+    ----------
+    interactions : List[Dict[str, Any]]
+        List of interaction records containing:
+        - source: ID of initiating agent
+        - target: ID of target agent
+        - action_type: Type of interaction
+        - reward: Reward received
+    unique_interacting_agents : int
+        Number of unique agents involved in interactions
+    """
+
+    interactions: List[Dict[str, Any]]
+    unique_interacting_agents: int
+
+
+@dataclass
+class PerformanceMetrics:
+    """Performance metrics for a simulation step.
+
+    Attributes
+    ----------
+    success_rate : float
+        Proportion of actions with positive rewards
+    average_reward : float
+        Mean reward across all actions
+    action_efficiency : float
+        Proportion of actions that changed agent state
+    """
+
+    success_rate: float
+    average_reward: float
+    action_efficiency: float
+
+
+@dataclass
 class StepActionData:
     """Data about actions in a specific simulation step.
 
     Attributes
     ----------
-    step_summary : Dict[str, int]
+    step_summary : StepSummary
         Summary statistics for the step
-    action_statistics : Dict[str, Dict[str, float]]
+    action_statistics : Dict[str, ActionTypeStats]
         Statistics about different action types
-    resource_metrics : Dict[str, float]
+    resource_metrics : ResourceMetricsStep
         Resource-related metrics
-    interaction_network : Dict[str, Any]
+    interaction_network : InteractionNetwork
         Network of agent interactions
-    performance_metrics : Dict[str, float]
+    performance_metrics : PerformanceMetrics
         Performance-related metrics
     detailed_actions : List[Dict[str, Any]]
         Detailed list of all actions
     """
 
-    step_summary: Dict[str, int]
-    action_statistics: Dict[str, Dict[str, float]]
-    resource_metrics: Dict[str, float]
-    interaction_network: Dict[str, Any]
-    performance_metrics: Dict[str, float]
+    step_summary: StepSummary
+    action_statistics: Dict[str, ActionTypeStats]
+    resource_metrics: ResourceMetricsStep
+    interaction_network: InteractionNetwork
+    performance_metrics: PerformanceMetrics
     detailed_actions: List[Dict[str, Any]]
 
 
@@ -565,6 +750,116 @@ class AgentStatesData:
     """
 
     agent_states: List[Tuple[int, int, str, float, float, float, float, bool]]
+
+
+@dataclass
+class SequencePattern:
+    """Statistics about action sequences.
+
+    Attributes
+    ----------
+    count : int
+        Number of times this sequence occurred
+    probability : float
+        Probability of this sequence occurring
+    """
+
+    count: int
+    probability: float
+
+
+@dataclass
+class TimePattern:
+    """Temporal patterns of an action.
+
+    Attributes
+    ----------
+    time_distribution : List[int]
+        Distribution of action counts over time periods
+    reward_progression : List[float]
+        Progression of rewards over time periods
+    """
+
+    time_distribution: List[int]
+    reward_progression: List[float]
+
+
+@dataclass
+class InteractionStats:
+    """Statistics about agent interactions.
+
+    Attributes
+    ----------
+    action_type : str
+        Type of action analyzed
+    interaction_rate : float
+        Rate of interactive vs solo actions
+    solo_performance : float
+        Average reward for solo actions
+    interaction_performance : float
+        Average reward for interactive actions
+    """
+
+    action_type: str
+    interaction_rate: float
+    solo_performance: float
+    interaction_performance: float
+
+
+@dataclass
+class ResourceImpact:
+    """Impact of an action on resources.
+
+    Attributes
+    ----------
+    avg_resources_before : float
+        Average resources before taking the action
+    avg_resource_change : float
+        Average change in resources from the action
+    resource_efficiency : float
+        Efficiency of resource usage for this action
+    """
+
+    avg_resources_before: float
+    avg_resource_change: float
+    resource_efficiency: float
+
+
+@dataclass
+class AdvancedActionMetrics:
+    """Container for all advanced analysis metrics.
+
+    Attributes
+    ----------
+    exploration_vs_exploitation : Dict[str, Any]
+        Exploration vs exploitation patterns
+    adversarial_interactions : Dict[str, Any]
+        Adversarial interaction patterns
+    collaborative_behaviors : Dict[str, Any]
+        Collaborative behavior patterns
+    learning_curves : Dict[str, Any]
+        Learning curve patterns
+    environmental_impacts : Dict[str, Any]
+        Environmental impact patterns
+    conflict_patterns : Dict[str, Any]
+        Conflict patterns
+    risk_reward_relationships : Dict[str, Any]
+        Risk-reward relationships
+    counterfactual_scenarios : Dict[str, Any]
+        Counterfactual scenario analysis
+    resilience_metrics : Dict[str, Any]
+        Resilience metrics
+    """
+
+    exploration_vs_exploitation: Dict[str, Any]
+    adversarial_interactions: Dict[str, Any]
+    collaborative_behaviors: Dict[str, Any]
+    learning_curves: Dict[str, Any]
+    environmental_impacts: Dict[str, Any]
+    conflict_patterns: Dict[str, Any]
+    risk_reward_relationships: Dict[str, Any]
+    counterfactual_scenarios: Dict[str, Any]
+    resilience_metrics: Dict[str, Any]
 
 
 @dataclass
@@ -691,8 +986,10 @@ class ActionMetrics:
     ----------
     action_type : str
         The type of action
-    decision_count : int
+    count : int
         Number of times this action was taken
+    frequency : float
+        Frequency of this action as a proportion of total actions
     avg_reward : float
         Average reward received for this action
     min_reward : float
@@ -702,7 +999,8 @@ class ActionMetrics:
     """
 
     action_type: str
-    decision_count: int
+    count: int
+    frequency: float
     avg_reward: float
     min_reward: float
     max_reward: float
@@ -788,6 +1086,8 @@ class InteractionStats:
 
     Attributes
     ----------
+    action_type : str
+        Type of action analyzed
     interaction_rate : float
         Rate of interactive vs solo actions
     solo_performance : float
@@ -796,6 +1096,7 @@ class InteractionStats:
         Average reward for interactive actions
     """
 
+    action_type: str
     interaction_rate: float
     solo_performance: float
     interaction_performance: float
@@ -861,13 +1162,13 @@ class ResourceStates:
     Attributes
     ----------
     resource_id : int
-        Unique identifier for the resource
+        Unique identifier for the resource instance
     amount : float
-        Current amount of the resource available
+        Current amount of the resource available (0.0 to max_amount)
     position_x : float
-        X coordinate of resource position in simulation grid
+        X coordinate of resource position in simulation grid (0.0 to grid_width)
     position_y : float
-        Y coordinate of resource position in simulation grid
+        Y coordinate of resource position in simulation grid (0.0 to grid_height)
     """
 
     resource_id: int
@@ -883,21 +1184,21 @@ class AgentStates:
     Attributes
     ----------
     step_number : int
-        Simulation step number
+        Simulation step number when this state was recorded
     agent_id : int
         Unique identifier for the agent
     agent_type : str
-        Type of the agent
+        Type of the agent (system, independent, or control)
     position_x : float
-        X coordinate of the agent's position
+        X coordinate of the agent's position in the simulation grid
     position_y : float
-        Y coordinate of the agent's position
+        Y coordinate of the agent's position in the simulation grid
     resource_level : float
-        Current resource level of the agent
+        Current resource level of the agent (0.0 to max_resources)
     current_health : float
-        Current health level of the agent
+        Current health level of the agent (0.0 to max_health)
     is_defending : bool
-        Whether the agent is defending
+        Whether the agent is currently in a defensive state
     """
 
     step_number: int
@@ -975,11 +1276,11 @@ class Population:
     step_number : int
         Step number in the simulation
     total_agents : int
-        Total number of agents
+        Total number of agents alive at this step
     total_resources : float
-        Total resources available
+        Total resources available across all grid cells
     resources_consumed : float
-        Amount of resources consumed by agents
+        Total amount of resources consumed by agents in this step
     """
 
     step_number: int
@@ -1388,3 +1689,396 @@ class AgentActionHistory:
     """
 
     actions: Dict[str, ActionStats]
+
+
+@dataclass
+class CausalAnalysis:
+    """Measures the causal impact of actions on outcomes.
+
+    Attributes
+    ----------
+    action_type : str
+        Type of action analyzed
+    causal_impact : float
+        Average causal effect of the action
+    delayed_rewards : List[float]
+        Long-term rewards associated with the action
+    state_transition_probs : Dict[str, float]
+        Probabilities of transitioning to states
+    """
+
+    action_type: str
+    causal_impact: float
+    delayed_rewards: List[float]
+    state_transition_probs: Dict[str, float]
+
+
+@dataclass
+class BehaviorClustering:
+    """Clustering agents based on behavior.
+
+    Attributes
+    ----------
+    clusters : Dict[int, List[int]]
+        Cluster ID mapped to agent IDs
+    cluster_centroids : Dict[int, List[float]]
+        Centroids of behavioral clusters
+    cluster_trends : Dict[int, Dict[str, float]]
+        Trends within each cluster
+    """
+
+    clusters: Dict[int, List[int]]
+    cluster_centroids: Dict[int, List[float]]
+    cluster_trends: Dict[int, Dict[str, float]]
+
+
+@dataclass
+class ExplorationExploitation:
+    """Analysis of exploration versus exploitation in decision-making.
+
+    Attributes
+    ----------
+    exploration_rate : float
+        Proportion of unique or novel actions
+    exploitation_rate : float
+        Proportion of repeated successful actions
+    reward_comparison : Dict[str, float]
+        Comparison of rewards between new and known actions
+    """
+
+    exploration_rate: float
+    exploitation_rate: float
+    reward_comparison: Dict[str, float]
+
+
+@dataclass
+class AdversarialInteractionAnalysis:
+    """Performance in competitive scenarios.
+
+    Attributes
+    ----------
+    win_rate : float
+        Proportion of successful adversarial actions
+    damage_efficiency : float
+        Reward or resources gained per adversarial action
+    counter_strategies : Dict[str, float]
+        Actions used to counter adversarial behavior
+    """
+
+    win_rate: float
+    damage_efficiency: float
+    counter_strategies: Dict[str, float]
+
+
+@dataclass
+class CollaborativeInteractionAnalysis:
+    """Performance in cooperative scenarios.
+
+    Attributes
+    ----------
+    collaboration_rate : float
+        Proportion of actions involving cooperation
+    group_reward_impact : float
+        Rewards gained from collaborative actions
+    synergy_metrics : float
+        Efficiency of combined actions by agents
+    """
+
+    collaboration_rate: float
+    group_reward_impact: float
+    synergy_metrics: float
+
+
+@dataclass
+class LearningCurveAnalysis:
+    """Tracking agent improvement over time.
+
+    Attributes
+    ----------
+    action_success_over_time : List[float]
+        Improvement in success rates over time
+    reward_progression : List[float]
+        Changes in average rewards over time
+    mistake_reduction : float
+        Reduction in suboptimal actions over time
+    """
+
+    action_success_over_time: List[float]
+    reward_progression: List[float]
+    mistake_reduction: float
+
+
+@dataclass
+class EnvironmentalImpactAnalysis:
+    """Impact of the environment on actions.
+
+    Attributes
+    ----------
+    environmental_state_impact : Dict[str, float]
+        Correlation between environment and actions
+    adaptive_behavior : Dict[str, float]
+        Changes in actions due to environment shifts
+    spatial_analysis : Dict[str, float]
+        Impact of spatial factors on actions
+    """
+
+    environmental_state_impact: Dict[str, float]
+    adaptive_behavior: Dict[str, float]
+    spatial_analysis: Dict[str, float]
+
+
+@dataclass
+class ConflictAnalysis:
+    """Insights into conflict dynamics.
+
+    Attributes
+    ----------
+    conflict_trigger_actions : Dict[str, float]
+        Actions most likely to lead to conflicts
+    conflict_resolution_actions : Dict[str, float]
+        Actions resolving conflicts
+    conflict_outcome_metrics : Dict[str, float]
+        Success or resource metrics post-conflict
+    """
+
+    conflict_trigger_actions: Dict[str, float]
+    conflict_resolution_actions: Dict[str, float]
+    conflict_outcome_metrics: Dict[str, float]
+
+
+@dataclass
+class RiskRewardAnalysis:
+    """Understanding risk-taking behavior.
+
+    Attributes
+    ----------
+    high_risk_actions : Dict[str, float]
+        Actions with high variability in outcomes
+    low_risk_actions : Dict[str, float]
+        Actions with consistent rewards
+    risk_appetite : float
+        Proportion of risky actions
+    """
+
+    high_risk_actions: Dict[str, float]
+    low_risk_actions: Dict[str, float]
+    risk_appetite: float
+
+
+@dataclass
+class CounterfactualAnalysis:
+    """Simulating alternative outcomes for actions.
+
+    Attributes
+    ----------
+    counterfactual_rewards : Dict[str, float]
+        Estimated rewards for alternative actions
+    missed_opportunities : Dict[str, float]
+        Gains from unused or underused actions
+    strategy_comparison : Dict[str, float]
+        Performance of alternative strategies
+    """
+
+    counterfactual_rewards: Dict[str, float]
+    missed_opportunities: Dict[str, float]
+    strategy_comparison: Dict[str, float]
+
+
+@dataclass
+class ResilienceAnalysis:
+    """Agent adaptability post-failure.
+
+    Attributes
+    ----------
+    recovery_rate : float
+        Time to recover from failure
+    adaptation_rate : float
+        Speed of behavioral adjustment
+    failure_impact : float
+        Resources or rewards lost due to failures
+    """
+
+    recovery_rate: float
+    adaptation_rate: float
+    failure_impact: float
+
+
+@dataclass
+class ActionAnalysis:
+    """Comprehensive analysis for a specific action type.
+
+    Attributes
+    ----------
+    stats : ActionStats
+        Basic action metrics
+    time_pattern : TimePattern
+        Temporal patterns
+    resource_impact : ResourceImpact
+        Resource effects
+    interaction_stats : InteractionStats
+        Interaction performance
+    sequence_patterns : Dict[str, SequencePattern]
+        Action sequence analysis
+    """
+
+    stats: ActionStats
+    time_pattern: TimePattern
+    resource_impact: ResourceImpact
+    interaction_stats: InteractionStats
+    sequence_patterns: Dict[str, SequencePattern]
+
+
+@dataclass
+class AdvancedActionMetrics:
+    """Advanced metrics for action analysis.
+
+    Attributes
+    ----------
+    causal_analysis : CausalAnalysis
+        Causal impact analysis
+    behavior_clustering : BehaviorClustering
+        Behavioral pattern clusters
+    exploration_exploitation : ExplorationExploitation
+        Exploration vs exploitation metrics
+    adversarial_analysis : AdversarialInteractionAnalysis
+        Competitive interaction metrics
+    collaborative_analysis : CollaborativeInteractionAnalysis
+        Cooperative interaction metrics
+    learning_curve : LearningCurveAnalysis
+        Learning progression metrics
+    environmental_impact : EnvironmentalImpactAnalysis
+        Environmental influence metrics
+    conflict_analysis : ConflictAnalysis
+        Conflict pattern metrics
+    risk_reward : RiskRewardAnalysis
+        Risk-taking behavior metrics
+    counterfactual : CounterfactualAnalysis
+        Alternative outcome analysis
+    resilience : ResilienceAnalysis
+        Failure recovery metrics
+    """
+
+    causal_analysis: CausalAnalysis
+    behavior_clustering: BehaviorClustering
+    exploration_exploitation: ExplorationExploitation
+    adversarial_analysis: AdversarialInteractionAnalysis
+    collaborative_analysis: CollaborativeInteractionAnalysis
+    learning_curve: LearningCurveAnalysis
+    environmental_impact: EnvironmentalImpactAnalysis
+    conflict_analysis: ConflictAnalysis
+    risk_reward: RiskRewardAnalysis
+    counterfactual: CounterfactualAnalysis
+    resilience: ResilienceAnalysis
+
+
+@dataclass
+class ActionSummary:
+    """Summary of an action's overall performance.
+
+    Attributes
+    ----------
+    total_executions : int
+        Total number of times action was executed
+    success_rate : float
+        Proportion of successful executions
+    average_impact : Dict[str, float]
+        Average impact on various metrics
+    context_effectiveness : Dict[str, float]
+        Effectiveness in different contexts
+    """
+
+    total_executions: int
+    success_rate: float
+    average_impact: Dict[str, float]
+    context_effectiveness: Dict[str, float]
+
+
+@dataclass
+class ActionContext:
+    """Context in which an action was taken.
+
+    Attributes
+    ----------
+    environmental_state : Dict[str, float]
+        State of environment when action was taken
+    agent_state : Dict[str, float]
+        State of agent when action was taken
+    social_context : Dict[str, Any]
+        Social/interaction context of the action
+    resource_context : Dict[str, float]
+        Resource availability context
+    """
+
+    environmental_state: Dict[str, float]
+    agent_state: Dict[str, float]
+    social_context: Dict[str, Any]
+    resource_context: Dict[str, float]
+
+
+@dataclass
+class ActionOutcome:
+    """Outcome of an action execution.
+
+    Attributes
+    ----------
+    immediate_reward : float
+        Immediate reward received
+    state_changes : Dict[str, float]
+        Changes in state variables
+    side_effects : Dict[str, Any]
+        Unintended consequences
+    long_term_impact : Dict[str, float]
+        Long-term effects of the action
+    """
+
+    immediate_reward: float
+    state_changes: Dict[str, float]
+    side_effects: Dict[str, Any]
+    long_term_impact: Dict[str, float]
+
+
+@dataclass
+class ActionAnalysis:
+    """Comprehensive analysis of a specific action type.
+
+    Attributes
+    ----------
+    action_type : str
+        The type of action being analyzed
+    decision_patterns : DecisionPatterns
+        Detailed analysis of decision patterns
+    advanced_metrics : AdvancedActionMetrics
+        Advanced metrics for this action type
+    """
+
+    action_type: str
+    decision_patterns: DecisionPatterns
+    advanced_metrics: AdvancedActionMetrics
+
+
+@dataclass
+class DecisionPatterns:
+    """Comprehensive analysis of decision-making patterns.
+
+    Attributes
+    ----------
+    decision_patterns : Dict[str, DecisionPatternStats]
+        Statistics for each action type
+    sequence_analysis : Dict[str, SequencePattern]
+        Analysis of action sequences
+    resource_impact : Dict[str, ResourceImpact]
+        Resource impact of different actions
+    temporal_patterns : Dict[str, TimePattern]
+        Temporal patterns of actions
+    interaction_analysis : Dict[str, InteractionStats]
+        Analysis of interactive behaviors
+    decision_summary : DecisionSummary
+        Overall decision-making summary
+    """
+
+    decision_patterns: Dict[str, DecisionPatternStats]
+    sequence_analysis: Dict[str, SequencePattern]
+    resource_impact: Dict[str, ResourceImpact]
+    temporal_patterns: Dict[str, TimePattern]
+    interaction_analysis: Dict[str, InteractionStats]
+    decision_summary: DecisionSummary

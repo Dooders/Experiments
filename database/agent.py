@@ -441,3 +441,4 @@ class AgentRetriever(BaseRetriever):
             average_lifespan=avg_lifespan,
             generation=generation,
         )
+
