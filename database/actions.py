@@ -27,7 +27,7 @@ ActionsRetriever
 """
 
 import json
-from enum import Enum, auto
+from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from sqlalchemy import case, func
@@ -35,7 +35,6 @@ from sqlalchemy import case, func
 from database.data_types import (
     ActionAnalysis,
     ActionMetrics,
-    ActionStats,
     AdversarialInteractionAnalysis,
     BehaviorClustering,
     CausalAnalysis,
@@ -66,12 +65,18 @@ from database.utilities import execute_query
 
 
 class AnalysisScope(str, Enum):
-    """Scope levels for analysis queries."""
+    """Scope levels for analysis queries.
 
-    SIMULATION = "simulation"  # All data (no filters)
-    STEP = "step"  # Single step
-    STEP_RANGE = "step_range"  # Range of steps
-    AGENT = "agent"  # Single agent
+    SIMULATION: All data (no filters)
+    STEP: Single step
+    STEP_RANGE: Range of steps
+    AGENT: Single agent
+    """
+
+    SIMULATION = "simulation"
+    STEP = "step"
+    STEP_RANGE = "step_range"
+    AGENT = "agent"
 
     @classmethod
     def from_string(cls, scope_str: str) -> "AnalysisScope":
@@ -90,7 +95,7 @@ class ActionsRetriever(BaseRetriever):
 
     This class provides extensive methods for analyzing agent behaviors, including action
     patterns, decision-making, interactions, resource management, and advanced behavioral
-    metrics throughout the simulation.
+    metrics.
 
     Key Capabilities
     ---------------
@@ -104,15 +109,15 @@ class ActionsRetriever(BaseRetriever):
 
     Methods
     -------
-    get_agent_stats(agent_id: Optional[int] = None) -> List[ActionStats]
+    get_action_stats(scope: str = "simulation", agent_id: Optional[int] = None, ...) -> List[ActionMetrics]
         Get comprehensive statistics for each action type
-    interactions() -> Dict[str, InteractionStats]
+    get_interactions(scope: str = "simulation", agent_id: Optional[int] = None, ...) -> List[InteractionStats]
         Analyze agent interaction patterns and outcomes
-    temporal_patterns() -> Dict[str, TimePattern]
+    temporal_patterns(scope: str = "simulation", agent_id: Optional[int] = None, ...) -> Dict[str, TimePattern]
         Analyze action patterns over time
-    resource_impacts() -> Dict[str, ResourceImpact]
+    resource_impacts(scope: str = "simulation", agent_id: Optional[int] = None, ...) -> List[ResourceImpact]
         Analyze resource impacts of different actions
-    decision_patterns(agent_id: Optional[int] = None) -> DecisionPatterns
+    decision_patterns(scope: str = "simulation", agent_id: Optional[int] = None, ...) -> DecisionPatterns
         Analyze comprehensive decision-making patterns
     step(step_number: int) -> StepActionData
         Get detailed analysis of actions in a specific step
@@ -120,17 +125,35 @@ class ActionsRetriever(BaseRetriever):
         Get detailed action history for a specific agent
     get_causal_analysis(action_type: str) -> CausalAnalysis
         Analyze causal relationships between actions and outcomes
-    get_exploration_exploitation() -> ExplorationExploitation
+    get_exploration_exploitation(agent_id: Optional[int] = None) -> ExplorationExploitation
         Analyze exploration vs exploitation patterns
-    get_learning_curve() -> LearningCurveAnalysis
+    get_learning_curve(agent_id: Optional[int] = None) -> LearningCurveAnalysis
         Analyze agent learning progress over time
-    get_resilience_analysis() -> ResilienceAnalysis
+    get_resilience_analysis(agent_id: Optional[int] = None) -> ResilienceAnalysis
         Analyze agent recovery patterns from failures
+    get_action_analysis(action_type: str) -> ActionAnalysis
+        Get comprehensive analysis for a specific action type
+    get_step_data(step_number: int) -> StepActionData
+        Get detailed analysis of actions in a specific step
+    get_behavior_clustering() -> BehaviorClustering
+        Cluster agents based on behavioral patterns
+    get_adversarial_analysis(agent_id: Optional[int] = None) -> AdversarialInteractionAnalysis
+        Analyze performance in competitive scenarios
+    get_collaborative_analysis(agent_id: Optional[int] = None) -> CollaborativeInteractionAnalysis
+        Analyze patterns and outcomes of cooperative behaviors
+    get_environmental_impact(agent_id: Optional[int] = None) -> EnvironmentalImpactAnalysis
+        Analyze how environment affects agent action outcomes
+    get_conflict_analysis(agent_id: Optional[int] = None) -> ConflictAnalysis
+        Analyze patterns of conflict and resolution strategies
+    get_risk_reward_analysis(agent_id: Optional[int] = None) -> RiskRewardAnalysis
+        Analyze risk-taking behavior and associated outcomes
+    get_counterfactual_analysis(agent_id: Optional[int] = None) -> CounterfactualAnalysis
+        Analyze potential alternative outcomes and missed opportunities
 
     Examples
     --------
     >>> retriever = ActionsRetriever(session)
-    >>> metrics = retriever.summary(agent_id=1)
+    >>> metrics = retriever.get_action_stats()
     >>> patterns = retriever.decision_patterns()
     >>> learning = retriever.get_learning_curve()
     """
@@ -349,11 +372,29 @@ class ActionsRetriever(BaseRetriever):
         return list(interaction_stats.values())
 
     @execute_query
-    def temporal_patterns(self, session) -> Dict[str, TimePattern]:
+    def temporal_patterns(
+        self,
+        session,
+        scope: Union[str, AnalysisScope] = AnalysisScope.SIMULATION,
+        agent_id: Optional[int] = None,
+        step_range: Optional[Tuple[int, int]] = None,
+    ) -> Dict[str, TimePattern]:
         """Analyze how action patterns evolve over time.
 
         Examines the temporal evolution of action choices and their effectiveness,
         grouping data into time periods to identify trends and patterns.
+
+        Parameters
+        ----------
+        scope : Union[str, AnalysisScope], default=AnalysisScope.SIMULATION
+            Analysis scope level:
+            - "simulation": All data (no filters)
+            - "step_range": Range of steps
+            - "agent": Single agent
+        agent_id : Optional[int], default=None
+            Specific agent ID to analyze. Required when scope is "agent".
+        step_range : Optional[Tuple[int, int]], default=None
+            (start_step, end_step) range to analyze. Required when scope is "step_range".
 
         Returns
         -------
@@ -371,7 +412,21 @@ class ActionsRetriever(BaseRetriever):
 
         Examples
         --------
+        >>> # Get global patterns
         >>> patterns = retriever.temporal_patterns()
+        >>>
+        >>> # Get patterns for specific agent
+        >>> agent_patterns = retriever.temporal_patterns(
+        ...     scope="agent",
+        ...     agent_id=1
+        ... )
+        >>>
+        >>> # Get patterns for step range
+        >>> range_patterns = retriever.temporal_patterns(
+        ...     scope="step_range",
+        ...     step_range=(100, 500)
+        ... )
+        >>>
         >>> for action_type, data in patterns.items():
         ...     print(f"{action_type} trends:")
         ...     print(f"  Usage pattern: {data.time_distribution[:5]}")
@@ -383,19 +438,25 @@ class ActionsRetriever(BaseRetriever):
           Usage pattern: [8, 10, 12, 15, 11]
           Reward trend: ['0.45', '0.65', '0.80', '0.75', '0.90']
         """
-        patterns = (
-            session.query(
-                AgentAction.action_type,
-                func.count().label("count"),
-                func.avg(AgentAction.reward).label("avg_reward"),
-            )
-            .group_by(
-                AgentAction.action_type,
-                func.round(AgentAction.step_number / 100),  # Group by time periods
-            )
-            .all()
+        # Build base query
+        query = session.query(
+            AgentAction.action_type,
+            func.count().label("count"),
+            func.avg(AgentAction.reward).label("avg_reward"),
         )
 
+        # Apply scope filters
+        query = self._validate_and_filter_scope(
+            session, query, scope, agent_id, step=None, step_range=step_range
+        )
+
+        # Group by action type and time period
+        patterns = query.group_by(
+            AgentAction.action_type,
+            func.round(AgentAction.step_number / 100),  # Group by time periods
+        ).all()
+
+        # Process results
         temporal_patterns = {}
         for action_type, count, avg_reward in patterns:
             if action_type not in temporal_patterns:
@@ -411,16 +472,40 @@ class ActionsRetriever(BaseRetriever):
         return temporal_patterns
 
     @execute_query
-    def resource_impacts(self, session) -> Dict[str, ResourceImpact]:
+    def resource_impacts(
+        self,
+        session,
+        scope: Union[str, AnalysisScope] = AnalysisScope.SIMULATION,
+        agent_id: Optional[int] = None,
+        step: Optional[int] = None,
+        step_range: Optional[Tuple[int, int]] = None,
+    ) -> List[ResourceImpact]:
         """Analyze how different actions affect agent resources.
 
         Evaluates the resource efficiency and impact of different actions, including
         consumption patterns, generation rates, and overall resource management metrics.
 
+        Parameters
+        ----------
+        scope : Union[str, AnalysisScope], default=AnalysisScope.SIMULATION
+            Analysis scope level:
+            - "simulation": All data (no filters)
+            - "step": Single step
+            - "step_range": Range of steps
+            - "agent": Single agent
+        agent_id : Optional[int], default=None
+            Specific agent ID to analyze. Required when scope is "agent".
+        step : Optional[int], default=None
+            Specific step to analyze. Required when scope is "step".
+        step_range : Optional[Tuple[int, int]], default=None
+            (start_step, end_step) range to analyze. Required when scope is "step_range".
+
         Returns
         -------
-        Dict[str, ResourceImpact]
-            Resource impact statistics for each action type:
+        List[ResourceImpact]
+            List of resource impact statistics for each action type, containing:
+            - action_type : str
+                Type of action being analyzed
             - avg_resources_before : float
                 Mean resources available before action execution
             - avg_resource_change : float
@@ -435,41 +520,64 @@ class ActionsRetriever(BaseRetriever):
 
         Examples
         --------
+        >>> # Get global resource impacts
         >>> impacts = retriever.resource_impacts()
-        >>> for action_type, data in impacts.items():
-        ...     print(f"{action_type}:")
-        ...     print(f"  Average change: {data.avg_resource_change:+.2f}")
-        ...     print(f"  Efficiency: {data.resource_efficiency:.3f}")
+        >>> for impact in impacts:
+        ...     print(f"{impact.action_type}:")
+        ...     print(f"  Average change: {impact.avg_resource_change:+.2f}")
+        ...     print(f"  Efficiency: {impact.resource_efficiency:.3f}")
+
+        >>> # Get impacts for specific agent
+        >>> agent_impacts = retriever.resource_impacts(
+        ...     scope="agent",
+        ...     agent_id=1
+        ... )
+
+        >>> # Get impacts for step range
+        >>> range_impacts = retriever.resource_impacts(
+        ...     scope="step_range",
+        ...     step_range=(100, 200)
+        ... )
         """
-        impacts = (
-            session.query(
-                AgentAction.action_type,
-                func.avg(AgentAction.resources_before).label("avg_before"),
-                func.avg(
-                    AgentAction.resources_after - AgentAction.resources_before
-                ).label("avg_change"),
-                func.count().label("count"),
-            )
-            .filter(
-                AgentAction.resources_before.isnot(None),
-                AgentAction.resources_after.isnot(None),
-            )
-            .group_by(AgentAction.action_type)
-            .all()
+        # Build base query
+        query = session.query(
+            AgentAction.action_type,
+            func.avg(AgentAction.resources_before).label("avg_before"),
+            func.avg(AgentAction.resources_after - AgentAction.resources_before).label(
+                "avg_change"
+            ),
+            func.count().label("count"),
+        ).filter(
+            AgentAction.resources_before.isnot(None),
+            AgentAction.resources_after.isnot(None),
         )
 
-        return {
-            action_type: ResourceImpact(
+        # Apply scope filters
+        query = self._validate_and_filter_scope(
+            session, query, scope, agent_id, step, step_range
+        )
+
+        # Group by action type and execute query
+        impacts = query.group_by(AgentAction.action_type).all()
+
+        return [
+            ResourceImpact(
+                action_type=action_type,
                 avg_resources_before=float(avg_before or 0),
                 avg_resource_change=float(avg_change or 0),
                 resource_efficiency=float(avg_change or 0) / count if count > 0 else 0,
             )
             for action_type, avg_before, avg_change, count in impacts
-        }
+        ]
 
     @execute_query
     def decision_patterns(
-        self, session, agent_id: Optional[int] = None
+        self,
+        session,
+        scope: Union[str, AnalysisScope] = AnalysisScope.SIMULATION,
+        agent_id: Optional[int] = None,
+        step: Optional[int] = None,
+        step_range: Optional[Tuple[int, int]] = None,
     ) -> DecisionPatterns:
         """Analyze comprehensive decision-making patterns.
 
@@ -478,8 +586,18 @@ class ActionsRetriever(BaseRetriever):
 
         Parameters
         ----------
-        agent_id : Optional[int]
-            Specific agent ID to analyze. If None, analyzes all agents.
+        scope : Union[str, AnalysisScope], default=AnalysisScope.SIMULATION
+            Analysis scope level:
+            - "simulation": All data (no filters)
+            - "step": Single step
+            - "step_range": Range of steps
+            - "agent": Single agent
+        agent_id : Optional[int], default=None
+            Specific agent ID to analyze. Required when scope is "agent".
+        step : Optional[int], default=None
+            Specific step to analyze. Required when scope is "step".
+        step_range : Optional[Tuple[int, int]], default=None
+            (start_step, end_step) range to analyze. Required when scope is "step_range".
 
         Returns
         -------
@@ -497,8 +615,9 @@ class ActionsRetriever(BaseRetriever):
                 - count: Number of times this sequence occurred
                 - probability: Likelihood of the second action following the first
 
-            resource_impact : Dict[str, ResourceImpact]
+            resource_impact : List[ResourceImpact]
                 Resource effects for each action type, containing:
+                - action_type: Type of action analyzed
                 - avg_resources_before: Average resources before action
                 - avg_resource_change: Average change in resources
                 - resource_efficiency: Resource change per action
@@ -521,9 +640,42 @@ class ActionsRetriever(BaseRetriever):
                 - most_frequent: Most commonly chosen action
                 - most_rewarding: Action with highest average reward
                 - action_diversity: Shannon entropy of action distribution
+
+        Examples
+        --------
+        >>> # Get global decision patterns
+        >>> patterns = retriever.decision_patterns()
+        >>> print(f"Total decisions: {patterns.decision_summary.total_decisions}")
+        >>> print(f"Most frequent action: {patterns.decision_summary.most_frequent}")
+
+        >>> # Get patterns for specific agent
+        >>> agent_patterns = retriever.decision_patterns(
+        ...     scope="agent",
+        ...     agent_id=1
+        ... )
+
+        >>> # Get patterns for step range
+        >>> range_patterns = retriever.decision_patterns(
+        ...     scope="step_range",
+        ...     step_range=(100, 200)
+        ... )
         """
-        # Get basic action metrics
-        metrics = self.action_metrics(agent_id)
+        # Get basic action metrics with scope
+        query = session.query(
+            AgentAction.action_type,
+            func.count().label("decision_count"),
+            func.avg(AgentAction.reward).label("avg_reward"),
+            func.min(AgentAction.reward).label("min_reward"),
+            func.max(AgentAction.reward).label("max_reward"),
+        )
+
+        # Apply scope filters
+        query = self._validate_and_filter_scope(
+            session, query, scope, agent_id, step, step_range
+        )
+
+        # Group by action type and execute
+        metrics = query.group_by(AgentAction.action_type).all()
 
         # Calculate total decisions
         total_decisions = sum(m.decision_count for m in metrics)
@@ -536,9 +688,9 @@ class ActionsRetriever(BaseRetriever):
                     m.decision_count / total_decisions if total_decisions > 0 else 0
                 ),
                 reward_stats={
-                    "average": m.avg_reward,
-                    "min": m.min_reward,
-                    "max": m.max_reward,
+                    "average": float(m.avg_reward or 0),
+                    "min": float(m.min_reward or 0),
+                    "max": float(m.max_reward or 0),
                 },
             )
             for m in metrics
@@ -561,15 +713,25 @@ class ActionsRetriever(BaseRetriever):
 
         return DecisionPatterns(
             decision_patterns=patterns,
-            sequence_analysis=self._calculate_sequence_patterns(session, agent_id),
-            resource_impact=self.resource_impacts(),
-            temporal_patterns=self.temporal_patterns(),
-            interaction_analysis=self.interaction_statistics(),
+            sequence_analysis=self._calculate_sequence_patterns(
+                session, scope, agent_id, step, step_range
+            ),
+            resource_impact=self.resource_impacts(
+                scope=scope, agent_id=agent_id, step=step, step_range=step_range
+            ),
+            temporal_patterns=self.temporal_patterns(
+                scope=scope, agent_id=agent_id, step_range=step_range
+            ),
+            interaction_analysis=self.get_interactions(
+                scope=scope, agent_id=agent_id, step=step, step_range=step_range
+            ),
             decision_summary=summary,
         )
 
     @execute_query
     def step(self, session, step_number: int) -> StepActionData:
+        #! is this same as actions at step scope???
+        #! should this be action_summary? Allowing scoping
         """Get detailed analysis of actions in a specific simulation step.
 
         Retrieves and analyzes all actions performed during a given simulation step,
@@ -851,9 +1013,14 @@ class ActionsRetriever(BaseRetriever):
         )
 
     def _calculate_sequence_patterns(
-        self, session, agent_id: Optional[int] = None
+        self,
+        session,
+        scope: Union[str, AnalysisScope] = AnalysisScope.SIMULATION,
+        agent_id: Optional[int] = None,
+        step: Optional[int] = None,
+        step_range: Optional[Tuple[int, int]] = None,
     ) -> Dict[str, SequencePattern]:
-        """Calculate action sequence patterns.
+        """Calculate action sequence patterns within the specified scope.
 
         Analyzes the sequential patterns in agent decision-making, identifying
         common action pairs and their transition probabilities.
@@ -862,8 +1029,18 @@ class ActionsRetriever(BaseRetriever):
         ----------
         session : Session
             Database session
-        agent_id : Optional[int]
-            Specific agent ID to analyze. If None, analyzes all agents.
+        scope : Union[str, AnalysisScope], default=AnalysisScope.SIMULATION
+            Analysis scope level:
+            - "simulation": All data (no filters)
+            - "step": Single step
+            - "step_range": Range of steps
+            - "agent": Single agent
+        agent_id : Optional[int], default=None
+            Specific agent ID to analyze. Required when scope is "agent".
+        step : Optional[int], default=None
+            Specific step to analyze. Required when scope is "step".
+        step_range : Optional[Tuple[int, int]], default=None
+            (start_step, end_step) range to analyze. Required when scope is "step_range".
 
         Returns
         -------
@@ -875,27 +1052,32 @@ class ActionsRetriever(BaseRetriever):
 
         Examples
         --------
-        >>> patterns = retriever._calculate_sequence_patterns(session)
+        >>> patterns = retriever._calculate_sequence_patterns(
+        ...     session,
+        ...     scope="agent",
+        ...     agent_id=1
+        ... )
         >>> for seq, stats in patterns.items():
         ...     print(f"{seq}: {stats.probability:.2%} probability")
+        attack->defend: 35.20% probability
+        defend->gather: 28.50% probability
         """
-        # Base query for actions
-        query = session.query(AgentAction)
-        if agent_id is not None:
-            query = query.filter(AgentAction.agent_id == agent_id)
+        # Build base query for actions
+        query = session.query(
+            AgentAction.action_type,
+            func.lead(AgentAction.action_type)
+            .over(order_by=AgentAction.step_number)
+            .label("next_action"),
+            func.count().label("sequence_count"),
+        )
+
+        # Apply scope filters
+        query = self._validate_and_filter_scope(
+            session, query, scope, agent_id, step, step_range
+        )
 
         # Get action pairs and their frequencies
-        sequences = (
-            query.with_entities(
-                AgentAction.action_type,
-                func.lead(AgentAction.action_type)
-                .over(order_by=AgentAction.step_number)
-                .label("next_action"),
-                func.count().label("sequence_count"),
-            )
-            .group_by(AgentAction.action_type, "next_action")
-            .all()
-        )
+        sequences = query.group_by(AgentAction.action_type, "next_action").all()
 
         # Calculate total occurrences for each initial action
         totals = {}
