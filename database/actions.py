@@ -244,6 +244,7 @@ class ActionsRetriever(BaseRetriever):
 
         total_actions = sum(r[1] for r in results)
 
+        #! change to ActionStats
         return [
             ActionMetrics(
                 action_type=r[0],
@@ -667,9 +668,14 @@ class ActionsRetriever(BaseRetriever):
         )
 
     @execute_query
-    def step(self, session, step_number: int) -> StepActionData:
-        #! is this same as actions at step scope???
-        #! should this be action_summary? Allowing scoping
+    def action_summary(
+        self,
+        session,
+        scope: Union[str, AnalysisScope] = AnalysisScope.SIMULATION,
+        agent_id: Optional[int] = None,
+        step: Optional[int] = None,
+        step_range: Optional[Tuple[int, int]] = None,
+    ) -> StepActionData:
         """Get detailed analysis of actions in a specific simulation step.
 
         Retrieves and analyzes all actions performed during a given simulation step,
@@ -744,25 +750,23 @@ class ActionsRetriever(BaseRetriever):
         This method provides a comprehensive snapshot of simulation activity at a specific
         step, useful for detailed analysis of agent behavior and system dynamics at
         particular points in time.
-
-        See Also
-        --------
-        summary : Get basic metrics for all actions
-        interactions : Get interaction patterns
-        resource_impacts : Get resource change analysis
         """
         # Get all component data
-        actions = self._get_step_actions(session, step_number)
-        if not actions:
-            return {}
+        actions = self.get_actions(
+            scope=scope, agent_id=agent_id, step=step, step_range=step_range
+        )
 
-        action_stats = self._get_action_statistics(session, step_number)
-        resource_changes = self._get_resource_changes(session, step_number)
+        action_stats = self.get_action_stats(
+            scope=scope, agent_id=agent_id, step=step, step_range=step_range
+        )
+        resource_changes = self.get_resource_changes(
+            scope=scope, agent_id=agent_id, step=step, step_range=step_range
+        )
 
         # Build interaction network
-        interactions = [
-            action for action in actions if action.action_target_id is not None
-        ]
+        interactions = self.get_interactions(
+            scope=scope, agent_id=agent_id, step=step, step_range=step_range
+        )
 
         # Format detailed action list with state references
         action_list = [
@@ -832,23 +836,41 @@ class ActionsRetriever(BaseRetriever):
             detailed_actions=action_list,
         )
 
-    def _get_step_actions(self, session, step_number: int) -> List[AgentAction]:
-        """Get all actions for a specific step.
+    @execute_query
+    def get_actions(
+        self,
+        session,
+        scope: Union[str, AnalysisScope] = AnalysisScope.SIMULATION,
+        agent_id: Optional[int] = None,
+        step: Optional[int] = None,
+        step_range: Optional[Tuple[int, int]] = None,
+    ) -> List[AgentAction]:
+        """Get actions based on specified scope and filters.
 
-        Retrieves a chronological list of all actions performed during the specified
-        simulation step, including complete metadata for each action.
+        Retrieves a chronological list of actions based on the specified scope and filters,
+        including complete metadata for each action.
 
         Parameters
         ----------
         session : Session
             Database session for executing queries
-        step_number : int
-            The simulation step number to query (must be >= 0)
+        scope : Union[str, AnalysisScope], default=AnalysisScope.SIMULATION
+            Analysis scope level:
+            - "simulation": All data (no filters)
+            - "step": Single step
+            - "step_range": Range of steps
+            - "agent": Single agent
+        agent_id : Optional[int], default=None
+            Specific agent ID to analyze. Required when scope is "agent".
+        step : Optional[int], default=None
+            Specific step to analyze. Required when scope is "step".
+        step_range : Optional[Tuple[int, int]], default=None
+            (start_step, end_step) range to analyze. Required when scope is "step_range".
 
         Returns
         -------
         List[AgentAction]
-            List of actions performed during the step, ordered by agent_id.
+            List of actions matching the specified criteria, ordered by step_number and agent_id.
             Each action contains:
             - agent_id: ID of the acting agent
             - action_type: Type of action performed
@@ -859,67 +881,61 @@ class ActionsRetriever(BaseRetriever):
 
         Examples
         --------
-        >>> actions = retriever._get_step_actions(session, step_number=5)
+        >>> # Get all actions for a specific step
+        >>> actions = retriever.get_actions(scope="step", step=5)
         >>> for action in actions:
         ...     print(f"Agent {action.agent_id}: {action.action_type}")
+
+        >>> # Get actions for specific agent
+        >>> agent_actions = retriever.get_actions(scope="agent", agent_id=1)
+
+        >>> # Get actions within step range
+        >>> range_actions = retriever.get_actions(
+        ...     scope="step_range",
+        ...     step_range=(100, 200)
+        ... )
         """
-        return (
-            session.query(AgentAction)
-            .filter(AgentAction.step_number == step_number)
-            .order_by(AgentAction.agent_id)
-            .all()
+        # Build base query
+        query = session.query(AgentAction).order_by(
+            AgentAction.step_number, AgentAction.agent_id
         )
 
-    def _get_action_statistics(self, session, step_number: int) -> List[Tuple]:
-        """Get action type statistics for a specific step.
+        # Apply scope filters
+        query = self._validate_and_filter_scope(
+            session, query, scope, agent_id, step, step_range
+        )
 
-        Analyzes the frequency and outcomes of different action types within a single
-        simulation step, including counts and reward metrics.
+        return query.all()
+
+    def get_resource_changes(
+        self,
+        session,
+        scope: Union[str, AnalysisScope] = AnalysisScope.SIMULATION,
+        agent_id: Optional[int] = None,
+        step: Optional[int] = None,
+        step_range: Optional[Tuple[int, int]] = None,
+    ) -> Tuple:
+        """Get resource change statistics for the specified scope.
+
+        Calculates aggregate resource changes across agents within the specified scope,
+        providing both net and average changes.
 
         Parameters
         ----------
         session : Session
             Database session for executing queries
-        step_number : int
-            The simulation step number to query (must be >= 0)
-
-        Returns
-        -------
-        List[Tuple]
-            List of tuples containing:
-            - action_type (str): The type of action performed
-            - count (int): Number of times this action was taken
-            - avg_reward (float): Average reward for this action type
-            - total_reward (float): Total reward accumulated for this action type
-
-        Notes
-        -----
-        Rewards may be None if no reward was recorded for an action.
-        """
-        return (
-            session.query(
-                AgentAction.action_type,
-                func.count().label("count"),
-                func.avg(AgentAction.reward).label("avg_reward"),
-                func.sum(AgentAction.reward).label("total_reward"),
-            )
-            .filter(AgentAction.step_number == step_number)
-            .group_by(AgentAction.action_type)
-            .all()
-        )
-
-    def _get_resource_changes(self, session, step_number: int) -> Tuple:
-        """Get resource change statistics for a specific step.
-
-        Calculates aggregate resource changes across all agents during a single
-        simulation step, providing both net and average changes.
-
-        Parameters
-        ----------
-        session : Session
-            Database session for executing queries
-        step_number : int
-            The simulation step number to query (must be >= 0)
+        scope : Union[str, AnalysisScope], default=AnalysisScope.SIMULATION
+            Analysis scope level:
+            - "simulation": All data (no filters)
+            - "step": Single step
+            - "step_range": Range of steps
+            - "agent": Single agent
+        agent_id : Optional[int], default=None
+            Specific agent ID to analyze. Required when scope is "agent".
+        step : Optional[int], default=None
+            Specific step to analyze. Required when scope is "step".
+        step_range : Optional[Tuple[int, int]], default=None
+            (start_step, end_step) range to analyze. Required when scope is "step_range".
 
         Returns
         -------
@@ -933,22 +949,24 @@ class ActionsRetriever(BaseRetriever):
         Only considers actions where both resources_before and resources_after
         are not None. Changes are calculated as (resources_after - resources_before).
         """
-        return (
-            session.query(
-                func.sum(
-                    AgentAction.resources_after - AgentAction.resources_before
-                ).label("net_change"),
-                func.avg(
-                    AgentAction.resources_after - AgentAction.resources_before
-                ).label("avg_change"),
-            )
-            .filter(
-                AgentAction.step_number == step_number,
-                AgentAction.resources_before.isnot(None),
-                AgentAction.resources_after.isnot(None),
-            )
-            .first()
+        query = session.query(
+            func.sum(AgentAction.resources_after - AgentAction.resources_before).label(
+                "net_change"
+            ),
+            func.avg(AgentAction.resources_after - AgentAction.resources_before).label(
+                "avg_change"
+            ),
+        ).filter(
+            AgentAction.resources_before.isnot(None),
+            AgentAction.resources_after.isnot(None),
         )
+
+        # Apply scope filters using existing helper method
+        query = self._validate_and_filter_scope(
+            session, query, scope, agent_id, step, step_range
+        )
+
+        return query.first()
 
     def _calculate_sequence_patterns(
         self,

@@ -107,7 +107,7 @@ class AgentState(BaseState):
         >>> tensor = state.to_tensor(device)
         >>> state_dict = state.to_dict()
     """
-
+#! remove the normalization, maybe as an option
     normalized_distance: float = Field(
         ...,
         ge=0.0,

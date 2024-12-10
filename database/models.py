@@ -149,6 +149,8 @@ class AgentState(Base):
         Current X-coordinate position
     position_y : float
         Current Y-coordinate position
+    position_z : float
+        Current Z-coordinate position
     resource_level : float
         Current resource amount held by agent
     current_health : float
@@ -181,16 +183,17 @@ class AgentState(Base):
         Index("idx_agent_states_step_number", "step_number"),
         Index("idx_agent_states_composite", "step_number", "agent_id"),
     )
-
+    #! make the index a composite of step_number and agent_id so easy to infer
     id = Column(Integer, primary_key=True)
     step_number = Column(Integer)
     agent_id = Column(Integer, ForeignKey("agents.agent_id"))
     position_x = Column(Float)
     position_y = Column(Float)
+    position_z = Column(Float)
     resource_level = Column(Float)
     current_health = Column(Float)
-    max_health = Column(Float)
-    starvation_threshold = Column(Integer)
+    max_health = Column(Float) #! is this even needed?
+    starvation_threshold = Column(Integer) #! what is this
     is_defending = Column(Boolean)
     total_reward = Column(Float)
     age = Column(Integer)
@@ -202,7 +205,7 @@ class AgentState(Base):
         return {
             "agent_id": self.agent_id,
             "agent_type": self.agent.agent_type,
-            "position": (self.position_x, self.position_y),
+            "position": (self.position_x, self.position_y, self.position_z),
             "resource_level": self.resource_level,
             "current_health": self.current_health,
             "max_health": self.max_health,
@@ -213,7 +216,6 @@ class AgentState(Base):
         }
 
 
-# Additional SQLAlchemy Models
 class ResourceState(Base):
     """Tracks the state of resources in the environment.
 
@@ -435,21 +437,6 @@ class AgentAction(Base):
     agent = relationship("Agent", back_populates="actions", foreign_keys=[agent_id])
     state_before = relationship("AgentState", foreign_keys=[state_before_id])
     state_after = relationship("AgentState", foreign_keys=[state_after_id])
-
-    @property
-    def position_before_array(self):
-        """Convert stored JSON string back to array/list"""
-        if self.state_before:
-            return [self.state_before.position_x, self.state_before.position_y]
-        return None
-
-    @position_before_array.setter
-    def position_before_array(self, value):
-        """Convert array/list to JSON string for storage"""
-        # This property is now deprecated as we use state references
-        logger.warning(
-            "position_before_array setter is deprecated, use state references instead"
-        )
 
 
 class LearningExperience(Base):
