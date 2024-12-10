@@ -821,6 +821,7 @@ class ResourceImpact:
     resource_efficiency : float
         Resource change per action execution (change/count)
     """
+
     action_type: str
     avg_resources_before: float
     avg_resource_change: float
@@ -1014,6 +1015,8 @@ class DecisionPatternStats:
 
     Attributes
     ----------
+    action_type : str
+        The type of action
     count : int
         Number of times this action was taken
     frequency : float
@@ -1026,6 +1029,7 @@ class DecisionPatternStats:
         - max: Maximum reward received
     """
 
+    action_type: str
     count: int
     frequency: float
     reward_stats: Dict[str, float]
@@ -1037,12 +1041,15 @@ class SequencePattern:
 
     Attributes
     ----------
+    action_type : str
+        The type of action
     count : int
         Number of times this sequence occurred
     probability : float
         Probability of this sequence occurring
     """
 
+    action_type: str
     count: int
     probability: float
 
@@ -1053,12 +1060,15 @@ class TimePattern:
 
     Attributes
     ----------
+    action_type : str
+        Type of action being analyzed
     time_distribution : List[int]
         Distribution of action counts over time periods
     reward_progression : List[float]
         Progression of rewards over time periods
     """
 
+    action_type: str
     time_distribution: List[int]
     reward_progression: List[float]
 
@@ -2047,21 +2057,9 @@ class DecisionPatterns:
     ----------
     decision_patterns : Dict[str, DecisionPatternStats]
         Statistics for each action type
-    sequence_analysis : Dict[str, SequencePattern]
-        Analysis of action sequences
-    resource_impact : Dict[str, ResourceImpact]
-        Resource impact of different actions
-    temporal_patterns : Dict[str, TimePattern]
-        Temporal patterns of actions
-    interaction_analysis : Dict[str, InteractionStats]
-        Analysis of interactive behaviors
     decision_summary : DecisionSummary
         Overall decision-making summary
     """
 
     decision_patterns: Dict[str, DecisionPatternStats]
-    sequence_analysis: Dict[str, SequencePattern]
-    resource_impact: Dict[str, ResourceImpact]
-    temporal_patterns: Dict[str, TimePattern]
-    interaction_analysis: Dict[str, InteractionStats]
     decision_summary: DecisionSummary

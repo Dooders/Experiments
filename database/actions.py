@@ -378,7 +378,7 @@ class ActionsRetriever(BaseRetriever):
         scope: Union[str, AnalysisScope] = AnalysisScope.SIMULATION,
         agent_id: Optional[int] = None,
         step_range: Optional[Tuple[int, int]] = None,
-    ) -> Dict[str, TimePattern]:
+    ) -> List[TimePattern]:
         """Analyze how action patterns evolve over time.
 
         Examines the temporal evolution of action choices and their effectiveness,
@@ -398,8 +398,8 @@ class ActionsRetriever(BaseRetriever):
 
         Returns
         -------
-        Dict[str, TimePattern]
-            Temporal patterns for each action type:
+        List[TimePattern]
+            List of temporal patterns for each action type, containing:
             - time_distribution : List[int]
                 Action counts per time period showing usage patterns
             - reward_progression : List[float]
@@ -409,34 +409,6 @@ class ActionsRetriever(BaseRetriever):
         -----
         Time periods are determined by grouping steps into bins of 100 steps each.
         Empty periods will have 0 counts and rewards.
-
-        Examples
-        --------
-        >>> # Get global patterns
-        >>> patterns = retriever.temporal_patterns()
-        >>>
-        >>> # Get patterns for specific agent
-        >>> agent_patterns = retriever.temporal_patterns(
-        ...     scope="agent",
-        ...     agent_id=1
-        ... )
-        >>>
-        >>> # Get patterns for step range
-        >>> range_patterns = retriever.temporal_patterns(
-        ...     scope="step_range",
-        ...     step_range=(100, 500)
-        ... )
-        >>>
-        >>> for action_type, data in patterns.items():
-        ...     print(f"{action_type} trends:")
-        ...     print(f"  Usage pattern: {data.time_distribution[:5]}")
-        ...     print(f"  Reward trend: {[f'{r:.2f}' for r in data.reward_progression[:5]]}")
-        attack trends:
-          Usage pattern: [12, 15, 8, 10, 14]
-          Reward trend: ['0.85', '1.20', '0.95', '1.15', '1.45']
-        defend trends:
-          Usage pattern: [8, 10, 12, 15, 11]
-          Reward trend: ['0.45', '0.65', '0.80', '0.75', '0.90']
         """
         # Build base query
         query = session.query(
@@ -456,18 +428,28 @@ class ActionsRetriever(BaseRetriever):
             func.round(AgentAction.step_number / 100),  # Group by time periods
         ).all()
 
-        # Process results
-        temporal_patterns = {}
+        # Process results into a list
+        temporal_patterns = []
+        current_pattern = None
+        current_action_type = None
+
         for action_type, count, avg_reward in patterns:
-            if action_type not in temporal_patterns:
-                temporal_patterns[action_type] = TimePattern(
+            if action_type != current_action_type:
+                if current_pattern is not None:
+                    temporal_patterns.append(current_pattern)
+                current_pattern = TimePattern(
+                    action_type=action_type,
                     time_distribution=[],
                     reward_progression=[],
                 )
-            temporal_patterns[action_type].time_distribution.append(int(count))
-            temporal_patterns[action_type].reward_progression.append(
-                float(avg_reward or 0)
-            )
+                current_action_type = action_type
+
+            current_pattern.time_distribution.append(int(count))
+            current_pattern.reward_progression.append(float(avg_reward or 0))
+
+        # Add the last pattern if it exists
+        if current_pattern is not None:
+            temporal_patterns.append(current_pattern)
 
         return temporal_patterns
 
@@ -604,34 +586,13 @@ class ActionsRetriever(BaseRetriever):
         DecisionPatterns
             Comprehensive decision pattern analysis with the following components:
 
-            decision_patterns : Dict[str, DecisionPatternStats]
+            decision_patterns : List[DecisionPatternStats]
                 Statistics for each action type, containing:
+                - action_type: str
+                    Type of action performed
                 - count: Total number of times the action was taken
                 - frequency: Proportion of times this action was chosen
                 - reward_stats: Dict containing average/min/max rewards
-
-            sequence_analysis : Dict[str, SequencePattern]
-                Analysis of action sequences (e.g., "action1->action2"), containing:
-                - count: Number of times this sequence occurred
-                - probability: Likelihood of the second action following the first
-
-            resource_impact : List[ResourceImpact]
-                Resource effects for each action type, containing:
-                - action_type: Type of action analyzed
-                - avg_resources_before: Average resources before action
-                - avg_resource_change: Average change in resources
-                - resource_efficiency: Resource change per action
-
-            temporal_patterns : Dict[str, TimePattern]
-                Time-based analysis for each action, containing:
-                - time_distribution: List of action counts per time period
-                - reward_progression: List of average rewards per time period
-
-            interaction_analysis : Dict[str, InteractionStats]
-                Statistics about agent interactions, containing:
-                - interaction_rate: Proportion of actions involving other agents
-                - solo_performance: Average reward for solo actions
-                - interaction_performance: Average reward for interactive actions
 
             decision_summary : DecisionSummary
                 Overall decision-making metrics, containing:
@@ -647,18 +608,6 @@ class ActionsRetriever(BaseRetriever):
         >>> patterns = retriever.decision_patterns()
         >>> print(f"Total decisions: {patterns.decision_summary.total_decisions}")
         >>> print(f"Most frequent action: {patterns.decision_summary.most_frequent}")
-
-        >>> # Get patterns for specific agent
-        >>> agent_patterns = retriever.decision_patterns(
-        ...     scope="agent",
-        ...     agent_id=1
-        ... )
-
-        >>> # Get patterns for step range
-        >>> range_patterns = retriever.decision_patterns(
-        ...     scope="step_range",
-        ...     step_range=(100, 200)
-        ... )
         """
         # Get basic action metrics with scope
         query = session.query(
@@ -681,8 +630,9 @@ class ActionsRetriever(BaseRetriever):
         total_decisions = sum(m.decision_count for m in metrics)
 
         # Format decision patterns
-        patterns = {
-            m.action_type: DecisionPatternStats(
+        patterns = [
+            DecisionPatternStats(
+                action_type=m.action_type,  # Add action_type to the stats object
                 count=m.decision_count,
                 frequency=(
                     m.decision_count / total_decisions if total_decisions > 0 else 0
@@ -694,17 +644,17 @@ class ActionsRetriever(BaseRetriever):
                 },
             )
             for m in metrics
-        }
+        ]
 
         # Create decision summary
         summary = DecisionSummary(
             total_decisions=total_decisions,
             unique_actions=len(metrics),
             most_frequent=(
-                max(patterns.items(), key=lambda x: x[1].count)[0] if patterns else None
+                max(patterns, key=lambda x: x.count).action_type if patterns else None
             ),
             most_rewarding=(
-                max(patterns.items(), key=lambda x: x[1].reward_stats["average"])[0]
+                max(patterns, key=lambda x: x.reward_stats["average"]).action_type
                 if patterns
                 else None
             ),
@@ -713,18 +663,6 @@ class ActionsRetriever(BaseRetriever):
 
         return DecisionPatterns(
             decision_patterns=patterns,
-            sequence_analysis=self._calculate_sequence_patterns(
-                session, scope, agent_id, step, step_range
-            ),
-            resource_impact=self.resource_impacts(
-                scope=scope, agent_id=agent_id, step=step, step_range=step_range
-            ),
-            temporal_patterns=self.temporal_patterns(
-                scope=scope, agent_id=agent_id, step_range=step_range
-            ),
-            interaction_analysis=self.get_interactions(
-                scope=scope, agent_id=agent_id, step=step, step_range=step_range
-            ),
             decision_summary=summary,
         )
 
@@ -1062,41 +1000,59 @@ class ActionsRetriever(BaseRetriever):
         attack->defend: 35.20% probability
         defend->gather: 28.50% probability
         """
-        # Build base query for actions
+        # First get ordered actions
         query = session.query(
-            AgentAction.action_type,
-            func.lead(AgentAction.action_type)
-            .over(order_by=AgentAction.step_number)
-            .label("next_action"),
-            func.count().label("sequence_count"),
-        )
+            AgentAction.agent_id, AgentAction.action_type, AgentAction.step_number
+        ).order_by(AgentAction.step_number)
 
         # Apply scope filters
-        query = self._validate_and_filter_scope(
-            session, query, scope, agent_id, step, step_range
-        )
-
-        # Get action pairs and their frequencies
-        sequences = query.group_by(AgentAction.action_type, "next_action").all()
-
-        # Calculate total occurrences for each initial action
-        totals = {}
-        for action, next_action, count in sequences:
-            if action not in totals:
-                totals[action] = 0
-            totals[action] += count
-
-        # Format sequence patterns
-        return {
-            f"{action}->{next_action}": SequencePattern(
-                count=count,
-                probability=count / totals[action] if action in totals else 0,
+        if agent_id:
+            query = query.filter(AgentAction.agent_id == agent_id)
+        if step:
+            query = query.filter(AgentAction.step_number == step)
+        if step_range:
+            query = query.filter(
+                AgentAction.step_number >= step_range[0],
+                AgentAction.step_number <= step_range[1],
             )
-            for action, next_action, count in sequences
-            if action is not None and next_action is not None
+
+        actions = query.all()
+
+        # Calculate sequences and counts manually
+        sequences = {}
+        action_counts = {}  # For calculating probabilities
+
+        # Process action pairs
+        for i in range(len(actions) - 1):
+            current = actions[i]
+            next_action = actions[i + 1]
+
+            # Only count sequences within same agent
+            if current.agent_id == next_action.agent_id:
+                sequence_key = f"{current.action_type}->{next_action.action_type}"
+
+                # Count sequences
+                sequences[sequence_key] = sequences.get(sequence_key, 0) + 1
+
+                # Count total occurrences of first action (for probability calculation)
+                action_counts[current.action_type] = (
+                    action_counts.get(current.action_type, 0) + 1
+                )
+
+        # Convert to SequencePattern objects with probabilities
+        return {
+            sequence: SequencePattern(
+                count=count,
+                probability=(
+                    count / action_counts[sequence.split("->")[0]]
+                    if sequence.split("->")[0] in action_counts
+                    else 0
+                ),
+            )
+            for sequence, count in sequences.items()
         }
 
-    def _calculate_diversity(self, patterns: Dict[str, DecisionPatternStats]) -> float:
+    def _calculate_diversity(self, patterns: List[DecisionPatternStats]) -> float:
         """Calculate Shannon entropy for action diversity.
 
         Computes the Shannon entropy of the action distribution to measure
@@ -1104,8 +1060,8 @@ class ActionsRetriever(BaseRetriever):
 
         Parameters
         ----------
-        patterns : Dict[str, DecisionPatternStats]
-            Decision pattern statistics containing frequency information
+        patterns : List[DecisionPatternStats]
+            List of decision pattern statistics containing frequency information
 
         Returns
         -------
@@ -1123,7 +1079,7 @@ class ActionsRetriever(BaseRetriever):
 
         return -sum(
             p.frequency * math.log(p.frequency) if p.frequency > 0 else 0
-            for p in patterns.values()
+            for p in patterns
         )
 
     def _execute(self) -> DecisionPatterns:
