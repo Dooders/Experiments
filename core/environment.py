@@ -11,6 +11,7 @@ from agents import ControlAgent, IndependentAgent, SystemAgent
 from database.database import SimulationDatabase
 from core.resources import Resource
 from core.state import EnvironmentState
+from utils.short_id import ShortUUID
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ class Environment:
         self.resources = []
         self.time = 0
         self.db = SimulationDatabase(db_path)
-        self.next_agent_id = 0
+        self.seed = ShortUUID()
         self.next_resource_id = 0
         self.max_resource = max_resource
         self.config = config
@@ -347,9 +348,14 @@ class Environment:
             }
 
     def get_next_agent_id(self):
-        agent_id = self.next_agent_id
-        self.next_agent_id += 1
-        return agent_id
+        """Generate a unique short ID for an agent using environment's seed.
+        
+        Returns
+        -------
+        str
+            A unique short ID string
+        """
+        return self.seed.id()
 
     def get_state(self) -> EnvironmentState:
         """Get current environment state."""

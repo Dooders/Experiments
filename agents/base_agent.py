@@ -51,12 +51,12 @@ class BaseAgent:
 
     def __init__(
         self,
-        agent_id: int,
+        agent_id: str,
         position: tuple[int, int],
         resource_level: int,
         environment: "Environment",
         action_set: list[Action] = BASE_ACTION_SET,
-        parent_id: Optional[int] = None,
+        parent_id: Optional[str] = None,
         generation: int = 0,
         skip_logging: bool = False,
     ):
@@ -238,6 +238,9 @@ class BaseAgent:
         starting_resources = self.resource_level #! whats this for?
         self.resource_level -= self.config.base_consumption_rate
 
+
+        #! encapsulate this in a method
+        #! maybe even change the logic
         if self.resource_level <= 0:
             self.starvation_threshold += 1
             if self.starvation_threshold >= self.max_starvation:
