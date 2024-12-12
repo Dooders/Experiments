@@ -35,7 +35,9 @@ from sqlalchemy import case, func
 from database.data_types import (
     ActionAnalysis,
     ActionMetrics,
+    ActionStats,
     AdversarialInteractionAnalysis,
+    AgentActionData,
     BehaviorClustering,
     CausalAnalysis,
     CollaborativeInteractionAnalysis,
@@ -158,7 +160,93 @@ class ActionsRetriever(BaseRetriever):
     >>> learning = retriever.get_learning_curve()
     """
 
-    @execute_query
+    @execute_query  #!
+    def get_actions(
+        self,
+        session,
+        scope: Union[str, AnalysisScope] = AnalysisScope.SIMULATION,
+        agent_id: Optional[int] = None,
+        step: Optional[int] = None,
+        step_range: Optional[Tuple[int, int]] = None,
+    ) -> List[AgentActionData]:
+        """Get actions based on specified scope and filters.
+
+        Retrieves a chronological list of actions based on the specified scope and filters,
+        including complete metadata for each action.
+
+        Parameters
+        ----------
+        session : Session
+            Database session for executing queries
+        scope : Union[str, AnalysisScope], default=AnalysisScope.SIMULATION
+            Analysis scope level:
+            - "simulation": All data (no filters)
+            - "step": Single step
+            - "step_range": Range of steps
+            - "agent": Single agent
+        agent_id : Optional[int], default=None
+            Specific agent ID to analyze. Required when scope is "agent".
+        step : Optional[int], default=None
+            Specific step to analyze. Required when scope is "step".
+        step_range : Optional[Tuple[int, int]], default=None
+            (start_step, end_step) range to analyze. Required when scope is "step_range".
+
+        Returns
+        -------
+        List[AgentActionData]
+            List of actions matching the specified criteria, ordered by step_number and agent_id.
+            Each action contains:
+            - agent_id: ID of the acting agent
+            - action_type: Type of action performed
+            - action_target_id: Target agent ID (if any)
+            - resources_before/after: Resource states
+            - reward: Action outcome
+            - details: Additional metadata
+
+        Examples
+        --------
+        >>> # Get all actions for a specific step
+        >>> actions = retriever.get_actions(scope="step", step=5)
+        >>> for action in actions:
+        ...     print(f"Agent {action.agent_id}: {action.action_type}")
+
+        >>> # Get actions for specific agent
+        >>> agent_actions = retriever.get_actions(scope="agent", agent_id=1)
+
+        >>> # Get actions within step range
+        >>> range_actions = retriever.get_actions(
+        ...     scope="step_range",
+        ...     step_range=(100, 200)
+        ... )
+        """
+        # Build base query
+        query = session.query(AgentAction).order_by(
+            AgentAction.step_number, AgentAction.agent_id
+        )
+
+        # Apply scope filters
+        query = self._validate_and_filter_scope(
+            session, query, scope, agent_id, step, step_range
+        )
+
+        actions = query.all()
+        return [
+            AgentActionData(
+                agent_id=action.agent_id,
+                action_type=action.action_type,
+                step_number=action.step_number,
+                action_target_id=action.action_target_id,
+                resources_before=action.resources_before,
+                resources_after=action.resources_after,
+                state_before_id=action.state_before_id,
+                state_after_id=action.state_after_id,
+                reward=action.reward,
+                details=action.details if action.details else None,
+            )
+            for action in actions
+        ]
+
+    @execute_query  #!
     def get_action_stats(
         self,
         session,
@@ -242,22 +330,21 @@ class ActionsRetriever(BaseRetriever):
         )
         results = query.group_by(AgentAction.action_type).all()
 
-        total_actions = sum(r[1] for r in results)
+        total_actions = sum(r.count for r in results)
 
-        #! change to ActionStats
         return [
             ActionMetrics(
-                action_type=r[0],
-                count=r[1],
-                frequency=r[1] / total_actions if total_actions > 0 else 0,
-                avg_reward=float(r[2] or 0),
-                min_reward=float(r[3] or 0),
-                max_reward=float(r[4] or 0),
+                action_type=r.action_type,
+                count=r.count,
+                frequency=r.count / total_actions if total_actions > 0 else 0,
+                avg_reward=float(r.avg_reward or 0),
+                min_reward=float(r.min_reward or 0),
+                max_reward=float(r.max_reward or 0),
             )
             for r in results
         ]
 
-    @execute_query
+    @execute_query  #!
     def get_interactions(
         self,
         session,
@@ -372,7 +459,7 @@ class ActionsRetriever(BaseRetriever):
 
         return list(interaction_stats.values())
 
-    @execute_query
+    @execute_query  #!
     def temporal_patterns(
         self,
         session,
@@ -454,7 +541,7 @@ class ActionsRetriever(BaseRetriever):
 
         return temporal_patterns
 
-    @execute_query
+    @execute_query  #!
     def resource_impacts(
         self,
         session,
@@ -553,7 +640,7 @@ class ActionsRetriever(BaseRetriever):
             for action_type, avg_before, avg_change, count in impacts
         ]
 
-    @execute_query
+    @execute_query  #!
     def decision_patterns(
         self,
         session,
@@ -698,9 +785,6 @@ class ActionsRetriever(BaseRetriever):
             action_statistics : Dict[str, Dict]
                 Statistics for each action type, including counts and rewards
 
-            resource_metrics : ResourceMetricsStep
-                Analysis of resource changes during the step
-
             interaction_network : InteractionNetwork
                 Network of agent interactions and their outcomes
 
@@ -727,12 +811,6 @@ class ActionsRetriever(BaseRetriever):
         Success rate: 72.50%
         >>> print(f"  Average reward: {step_data.performance_metrics.average_reward:.2f}")
         Average reward: 1.78
-        >>> print("\nResource Changes:")
-        Resource Changes:
-        >>> print(f"  Net change: {step_data.resource_metrics.net_resource_change:+.2f}")
-        Net change: +125.50
-        >>> print(f"  Average change: {step_data.resource_metrics.average_resource_change:+.2f}")
-        Average change: +2.61
         >>> print("\nInteractions:")
         Interactions:
         >>> print(f"  Total: {step_data.step_summary.total_interactions}")
@@ -759,30 +837,11 @@ class ActionsRetriever(BaseRetriever):
         action_stats = self.get_action_stats(
             scope=scope, agent_id=agent_id, step=step, step_range=step_range
         )
-        resource_changes = self.get_resource_changes(
-            scope=scope, agent_id=agent_id, step=step, step_range=step_range
-        )
 
         # Build interaction network
         interactions = self.get_interactions(
             scope=scope, agent_id=agent_id, step=step, step_range=step_range
         )
-
-        # Format detailed action list with state references
-        action_list = [
-            {
-                "agent_id": action.agent_id,
-                "action_type": action.action_type,
-                "action_target_id": action.action_target_id,
-                "state_before_id": action.state_before_id,
-                "state_after_id": action.state_after_id,
-                "resources_before": action.resources_before,
-                "resources_after": action.resources_after,
-                "reward": action.reward,
-                "details": json.loads(action.details) if action.details else None,
-            }
-            for action in actions
-        ]
 
         return StepActionData(
             step_summary=StepSummary(
@@ -801,13 +860,6 @@ class ActionsRetriever(BaseRetriever):
                 }
                 for action_type, count, avg_reward, total_reward in action_stats
             },
-            resource_metrics=ResourceMetricsStep(
-                net_resource_change=float(resource_changes[0] or 0),
-                average_resource_change=float(resource_changes[1] or 0),
-                resource_transactions=len(
-                    [a for a in actions if a.resources_before != a.resources_after]
-                ),
-            ),
             interaction_network=InteractionNetwork(
                 interactions=[
                     {
@@ -833,140 +885,8 @@ class ActionsRetriever(BaseRetriever):
                 )
                 / len(actions),
             ),
-            detailed_actions=action_list,
+            detailed_actions=actions,
         )
-
-    @execute_query
-    def get_actions(
-        self,
-        session,
-        scope: Union[str, AnalysisScope] = AnalysisScope.SIMULATION,
-        agent_id: Optional[int] = None,
-        step: Optional[int] = None,
-        step_range: Optional[Tuple[int, int]] = None,
-    ) -> List[AgentAction]:
-        """Get actions based on specified scope and filters.
-
-        Retrieves a chronological list of actions based on the specified scope and filters,
-        including complete metadata for each action.
-
-        Parameters
-        ----------
-        session : Session
-            Database session for executing queries
-        scope : Union[str, AnalysisScope], default=AnalysisScope.SIMULATION
-            Analysis scope level:
-            - "simulation": All data (no filters)
-            - "step": Single step
-            - "step_range": Range of steps
-            - "agent": Single agent
-        agent_id : Optional[int], default=None
-            Specific agent ID to analyze. Required when scope is "agent".
-        step : Optional[int], default=None
-            Specific step to analyze. Required when scope is "step".
-        step_range : Optional[Tuple[int, int]], default=None
-            (start_step, end_step) range to analyze. Required when scope is "step_range".
-
-        Returns
-        -------
-        List[AgentAction]
-            List of actions matching the specified criteria, ordered by step_number and agent_id.
-            Each action contains:
-            - agent_id: ID of the acting agent
-            - action_type: Type of action performed
-            - action_target_id: Target agent ID (if any)
-            - resources_before/after: Resource states
-            - reward: Action outcome
-            - details: Additional metadata
-
-        Examples
-        --------
-        >>> # Get all actions for a specific step
-        >>> actions = retriever.get_actions(scope="step", step=5)
-        >>> for action in actions:
-        ...     print(f"Agent {action.agent_id}: {action.action_type}")
-
-        >>> # Get actions for specific agent
-        >>> agent_actions = retriever.get_actions(scope="agent", agent_id=1)
-
-        >>> # Get actions within step range
-        >>> range_actions = retriever.get_actions(
-        ...     scope="step_range",
-        ...     step_range=(100, 200)
-        ... )
-        """
-        # Build base query
-        query = session.query(AgentAction).order_by(
-            AgentAction.step_number, AgentAction.agent_id
-        )
-
-        # Apply scope filters
-        query = self._validate_and_filter_scope(
-            session, query, scope, agent_id, step, step_range
-        )
-
-        return query.all()
-
-    def get_resource_changes(
-        self,
-        session,
-        scope: Union[str, AnalysisScope] = AnalysisScope.SIMULATION,
-        agent_id: Optional[int] = None,
-        step: Optional[int] = None,
-        step_range: Optional[Tuple[int, int]] = None,
-    ) -> Tuple:
-        """Get resource change statistics for the specified scope.
-
-        Calculates aggregate resource changes across agents within the specified scope,
-        providing both net and average changes.
-
-        Parameters
-        ----------
-        session : Session
-            Database session for executing queries
-        scope : Union[str, AnalysisScope], default=AnalysisScope.SIMULATION
-            Analysis scope level:
-            - "simulation": All data (no filters)
-            - "step": Single step
-            - "step_range": Range of steps
-            - "agent": Single agent
-        agent_id : Optional[int], default=None
-            Specific agent ID to analyze. Required when scope is "agent".
-        step : Optional[int], default=None
-            Specific step to analyze. Required when scope is "step".
-        step_range : Optional[Tuple[int, int]], default=None
-            (start_step, end_step) range to analyze. Required when scope is "step_range".
-
-        Returns
-        -------
-        Tuple
-            Two-element tuple containing:
-            - net_change (float): Total resource change across all agents
-            - avg_change (float): Average resource change per agent
-
-        Notes
-        -----
-        Only considers actions where both resources_before and resources_after
-        are not None. Changes are calculated as (resources_after - resources_before).
-        """
-        query = session.query(
-            func.sum(AgentAction.resources_after - AgentAction.resources_before).label(
-                "net_change"
-            ),
-            func.avg(AgentAction.resources_after - AgentAction.resources_before).label(
-                "avg_change"
-            ),
-        ).filter(
-            AgentAction.resources_before.isnot(None),
-            AgentAction.resources_after.isnot(None),
-        )
-
-        # Apply scope filters using existing helper method
-        query = self._validate_and_filter_scope(
-            session, query, scope, agent_id, step, step_range
-        )
-
-        return query.first()
 
     def _calculate_sequence_patterns(
         self,
@@ -2509,7 +2429,6 @@ class ActionsRetriever(BaseRetriever):
         ------
         ValueError
             If required parameters are missing for the specified scope:
-            - agent_id missing when scope is "agent"
             - step missing when scope is "step"
             - step_range missing when scope is "step_range"
         TypeError
@@ -2546,9 +2465,17 @@ class ActionsRetriever(BaseRetriever):
         if isinstance(scope, str):
             scope = AnalysisScope.from_string(scope)
 
-        # Validate parameters based on scope
+        # For AGENT scope, randomly select an agent_id if none provided
         if scope == AnalysisScope.AGENT and agent_id is None:
-            raise ValueError("agent_id is required when scope is AGENT")
+            # Get a random agent_id from the database
+            random_agent = (
+                session.query(AgentAction.agent_id).order_by(func.random()).first()
+            )
+            if random_agent is None:
+                raise ValueError("No agents found in database")
+            agent_id = random_agent[0]
+
+        # Validate remaining parameters based on scope
         if scope == AnalysisScope.STEP and step is None:
             raise ValueError("step is required when scope is STEP")
         if scope == AnalysisScope.STEP_RANGE and step_range is None:

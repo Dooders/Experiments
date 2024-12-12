@@ -697,7 +697,6 @@ class StepActionData:
 
     step_summary: StepSummary
     action_statistics: Dict[str, ActionTypeStats]
-    resource_metrics: ResourceMetricsStep
     interaction_network: InteractionNetwork
     performance_metrics: PerformanceMetrics
     detailed_actions: List[Dict[str, Any]]
@@ -2063,3 +2062,39 @@ class DecisionPatterns:
 
     decision_patterns: Dict[str, DecisionPatternStats]
     decision_summary: DecisionSummary
+
+
+@dataclass
+class AgentActionData:
+    """Data representing a single agent action.
+
+    Attributes
+    ----------
+    agent_id : int
+        ID of the acting agent
+    action_type : str
+        Type of action performed
+    action_target_id : Optional[int]
+        Target agent ID (if any)
+    step_number : int
+        Simulation step when action occurred
+    resources_before : float
+        Resource level before action
+    resources_after : float
+        Resource level after action
+    reward : Optional[float]
+        Reward received from action
+    details : Optional[Dict[str, Any]]
+        Additional action-specific details
+    """
+
+    agent_id: int
+    action_type: str
+    step_number: int
+    action_target_id: Optional[int] = None
+    resources_before: Optional[float] = None
+    resources_after: Optional[float] = None
+    state_before_id: Optional[str] = None
+    state_after_id: Optional[str] = None
+    reward: Optional[float] = None
+    details: Optional[Dict[str, Any]] = None
