@@ -509,8 +509,6 @@ class StepSummary:
         Number of unique agents that took actions
     action_types : int
         Number of different action types used
-    total_interactions : int
-        Number of interactions between agents
     total_reward : float
         Sum of all rewards received in this step
     """
@@ -518,7 +516,6 @@ class StepSummary:
     total_actions: int
     unique_agents: int
     action_types: int
-    total_interactions: int
     total_reward: float
 
 
@@ -542,31 +539,6 @@ class ActionTypeStats:
     frequency: float
     avg_reward: float
     total_reward: float
-
-
-@dataclass
-class ActionMetrics:
-    """Metrics for a specific action type.
-
-    Attributes
-    ----------
-    action_type : str
-        The type of action
-    decision_count : int
-        Number of times this action was taken
-    avg_reward : float
-        Average reward received for this action
-    min_reward : float
-        Minimum reward received for this action
-    max_reward : float
-        Maximum reward received for this action
-    """
-
-    action_type: str
-    decision_count: int
-    avg_reward: float
-    min_reward: float
-    max_reward: float
 
 
 @dataclass
@@ -657,17 +629,32 @@ class InteractionNetwork:
 
 
 @dataclass
+class InteractionSummary:
+    """Summary of agent interactions.
+
+    Attributes
+    ----------
+    interaction_count : int
+        Number of interactions
+    average_reward : float
+        Average reward for interactions
+    """
+
+    interaction_count: int
+    average_reward: float
+
+@dataclass
 class PerformanceMetrics:
     """Performance metrics for a simulation step.
 
     Attributes
     ----------
     success_rate : float
-        Proportion of actions with positive rewards
+        Proportion of successful actions
     average_reward : float
-        Mean reward across all actions
+        Average reward for all actions
     action_efficiency : float
-        Proportion of actions that changed agent state
+        Efficiency of action usage
     """
 
     success_rate: float
@@ -687,18 +674,12 @@ class StepActionData:
         Statistics about different action types
     resource_metrics : ResourceMetricsStep
         Resource-related metrics
-    interaction_network : InteractionNetwork
-        Network of agent interactions
-    performance_metrics : PerformanceMetrics
-        Performance-related metrics
     detailed_actions : List[Dict[str, Any]]
         Detailed list of all actions
     """
 
     step_summary: StepSummary
     action_statistics: Dict[str, ActionTypeStats]
-    interaction_network: InteractionNetwork
-    performance_metrics: PerformanceMetrics
     detailed_actions: List[Dict[str, Any]]
 
 
@@ -982,30 +963,19 @@ class InteractionMetrics:
 
 @dataclass
 class ActionMetrics:
-    """Metrics for a specific action type.
-
-    Attributes
-    ----------
-    action_type : str
-        The type of action
-    count : int
-        Number of times this action was taken
-    frequency : float
-        Frequency of this action as a proportion of total actions
-    avg_reward : float
-        Average reward received for this action
-    min_reward : float
-        Minimum reward received for this action
-    max_reward : float
-        Maximum reward received for this action
-    """
-
+    """Statistics for a specific action type."""
     action_type: str
     count: int
     frequency: float
     avg_reward: float
     min_reward: float
     max_reward: float
+    interaction_rate: float
+    solo_performance: float
+    interaction_performance: float
+    temporal_patterns: List[TimePattern]
+    resource_impacts: List[ResourceImpact]
+    decision_patterns: List[DecisionPatternStats]
 
 
 @dataclass
@@ -1040,15 +1010,15 @@ class SequencePattern:
 
     Attributes
     ----------
-    action_type : str
-        The type of action
+    sequence : str
+        The sequence of actions
     count : int
         Number of times this sequence occurred
     probability : float
         Probability of this sequence occurring
     """
 
-    action_type: str
+    sequence: str
     count: int
     probability: float
 
@@ -1693,35 +1663,57 @@ class CausalAnalysis:
         Type of action analyzed
     causal_impact : float
         Average causal effect of the action
-    delayed_rewards : List[float]
-        Long-term rewards associated with the action
     state_transition_probs : Dict[str, float]
         Probabilities of transitioning to states
     """
 
     action_type: str
     causal_impact: float
-    delayed_rewards: List[float]
     state_transition_probs: Dict[str, float]
 
 
 @dataclass
 class BehaviorClustering:
-    """Clustering agents based on behavior.
+    """Clustering analysis of agent behavioral patterns.
 
     Attributes
     ----------
-    clusters : Dict[int, List[int]]
-        Cluster ID mapped to agent IDs
-    cluster_centroids : Dict[int, List[float]]
-        Centroids of behavioral clusters
-    cluster_trends : Dict[int, Dict[str, float]]
-        Trends within each cluster
+    clusters : Dict[str, List[str]]
+        Groups of agent IDs with similar behaviors, where:
+        - 'aggressive': Agents with high attack rates
+        - 'cooperative': Agents focused on sharing and interaction
+        - 'efficient': Agents with high success rates and rewards
+        - 'balanced': Agents with mixed behavior patterns
+    
+    cluster_characteristics : Dict[str, Dict[str, float]]
+        Key behavioral metrics for each cluster, containing:
+        - 'attack_rate': Proportion of attack actions
+        - 'cooperation': Combined rate of sharing and interactions
+        - 'risk_taking': Measure of risky behavior
+        - 'success_rate': Proportion of successful actions
+        - 'resource_efficiency': Efficiency of resource management
+    
+    cluster_performance : Dict[str, float]
+        Average reward per action for each cluster
+
+    Examples
+    --------
+    >>> clusters = retriever.get_behavior_clustering()
+    >>> for name, agents in clusters.clusters.items():
+    ...     print(f"{name}: {len(agents)} agents")
+    ...     print(f"Performance: {clusters.cluster_performance[name]:.2f}")
+    ...     print("Characteristics:", clusters.cluster_characteristics[name])
+    Aggressive: 12 agents
+    Performance: 1.85
+    Characteristics: {'attack_rate': 0.75, 'cooperation': 0.15, 'risk_taking': 0.85}
+    Cooperative: 8 agents
+    Performance: 2.15
+    Characteristics: {'attack_rate': 0.25, 'cooperation': 0.85, 'risk_taking': 0.35}
     """
 
-    clusters: Dict[int, List[int]]
-    cluster_centroids: Dict[int, List[float]]
-    cluster_trends: Dict[int, Dict[str, float]]
+    clusters: Dict[str, List[str]]
+    cluster_characteristics: Dict[str, Dict[str, float]]
+    cluster_performance: Dict[str, float]
 
 
 @dataclass

@@ -1,184 +1,128 @@
-# **Action Retriever Data Definitions**
+# Actions Analysis Module
 
-This document defines the data structures and types used in the **Actions Retriever** module for analyzing agent behavior and simulation dynamics.
+The actions module provides comprehensive analysis of agent actions, interactions, and decision-making patterns within the simulation database. It enables deep insights into agent behaviors, strategies, and performance.
 
----
+## Key Features
 
-## **Core Data Types**
+- Action pattern analysis and metrics calculation
+- Decision-making behavior tracking and analysis
+- Agent interaction statistics and network analysis  
+- Temporal pattern recognition and trend analysis
+- Resource impact assessment and efficiency metrics
+- Step-by-step action monitoring and analysis
+- Advanced behavioral analytics including:
+  - Causal analysis
+  - Exploration/exploitation patterns
+  - Collaborative and adversarial interactions
+  - Learning curves and adaptation
+  - Risk/reward analysis
+  - Resilience and recovery patterns
 
-### **ActionMetrics**
-Basic statistics for a specific action type.
+## Core Classes
+
+### ActionsRetriever
+
+Main class for retrieving and analyzing action data. Provides methods for:
+
+- Basic action retrieval and filtering
+- Statistical analysis and metrics
+- Pattern recognition and clustering
+- Resource impact assessment
+- Decision-making analysis
+- Behavioral profiling
+
+Key methods:
+
 ```python
-ActionMetrics(
-    action_type: str,          # Type of action performed
-    count: int,                # Total occurrences
-    frequency: float,          # Proportion of total actions (0.0 to 1.0)
-    avg_reward: float,         # Average reward received
-    min_reward: float,         # Minimum reward received
-    max_reward: float          # Maximum reward received
-)
+def actions(scope="simulation", agent_id=None, step=None, step_range=None) -> List[AgentActionData]
+"""Retrieve filtered action data with complete metadata"""
+
+def action_stats(scope="simulation", agent_id=None, step=None, step_range=None) -> List[ActionMetrics]
+"""Get comprehensive statistics for each action type"""
+
+def temporal_patterns(scope="simulation", agent_id=None, step_range=None) -> List[TimePattern]
+"""Analyze action patterns over time"""
+
+def resource_impacts(scope="simulation", agent_id=None, step=None, step_range=None) -> List[ResourceImpact]
+"""Analyze resource impacts of different actions"""
+
+def decision_patterns(scope="simulation", agent_id=None, step=None, step_range=None) -> DecisionPatterns
+"""Analyze comprehensive decision-making patterns"""
+
+def sequence_patterns(scope="simulation", agent_id=None, step=None, step_range=None) -> List[SequencePattern]
+"""Analyze sequential action patterns and transitions"""
+
+def causal_analysis(action_type: str) -> CausalAnalysis
+"""Analyze cause-effect relationships for actions"""
+
+def behavior_clustering() -> BehaviorClustering
+"""Group agents by behavioral patterns and strategies"""
 ```
 
-### **TimePattern**
-Temporal analysis of action patterns.
+### AnalysisScope
+
+Enum defining valid analysis scope levels:
+
+- SIMULATION: All data without filtering
+- STEP: Single step analysis  
+- STEP_RANGE: Analysis over step range
+- AGENT: Single agent analysis
+
+## Data Types
+
+- **AgentActionData**: Structured representation of individual actions
+- **ActionMetrics**: Statistical metrics for action types
+- **TimePattern**: Temporal evolution patterns
+- **ResourceImpact**: Resource consumption/generation metrics
+- **DecisionPatterns**: Decision-making analysis results
+- **SequencePattern**: Action sequence statistics
+- **CausalAnalysis**: Cause-effect relationship data
+- **BehaviorClustering**: Agent behavioral groupings
+
+## Usage Examples
+
 ```python
-TimePattern(
-    time_distribution: List[int],      # Action counts per time period
-    reward_progression: List[float]    # Average rewards per time period
-)
+from database.actions import ActionsRetriever
+
+# Initialize retriever
+retriever = ActionsRetriever(session)
+
+# Get action statistics
+stats = retriever.action_stats()
+for metric in stats:
+    print(f"{metric.action_type}: {metric.avg_reward:.2f}")
+
+# Analyze temporal patterns
+patterns = retriever.temporal_patterns()
+for pattern in patterns:
+    print(f"{pattern.action_type} trend:")
+    print(pattern.time_distribution)
+
+# Cluster agent behaviors
+clusters = retriever.behavior_clustering()
+for strategy, agents in clusters.clusters.items():
+    print(f"{strategy}: {len(agents)} agents")
 ```
 
-### **ResourceImpact**
-Analysis of how actions affect agent resources.
-```python
-ResourceImpact(
-    avg_resources_before: float,       # Mean resources before action execution
-    avg_resource_change: float,        # Average change in resources from action
-    resource_efficiency: float         # Resource change per action execution
-)
-```
+## Analysis Scopes
 
-### **InteractionStats**
-Statistics about agent interactions.
-```python
-InteractionStats(
-    action_type: str,                  # Type of action being analyzed
-    interaction_rate: float,           # Proportion of actions involving other agents
-    solo_performance: float,           # Average reward for actions without targets
-    interaction_performance: float     # Average reward for actions with targets
-)
-```
+All analysis methods support multiple scoping options:
 
-### **DecisionPatterns**
-Comprehensive analysis of decision-making patterns.
-```python
-DecisionPatterns(
-    decision_patterns: Dict[str, DecisionPatternStats],  # Statistics per action type
-    sequence_analysis: Dict[str, SequencePattern],       # Action sequence analysis
-    resource_impact: Dict[str, ResourceImpact],         # Resource effects
-    temporal_patterns: Dict[str, TimePattern],          # Time-based patterns
-    interaction_analysis: Dict[str, InteractionStats],  # Interaction statistics
-    decision_summary: DecisionSummary                   # Overall metrics
-)
-```
+- "simulation": Analyze all data (no filters)
+- "step": Analyze specific step
+- "step_range": Analyze range of steps  
+- "agent": Analyze specific agent
 
-### **DecisionPatternStats**
-Detailed statistics for each action type.
-```python
-DecisionPatternStats(
-    count: int,                        # Total number of times action was taken
-    frequency: float,                  # Proportion of times action was chosen
-    reward_stats: Dict[str, float]     # Average/min/max rewards
-)
-```
+## Dependencies
 
-### **SequencePattern**
-Analysis of action sequences.
-```python
-SequencePattern(
-    count: int,                        # Number of times sequence occurred
-    probability: float                 # Likelihood of sequence occurring
-)
-```
+- sqlalchemy: Database ORM and query building
+- numpy: Numerical computations and analysis
+- pandas: Data manipulation and analysis
+- scipy: Statistical analysis and clustering
 
----
+## Notes
 
-## **Step Analysis Types**
-
-### **StepActionData**
-Comprehensive data about actions in a specific step.
-```python
-StepActionData(
-    step_summary: StepSummary,                    # Overall step statistics
-    action_statistics: Dict[str, Dict],           # Per-action statistics
-    resource_metrics: ResourceMetricsStep,        # Resource changes
-    interaction_network: InteractionNetwork,      # Agent interactions
-    performance_metrics: PerformanceMetrics,      # Success metrics
-    detailed_actions: List[Dict]                  # Raw action details
-)
-```
-
-### **StepSummary**
-Overall statistics for a simulation step.
-```python
-StepSummary(
-    total_actions: int,           # Total actions taken
-    unique_agents: int,           # Number of active agents
-    action_types: int,            # Unique action types used
-    total_interactions: int,      # Number of interactions
-    total_reward: float          # Total reward accumulated
-)
-```
-
-### **ResourceMetricsStep**
-Resource changes during a step.
-```python
-ResourceMetricsStep(
-    net_resource_change: float,       # Total resource change
-    average_resource_change: float,   # Average change per action
-    resource_transactions: int        # Number of transactions
-)
-```
-
-### **InteractionNetwork**
-Network of agent interactions.
-```python
-InteractionNetwork(
-    interactions: List[Dict],         # List of interaction events
-    unique_interacting_agents: int    # Number of unique interacting agents
-)
-```
-
-### **PerformanceMetrics**
-Success and efficiency metrics.
-```python
-PerformanceMetrics(
-    success_rate: float,         # Proportion of successful actions
-    average_reward: float,       # Mean reward per action
-    action_efficiency: float     # Proportion of effective actions
-)
-```
-
----
-
-## **Analysis Types**
-
-### **ExplorationExploitation**
-Analysis of exploration vs exploitation.
-```python
-ExplorationExploitation(
-    exploration_rate: float,           # Rate of new action attempts
-    exploitation_rate: float,          # Rate of repeated actions
-    reward_comparison: Dict[str, float] # New vs known action rewards
-)
-```
-
-### **ResilienceAnalysis**
-Analysis of recovery from failures.
-```python
-ResilienceAnalysis(
-    recovery_rate: float,           # Steps needed to recover
-    adaptation_rate: float,         # Rate of strategy modification
-    failure_impact: float           # Performance impact of failures
-)
-```
-
-### **CollaborativeInteractionAnalysis**
-Analysis of cooperative behaviors.
-```python
-CollaborativeInteractionAnalysis(
-    collaboration_rate: float,         # Rate of cooperative actions
-    group_reward_impact: float,        # Benefit from collaboration
-    synergy_metrics: float            # Collaborative vs solo performance
-)
-```
-
-### **AdversarialInteractionAnalysis**
-Analysis of competitive behaviors.
-```python
-AdversarialInteractionAnalysis(
-    win_rate: float,                   # Success rate in conflicts
-    damage_efficiency: float,          # Effectiveness of actions
-    counter_strategies: Dict[str, float] # Response patterns
-)
-```
+- All analysis methods support flexible scope filtering
+- Heavy computations are optimized through database queries
+- Results are returned as structured data types
+- Analysis methods handle missing or incomplete data
