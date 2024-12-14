@@ -54,7 +54,7 @@ class DataLogger:
     def log_agent_action(
         self,
         step_number: int,
-        agent_id: int,
+        agent_id: str,
         action_type: str,
         action_target_id: Optional[int] = None,
         position_before: Optional[Tuple[float, float]] = None,
@@ -69,8 +69,6 @@ class DataLogger:
             # Input validation
             if step_number < 0:
                 raise ValueError("step_number must be non-negative")
-            if agent_id < 0:
-                raise ValueError("agent_id must be non-negative")
             if not isinstance(action_type, str):
                 action_type = str(action_type)
 
@@ -105,7 +103,7 @@ class DataLogger:
     def log_learning_experience(
         self,
         step_number: int,
-        agent_id: int,
+        agent_id: str,
         module_type: str,
         module_id: int,
         action_taken: int,
@@ -136,7 +134,7 @@ class DataLogger:
     def log_health_incident(
         self,
         step_number: int,
-        agent_id: int,
+        agent_id: str,
         health_before: float,
         health_after: float,
         cause: str,
@@ -254,7 +252,7 @@ class DataLogger:
         ----------
         agent_data_list : List[Dict]
             List of dictionaries containing agent data with fields:
-            - agent_id: int
+            - agent_id: str
             - birth_time: int
             - agent_type: str
             - position: Tuple[float, float]
@@ -307,7 +305,7 @@ class DataLogger:
 
     def log_agent(
         self,
-        agent_id: int,
+        agent_id: str,
         birth_time: int,
         agent_type: str,
         position: Tuple[float, float],
@@ -322,7 +320,7 @@ class DataLogger:
 
         Parameters
         ----------
-        agent_id : int
+        agent_id : str
             Unique identifier for the agent
         birth_time : int
             Time step when agent was created
@@ -429,7 +427,16 @@ class DataLogger:
                         }
                         for state in agent_states
                     ]
-                    session.bulk_insert_mappings(AgentState, agent_state_mappings)
+                    # Create a set to track unique IDs and filter out duplicates
+                    unique_states = {}
+                    for mapping in agent_state_mappings:
+                        state_id = f"{mapping['agent_id']}-{mapping['step_number']}"
+                        mapping['id'] = state_id
+                        # Keep only the latest state if there are duplicates
+                        unique_states[state_id] = mapping
+
+                    # Use the filtered mappings for bulk insert
+                    session.bulk_insert_mappings(AgentState, unique_states.values())
 
                 # Bulk insert resource states
                 if resource_states:

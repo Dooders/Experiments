@@ -99,7 +99,7 @@ class Agent(Base):
         Index("idx_agents_death_time", "death_time"),
     )
 
-    agent_id = Column(Integer, primary_key=True)
+    agent_id = Column(String(64), primary_key=True)
     birth_time = Column(Integer)
     death_time = Column(Integer)
     agent_type = Column(String(50))
@@ -143,12 +143,14 @@ class AgentState(Base):
         Unique identifier for the state record
     step_number : int
         Simulation step this state represents
-    agent_id : int
+    agent_id : str
         ID of the agent this state belongs to
     position_x : float
         Current X-coordinate position
     position_y : float
         Current Y-coordinate position
+    position_z : float
+        Current Z-coordinate position
     resource_level : float
         Current resource amount held by agent
     current_health : float
@@ -179,30 +181,36 @@ class AgentState(Base):
     __table_args__ = (
         Index("idx_agent_states_agent_id", "agent_id"),
         Index("idx_agent_states_step_number", "step_number"),
-        Index("idx_agent_states_composite", "step_number", "agent_id"),
     )
 
-    id = Column(Integer, primary_key=True)
+    id = Column(
+        String(128), primary_key=True, nullable=False
+    )  # Will store "agent_id-step_number"
     step_number = Column(Integer)
-    agent_id = Column(Integer, ForeignKey("agents.agent_id"))
+    agent_id = Column(String(64), ForeignKey("agents.agent_id"))
     position_x = Column(Float)
     position_y = Column(Float)
+    position_z = Column(Float)
     resource_level = Column(Float)
     current_health = Column(Float)
-    max_health = Column(Float)
-    starvation_threshold = Column(Integer)
     is_defending = Column(Boolean)
     total_reward = Column(Float)
     age = Column(Integer)
 
     agent = relationship("Agent", back_populates="states")
 
+    def __init__(self, **kwargs):
+        # Ensure id is generated before calling super().__init__
+        if "agent_id" in kwargs and "step_number" in kwargs:
+            kwargs["id"] = f"{kwargs['agent_id']}-{kwargs['step_number']}"
+        super().__init__(**kwargs)
+
     def as_dict(self) -> Dict[str, Any]:
         """Convert agent state to dictionary."""
         return {
             "agent_id": self.agent_id,
             "agent_type": self.agent.agent_type,
-            "position": (self.position_x, self.position_y),
+            "position": (self.position_x, self.position_y, self.position_z),
             "resource_level": self.resource_level,
             "current_health": self.current_health,
             "max_health": self.max_health,
@@ -213,7 +221,6 @@ class AgentState(Base):
         }
 
 
-# Additional SQLAlchemy Models
 class ResourceState(Base):
     """Tracks the state of resources in the environment.
 
@@ -384,7 +391,7 @@ class AgentAction(Base):
         Unique identifier for the action
     step_number : int
         Simulation step when the action occurred
-    agent_id : int
+    agent_id : str
         ID of the agent that performed the action
     action_type : str
         Type of action performed (e.g., 'move', 'attack', 'share')
@@ -422,11 +429,11 @@ class AgentAction(Base):
 
     action_id = Column(Integer, primary_key=True)
     step_number = Column(Integer, nullable=False)
-    agent_id = Column(Integer, ForeignKey("agents.agent_id"), nullable=False)
+    agent_id = Column(String(64), ForeignKey("agents.agent_id"), nullable=False)
     action_type = Column(String(20), nullable=False)
-    action_target_id = Column(Integer, ForeignKey("agents.agent_id"), nullable=True)
-    state_before_id = Column(Integer, ForeignKey("agent_states.id"), nullable=True)
-    state_after_id = Column(Integer, ForeignKey("agent_states.id"), nullable=True)
+    action_target_id = Column(String(64), ForeignKey("agents.agent_id"), nullable=True)
+    state_before_id = Column(String(128), ForeignKey("agent_states.id"), nullable=True)
+    state_after_id = Column(String(128), ForeignKey("agent_states.id"), nullable=True)
     resources_before = Column(Float(precision=6), nullable=True)
     resources_after = Column(Float(precision=6), nullable=True)
     reward = Column(Float(precision=6), nullable=True)
@@ -435,21 +442,6 @@ class AgentAction(Base):
     agent = relationship("Agent", back_populates="actions", foreign_keys=[agent_id])
     state_before = relationship("AgentState", foreign_keys=[state_before_id])
     state_after = relationship("AgentState", foreign_keys=[state_after_id])
-
-    @property
-    def position_before_array(self):
-        """Convert stored JSON string back to array/list"""
-        if self.state_before:
-            return [self.state_before.position_x, self.state_before.position_y]
-        return None
-
-    @position_before_array.setter
-    def position_before_array(self, value):
-        """Convert array/list to JSON string for storage"""
-        # This property is now deprecated as we use state references
-        logger.warning(
-            "position_before_array setter is deprecated, use state references instead"
-        )
 
 
 class LearningExperience(Base):
@@ -464,7 +456,7 @@ class LearningExperience(Base):
 
     experience_id = Column(Integer, primary_key=True)
     step_number = Column(Integer)
-    agent_id = Column(Integer, ForeignKey("agents.agent_id"))
+    agent_id = Column(String(64), ForeignKey("agents.agent_id"))
     module_type = Column(String(50))
     module_id = Column(String(64))
     action_taken = Column(Integer)
@@ -485,7 +477,7 @@ class HealthIncident(Base):
 
     incident_id = Column(Integer, primary_key=True)
     step_number = Column(Integer, nullable=False)
-    agent_id = Column(Integer, ForeignKey("agents.agent_id"), nullable=False)
+    agent_id = Column(String(64), ForeignKey("agents.agent_id"), nullable=False)
     health_before = Column(Float(precision=4))
     health_after = Column(Float(precision=4))
     cause = Column(String(50), nullable=False)

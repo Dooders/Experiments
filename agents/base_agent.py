@@ -51,12 +51,12 @@ class BaseAgent:
 
     def __init__(
         self,
-        agent_id: int,
+        agent_id: str,
         position: tuple[int, int],
         resource_level: int,
         environment: "Environment",
         action_set: list[Action] = BASE_ACTION_SET,
-        parent_id: Optional[int] = None,
+        parent_id: Optional[str] = None,
         generation: int = 0,
         skip_logging: bool = False,
     ):
@@ -77,8 +77,8 @@ class BaseAgent:
         self.config = environment.config
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.last_state: AgentState | None = None
-        self.last_action = None
+        self.last_state: AgentState | None = None #! change to previous_state
+        self.last_action = None #! change to previous_action
         self.max_movement = self.config.max_movement
         self.total_reward = 0
         self.episode_rewards = []
@@ -88,16 +88,18 @@ class BaseAgent:
         self.birth_time = environment.time
 
         # Initialize health tracking first
-        self.max_health = self.config.max_health
+        self.max_health = self.config.max_health #! change to starting_health
         self.current_health = self.max_health
         self.is_defending = False
 
         # Generate genome info
+        #! make this 'parent_a_id-parent_b_id'
         self.genome_id = f"{self.__class__.__name__}_{agent_id}_{environment.time}"
         self.parent_id = parent_id
         self.generation = generation
 
         # Initialize all modules first
+        #! make this a list of action modules that can be provided to the agent at init
         self.move_module = MoveModule(self.config, db=environment.db)
         self.attack_module = AttackModule(self.config)
         self.share_module = ShareModule(self.config)
@@ -125,8 +127,16 @@ class BaseAgent:
             logger.info(
                 f"Agent {self.agent_id} created at {self.position} during step {environment.time} of type {self.__class__.__name__}"
             )
+            
+    def get_perception(self) -> AgentState:
+        #! make this a list of perception modules that can be provided to the agent at init
+        pass
 
     def get_state(self) -> AgentState:
+        #! rethink state, needs to return a full state with an option to normalize and/or return a smaller state representation
+        #! then need to update the state in the database and the input tensor to the neural network
+        #! include perception with state? or just the state and perception is seperate?
+        #! also incorporate 3rd dimension for position
         """Get the current normalized state of the agent.
 
         Calculates the agent's state relative to the nearest available resource,
@@ -143,6 +153,7 @@ class BaseAgent:
             AgentState: Normalized state representation containing all relevant metrics
         """
         # Get closest resource position
+        #! this is the perception module
         closest_resource = None
         min_distance = float("inf")
         for resource in self.environment.resources:
@@ -224,9 +235,12 @@ class BaseAgent:
         # Reset defense status at start of turn
         self.is_defending = False
 
-        initial_resources = self.resource_level
+        starting_resources = self.resource_level #! whats this for?
         self.resource_level -= self.config.base_consumption_rate
 
+
+        #! encapsulate this in a method
+        #! maybe even change the logic
         if self.resource_level <= 0:
             self.starvation_threshold += 1
             if self.starvation_threshold >= self.max_starvation:
