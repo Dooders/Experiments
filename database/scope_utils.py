@@ -1,7 +1,11 @@
 from typing import Optional, Tuple, Union
+
+from sqlalchemy import func
 from sqlalchemy.orm import Query
+
+from database.enums import AnalysisScope
 from database.models import AgentAction
-from database.data_types import AnalysisScope
+
 
 def filter_scope(
     query: Query,
@@ -71,7 +75,9 @@ def filter_scope(
     # For AGENT scope, randomly select an agent_id if none provided
     if scope == AnalysisScope.AGENT and agent_id is None:
         # Get a random agent_id from the database
-        random_agent = query.session.query(AgentAction.agent_id).order_by(func.random()).first()
+        random_agent = (
+            query.session.query(AgentAction.agent_id).order_by(func.random()).first()
+        )
         if random_agent is None:
             raise ValueError("No agents found in database")
         agent_id = random_agent[0]

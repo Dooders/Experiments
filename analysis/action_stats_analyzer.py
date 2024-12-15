@@ -1,6 +1,7 @@
 from typing import List, Optional, Tuple, Union
 from database.data_types import ActionMetrics, AgentActionData, TimePattern, ResourceImpact, DecisionPatternStats
 from database.repositories.agent_action_repository import AgentActionRepository
+from database.enums import AnalysisScope
 
 class ActionStatsAnalyzer:
     def __init__(self, repository: AgentActionRepository):

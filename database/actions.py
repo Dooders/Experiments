@@ -108,59 +108,28 @@ database.data_types : Data structure definitions
 """
 
 from enum import Enum
-from json import loads
 from typing import List, Optional, Tuple, Union
 
-from sqlalchemy import case, func
-
+from analysis.action_stats_analyzer import ActionStatsAnalyzer
+from analysis.behavior_clustering_analyzer import BehaviorClusteringAnalyzer
+from analysis.causal_analyzer import CausalAnalyzer
+from analysis.decision_pattern_analyzer import DecisionPatternAnalyzer
+from analysis.resource_impact_analyzer import ResourceImpactAnalyzer
+from analysis.sequence_pattern_analyzer import SequencePatternAnalyzer
+from analysis.temporal_pattern_analyzer import TemporalPatternAnalyzer
 from database.data_types import (
     ActionMetrics,
     AgentActionData,
     BehaviorClustering,
     CausalAnalysis,
     DecisionPatterns,
-    DecisionPatternStats,
-    DecisionSummary,
     ResourceImpact,
     SequencePattern,
     TimePattern,
 )
+from database.enums import AnalysisScope
 from database.repositories.agent_action_repository import AgentActionRepository
-from analysis.action_stats_analyzer import ActionStatsAnalyzer
-from analysis.temporal_pattern_analyzer import TemporalPatternAnalyzer
-from analysis.resource_impact_analyzer import ResourceImpactAnalyzer
-from analysis.decision_pattern_analyzer import DecisionPatternAnalyzer
-from analysis.sequence_pattern_analyzer import SequencePatternAnalyzer
-from analysis.causal_analyzer import CausalAnalyzer
-from analysis.behavior_clustering_analyzer import BehaviorClusteringAnalyzer
 from database.retrievers import BaseRetriever
-from database.utilities import execute_query
-
-
-class AnalysisScope(str, Enum):
-    """Scope levels for analysis queries.
-
-    SIMULATION: All data (no filters)
-    STEP: Single step
-    STEP_RANGE: Range of steps
-    AGENT: Single agent
-    """
-
-    SIMULATION = "simulation"
-    STEP = "step"
-    STEP_RANGE = "step_range"
-    AGENT = "agent"
-
-    @classmethod
-    def from_string(cls, scope_str: str) -> "AnalysisScope":
-        """Convert string to AnalysisScope, case-insensitive."""
-        try:
-            return cls(scope_str.lower())
-        except ValueError:
-            valid_scopes = [s.value for s in cls]
-            raise ValueError(
-                f"Invalid scope '{scope_str}'. Must be one of: {valid_scopes}"
-            )
 
 
 class ActionsRetriever(BaseRetriever):
@@ -296,6 +265,24 @@ class ActionsRetriever(BaseRetriever):
         step: Optional[int] = None,
         step_range: Optional[Tuple[int, int]] = None,
     ) -> List[AgentActionData]:
+        """Retrieve filtered action data with complete metadata.
+
+        Parameters
+        ----------
+        scope : Union[str, AnalysisScope], default=AnalysisScope.SIMULATION
+            Analysis scope level to filter data
+        agent_id : Optional[int], default=None
+            Specific agent ID to filter by
+        step : Optional[int], default=None
+            Specific simulation step to analyze
+        step_range : Optional[Tuple[int, int]], default=None
+            Range of simulation steps to analyze
+
+        Returns
+        -------
+        List[AgentActionData]
+            List of action data entries matching the specified filters
+        """
         return self.repository.get_actions_by_scope(scope, agent_id, step, step_range)
 
     def action_stats(
@@ -305,6 +292,24 @@ class ActionsRetriever(BaseRetriever):
         step: Optional[int] = None,
         step_range: Optional[Tuple[int, int]] = None,
     ) -> List[ActionMetrics]:
+        """Calculate comprehensive statistics for each action type.
+
+        Parameters
+        ----------
+        scope : Union[str, AnalysisScope], default=AnalysisScope.SIMULATION
+            Analysis scope level to filter data
+        agent_id : Optional[int], default=None
+            Specific agent ID to filter by
+        step : Optional[int], default=None
+            Specific simulation step to analyze
+        step_range : Optional[Tuple[int, int]], default=None
+            Range of simulation steps to analyze
+
+        Returns
+        -------
+        List[ActionMetrics]
+            Statistical metrics for each action type
+        """
         return self.action_stats_analyzer.analyze(scope, agent_id, step, step_range)
 
     def temporal_patterns(
@@ -313,6 +318,22 @@ class ActionsRetriever(BaseRetriever):
         agent_id: Optional[int] = None,
         step_range: Optional[Tuple[int, int]] = None,
     ) -> List[TimePattern]:
+        """Analyze action patterns over time.
+
+        Parameters
+        ----------
+        scope : Union[str, AnalysisScope], default=AnalysisScope.SIMULATION
+            Analysis scope level to filter data
+        agent_id : Optional[int], default=None
+            Specific agent ID to filter by
+        step_range : Optional[Tuple[int, int]], default=None
+            Range of simulation steps to analyze
+
+        Returns
+        -------
+        List[TimePattern]
+            Temporal evolution patterns for actions
+        """
         return self.temporal_pattern_analyzer.analyze(scope, agent_id, step_range)
 
     def resource_impacts(
@@ -322,6 +343,24 @@ class ActionsRetriever(BaseRetriever):
         step: Optional[int] = None,
         step_range: Optional[Tuple[int, int]] = None,
     ) -> List[ResourceImpact]:
+        """Analyze resource impacts of different actions.
+
+        Parameters
+        ----------
+        scope : Union[str, AnalysisScope], default=AnalysisScope.SIMULATION
+            Analysis scope level to filter data
+        agent_id : Optional[int], default=None
+            Specific agent ID to filter by
+        step : Optional[int], default=None
+            Specific simulation step to analyze
+        step_range : Optional[Tuple[int, int]], default=None
+            Range of simulation steps to analyze
+
+        Returns
+        -------
+        List[ResourceImpact]
+            Resource consumption and generation metrics for actions
+        """
         return self.resource_impact_analyzer.analyze(scope, agent_id, step, step_range)
 
     def decision_patterns(
@@ -331,6 +370,24 @@ class ActionsRetriever(BaseRetriever):
         step: Optional[int] = None,
         step_range: Optional[Tuple[int, int]] = None,
     ) -> DecisionPatterns:
+        """Analyze comprehensive decision-making patterns.
+
+        Parameters
+        ----------
+        scope : Union[str, AnalysisScope], default=AnalysisScope.SIMULATION
+            Analysis scope level to filter data
+        agent_id : Optional[int], default=None
+            Specific agent ID to filter by
+        step : Optional[int], default=None
+            Specific simulation step to analyze
+        step_range : Optional[Tuple[int, int]], default=None
+            Range of simulation steps to analyze
+
+        Returns
+        -------
+        DecisionPatterns
+            Analysis of decision-making patterns and behaviors
+        """
         return self.decision_pattern_analyzer.analyze(scope, agent_id, step, step_range)
 
     def sequence_patterns(
@@ -340,10 +397,47 @@ class ActionsRetriever(BaseRetriever):
         step: Optional[int] = None,
         step_range: Optional[Tuple[int, int]] = None,
     ) -> List[SequencePattern]:
+        """Analyze sequential action patterns and transitions.
+
+        Parameters
+        ----------
+        scope : Union[str, AnalysisScope], default=AnalysisScope.SIMULATION
+            Analysis scope level to filter data
+        agent_id : Optional[int], default=None
+            Specific agent ID to filter by
+        step : Optional[int], default=None
+            Specific simulation step to analyze
+        step_range : Optional[Tuple[int, int]], default=None
+            Range of simulation steps to analyze
+
+        Returns
+        -------
+        List[SequencePattern]
+            Action sequence statistics and transition patterns
+        """
         return self.sequence_pattern_analyzer.analyze(scope, agent_id, step, step_range)
 
     def causal_analysis(self, action_type: str) -> CausalAnalysis:
+        """Analyze cause-effect relationships for specific action type.
+
+        Parameters
+        ----------
+        action_type : str
+            Type of action to analyze causal relationships for
+
+        Returns
+        -------
+        CausalAnalysis
+            Cause-effect relationships and impact analysis
+        """
         return self.causal_analyzer.analyze(action_type)
 
     def behavior_clustering(self) -> BehaviorClustering:
+        """Group agents by behavioral patterns and strategies.
+
+        Returns
+        -------
+        BehaviorClustering
+            Clustered agent behaviors and strategy classifications
+        """
         return self.behavior_clustering_analyzer.analyze()

@@ -1,14 +1,22 @@
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
-from database.models import AgentAction
 from database.data_types import AgentActionData
+from database.models import AgentAction
 from database.scope_utils import filter_scope
 
 
 class AgentActionRepository:
+    """Repository class for managing agent action records in the database.
+
+    This class provides methods to query and retrieve agent actions based on various
+    filtering criteria such as scope, agent ID, and step numbers.
+
+    Args:
+        session (Session): SQLAlchemy database session for database operations.
+    """
+
     def __init__(self, session: Session):
         self.session = session
 
@@ -19,6 +27,19 @@ class AgentActionRepository:
         step: Optional[int] = None,
         step_range: Optional[Tuple[int, int]] = None,
     ) -> List[AgentActionData]:
+        """Retrieve agent actions filtered by scope and other optional parameters.
+
+        Args:
+            scope (str): The scope to filter actions by (e.g., 'episode', 'experiment').
+            agent_id (Optional[int], optional): Specific agent ID to filter by. Defaults to None.
+            step (Optional[int], optional): Specific step number to filter by. Defaults to None.
+            step_range (Optional[Tuple[int, int]], optional): Range of step numbers to filter by.
+                Defaults to None.
+
+        Returns:
+            List[AgentActionData]: List of agent actions matching the specified criteria,
+                ordered by step number and agent ID.
+        """
         query = self.session.query(AgentAction).order_by(
             AgentAction.step_number, AgentAction.agent_id
         )

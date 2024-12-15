@@ -1,10 +1,28 @@
 from typing import List, Optional, Tuple, Union
-from database.data_types import TimePattern, AgentActionData
-from database.repositories.agent_action_repository import AgentActionRepository
+
+from database.data_types import TimePattern
 from database.enums import AnalysisScope
+from database.repositories.agent_action_repository import AgentActionRepository
+
 
 class TemporalPatternAnalyzer:
+    """
+    Analyzes temporal patterns in agent actions over time.
+
+    This class processes agent actions to identify patterns in their occurrence
+    and associated rewards across different time periods.
+
+    Attributes:
+        repository (AgentActionRepository): Repository for accessing agent action data.
+    """
+
     def __init__(self, repository: AgentActionRepository):
+        """
+        Initialize the TemporalPatternAnalyzer.
+
+        Args:
+            repository (AgentActionRepository): Repository for accessing agent action data.
+        """
         self.repository = repository
 
     def analyze(
@@ -13,6 +31,27 @@ class TemporalPatternAnalyzer:
         agent_id: Optional[int] = None,
         step_range: Optional[Tuple[int, int]] = None,
     ) -> List[TimePattern]:
+        """
+        Analyze temporal patterns in agent actions.
+
+        This method processes agent actions to identify patterns in their occurrence
+        and rewards over time. It divides the timeline into periods of 100 steps
+        and aggregates action counts and average rewards for each period.
+
+        Args:
+            scope (Union[str, AnalysisScope], optional): The scope of analysis.
+                Defaults to AnalysisScope.SIMULATION.
+            agent_id (Optional[int], optional): ID of the specific agent to analyze.
+                If None, analyzes all agents. Defaults to None.
+            step_range (Optional[Tuple[int, int]], optional): Range of steps to analyze,
+                as (start_step, end_step). If None, analyzes all steps. Defaults to None.
+
+        Returns:
+            List[TimePattern]: A list of TimePattern objects, each containing:
+                - action_type: The type of action
+                - time_distribution: List of action counts per time period
+                - reward_progression: List of average rewards per time period
+        """
         actions = self.repository.get_actions_by_scope(scope, agent_id, step_range=step_range)
         patterns = {}
 
