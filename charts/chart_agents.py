@@ -68,6 +68,18 @@ def plot_agent_types_over_time(dataframe):
     plt.legend(title='Agent Type')
     plt.show()
 
+def plot_allele_frequency_changes(dataframe):
+    """Plot allele frequency changes over time."""
+    plt.figure(figsize=(10, 6))
+    allele_frequencies = dataframe.filter(like='allele_frequency_')
+    for column in allele_frequencies.columns:
+        plt.plot(dataframe['step_number'], dataframe[column], label=column)
+    plt.title('Allele Frequency Changes Over Time')
+    plt.xlabel('Step Number')
+    plt.ylabel('Allele Frequency')
+    plt.legend()
+    plt.show()
+
 # Load the dataset
 def main(dataframe):
 
@@ -93,6 +105,9 @@ def main(dataframe):
 
         print("Plotting agent types over time...")
         plot_agent_types_over_time(dataframe)
+
+        print("Plotting allele frequency changes...")
+        plot_allele_frequency_changes(dataframe)
 
     except Exception as e:
         print(f"An error occurred: {e}")

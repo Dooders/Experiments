@@ -12,6 +12,7 @@ from database.database import SimulationDatabase
 from core.resources import Resource
 from core.state import EnvironmentState
 from utils.short_id import ShortUUID
+from core.genome import Genome  # Import Genome class
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +299,9 @@ class Environment:
             resources_consumed = max(0, previous_resources - current_resources)
             self.previous_total_resources = current_resources
 
+            # Calculate allele frequencies
+            allele_frequencies = Genome.calculate_allele_frequencies(alive_agents)
+
             # Return all metrics in a dictionary
             return {
                 "total_agents": total_agents,
@@ -319,7 +323,8 @@ class Environment:
                 "successful_attacks": successful_attacks,
                 "resources_shared": resources_shared,
                 "genetic_diversity": genetic_diversity,
-                "dominant_genome_ratio": dominant_genome_ratio
+                "dominant_genome_ratio": dominant_genome_ratio,
+                "allele_frequencies": allele_frequencies  # Add allele frequencies to metrics
             }
         except Exception as e:
             logging.error(f"Error calculating metrics: {e}")
@@ -344,7 +349,8 @@ class Environment:
                 "successful_attacks": 0,
                 "resources_shared": 0,
                 "genetic_diversity": 0,
-                "dominant_genome_ratio": 0
+                "dominant_genome_ratio": 0,
+                "allele_frequencies": {}  # Default empty dictionary for allele frequencies
             }
 
     def get_next_agent_id(self):
@@ -621,7 +627,8 @@ class Environment:
             agent.starvation_threshold,
             int(agent.is_defending),
             agent.total_reward,
-            self.time - agent.birth_time  # age
+            self.time - agent.birth_time,  # age
+            agent.allele_frequencies  # Include allele frequencies
         )
 
     def _prepare_resource_state(self, resource) -> tuple:

@@ -258,3 +258,54 @@ class Genome:
             # Modifying copy won't affect original
         """
         return Genome.load(Genome.save(genome))
+
+    @staticmethod
+    def calculate_allele_frequencies(population: list["BaseAgent"]) -> dict:
+        """Calculate allele frequencies for a population of agents.
+
+        Args:
+            population (list[BaseAgent]): List of agents in the population.
+
+        Returns:
+            dict: Allele frequencies for each gene in the population.
+        """
+        allele_counts = {}
+        total_alleles = 0
+
+        for agent in population:
+            genome = Genome.from_agent(agent)
+            for gene, value in genome["module_states"].items():
+                if gene not in allele_counts:
+                    allele_counts[gene] = {}
+                if value not in allele_counts[gene]:
+                    allele_counts[gene][value] = 0
+                allele_counts[gene][value] += 1
+                total_alleles += 1
+
+        allele_frequencies = {
+            gene: {allele: count / total_alleles for allele, count in alleles.items()}
+            for gene, alleles in allele_counts.items()
+        }
+
+        return allele_frequencies
+
+    @staticmethod
+    def track_allele_frequencies(population: list["BaseAgent"], generations: int) -> list[dict]:
+        """Track allele frequencies over multiple generations.
+
+        Args:
+            population (list[BaseAgent]): Initial population of agents.
+            generations (int): Number of generations to track.
+
+        Returns:
+            list[dict]: List of allele frequencies for each generation.
+        """
+        allele_frequencies_over_time = []
+
+        for _ in range(generations):
+            allele_frequencies = Genome.calculate_allele_frequencies(population)
+            allele_frequencies_over_time.append(allele_frequencies)
+            # Simulate next generation (this is a placeholder, actual implementation may vary)
+            population = [Genome.to_agent(Genome.mutate(Genome.from_agent(agent)), agent.agent_id, agent.position, agent.environment) for agent in population]
+
+        return allele_frequencies_over_time
