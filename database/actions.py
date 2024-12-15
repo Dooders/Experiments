@@ -1,5 +1,7 @@
 """Actions retrieval and analysis module for simulation database.
-
+#! This module is deprecated and will be removed in the future.
+#! Use the services module instead. Which is a higher level of abstraction.
+#! Takes the repository and provides a high level interface for analysis.
 This module provides comprehensive analysis of agent actions, interactions, and decision-making
 patterns within the simulation. The ActionsRetriever class offers specialized queries and 
 analysis methods for extracting insights from action-related data.
