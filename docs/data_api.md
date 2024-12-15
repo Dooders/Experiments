@@ -16,57 +16,33 @@ The Database module is responsible for handling all interactions with the underl
 
 - **Data Retrieval** (`database/data_retrieval.py`): Contains classes like `DataRetriever` that facilitate querying and fetching data from the database for analysis purposes.
 
-- **Utilities** (`database/utilities.py`): Provides helper functions for database schema creation, execution with retry mechanisms, data formatting, and validation.
-
-#### Example: `SimulationDatabase` Class
-
-```python
-class SimulationDatabase:
-    """
-    Database interface for simulation state persistence and analysis.
-
-    This class provides a high-level interface for storing and retrieving simulation
-    data using SQLAlchemy ORM. It handles all database operations including state
-    logging, configuration management, and data analysis with transaction safety
-    and efficient batch operations.
-    """
-
-    def __init__(self, db_path: str) -> None:
-        # Initialization code...
-```
-
 ### Analysis Module (`analysis`)
 
-The Analysis module comprises a set of analyzers that process simulation data to extract insights, patterns, and metrics. These analyzers use data retrieved from the database to perform various forms of analysis, such as statistical summaries, pattern recognition, and performance evaluation. Key analyzers include:
+The Analysis module provides various analytical tools and methods to process and analyze simulation data. It includes classes and functions to perform statistical analysis, clustering, causal inference, and pattern recognition on the data retrieved from the database. Key components of the Analysis module include:
 
-- **`ActionStatsAnalyzer`** (`analysis/action_stats_analyzer.py`): Analyzes agent actions to generate metrics like frequency, rewards, and interaction rates.
+- **`ActionStatsAnalyzer`** (`analysis/action_stats_analyzer.py`): Analyzes statistics and patterns of agent actions in a simulation.
 
-- **`BehaviorClusteringAnalyzer`** (`analysis/behavior_clustering_analyzer.py`): Clusters agents based on their behavioral patterns derived from action sequences.
+- **`BehaviorClusteringAnalyzer`** (`analysis/behavior_clustering_analyzer.py`): Analyzes agent behaviors and clusters them based on their action patterns.
 
-- **`CausalAnalyzer`** (`analysis/causal_analyzer.py`): Examines causal relationships between agent actions and their outcomes.
+- **`CausalAnalyzer`** (`analysis/causal_analyzer.py`): Analyzes causal relationships between agent actions and their outcomes.
 
-- **`DecisionPatternAnalyzer`** (`analysis/decision_pattern_analyzer.py`): Identifies decision-making patterns among agents.
+- **`DecisionPatternAnalyzer`** (`analysis/decision_pattern_analyzer.py`): Analyzes decision patterns from agent actions to identify behavioral trends and statistics.
 
-- **`ResourceImpactAnalyzer`** (`analysis/resource_impact_analyzer.py`): Calculates resource-related metrics resulting from agent actions.
+- **`TemporalPatternAnalyzer`** (`analysis/temporal_pattern_analyzer.py`): Analyzes temporal patterns in agent actions over time.
 
-- **`SequencePatternAnalyzer`** (`analysis/sequence_pattern_analyzer.py`): Analyzes sequences of actions to find common patterns.
+- **`SequencePatternAnalyzer`** (`analysis/sequence_pattern_analyzer.py`): Analyzes sequences of agent actions to identify patterns and their probabilities.
 
-- **`TemporalPatternAnalyzer`** (`analysis/temporal_pattern_analyzer.py`): Identifies temporal trends in agent behaviors over time.
+- **`ResourceImpactAnalyzer`** (`analysis/resource_impact_analyzer.py`): Analyzes the resource impact of agent actions in a simulation.
 
-#### Example: `ActionStatsAnalyzer` Class
+- **`HealthResourceDynamics`** (`analysis/health_resource_dynamics.py`): Analyzes health and resource dynamics of agents over time using clustering and statistical methods.
 
-```python
-class ActionStatsAnalyzer:
-    """
-    Analyzes statistics and patterns of agent actions in a simulation.
+- **`LearningExperienceAnalyzer`** (`analysis/learning_experience.py`): Analyzes learning experiences and performance metrics from simulation data.
 
-    This class processes action data to generate metrics including frequency, rewards,
-    interaction rates, and various patterns of agent behavior.
-    """
+- **`RewardEfficiencyAnalyzer`** (`analysis/reward_efficiency.py`): Analyzes reward efficiency by action type and agent group.
 
-    def __init__(self, repository: AgentActionRepository):
-        # Initialization code...
-```
+- **`SimulationAnalyzer`** (`analysis/simulation_analyzer.py`): Provides overall analysis of the simulation, including survival rates, resource distribution, and population balance.
+
+Each analyzer focuses on a specific aspect of the data, allowing for modular and extensible analysis capabilities.
 
 ### Repositories (`database/repositories`)
 
@@ -74,92 +50,174 @@ Repositories act as data access layers that encapsulate the logic required to ac
 
 - **`AgentActionRepository`** (`database/repositories/agent_action_repository.py`): Provides methods to query agent actions based on various filters and scopes.
 
-#### Example: `AgentActionRepository` Class
+  ```python:database/repositories/agent_action_repository.py
+  class AgentActionRepository:
+      """
+      Repository class for managing agent action records in the database.
 
-```python
-class AgentActionRepository:
-    """
-    Repository class for managing agent action records in the database.
+      This class provides methods to query and retrieve agent actions based on various
+      filtering criteria such as scope, agent ID, and step numbers.
 
-    This class provides methods to query and retrieve agent actions based on various
-    filtering criteria such as scope, agent ID, and step numbers.
-    """
+      Args:
+          session_manager (SessionManager): Session manager for database operations.
+      """
 
-    def __init__(self, session_manager: SessionManager):
-        # Initialization code...
+      def __init__(self, session_manager: SessionManager):
+          """Initialize repository with session manager.
 
-    def get_actions_by_scope(
-        self,
-        scope: str,
-        agent_id: Optional[int] = None,
-        step: Optional[int] = None,
-        step_range: Optional[Tuple[int, int]] = None,
-    ) -> List[AgentActionData]:
-        # Method implementation...
-```
+          Parameters
+          ----------
+          session_manager : SessionManager
+              Session manager instance for database operations
+          """
+          self.session_manager = session_manager
+
+      def get_actions_by_scope(
+          self,
+          scope: Union[str, AnalysisScope],
+          agent_id: Optional[int] = None,
+          step: Optional[int] = None,
+          step_range: Optional[Tuple[int, int]] = None,
+      ) -> List[AgentActionData]:
+          """Retrieve agent actions filtered by scope and other optional parameters.
+
+          Parameters
+          ----------
+          scope : str
+              The scope to filter actions by (e.g., 'SIMULATION', 'EPISODE')
+          agent_id : Optional[int], optional
+              Specific agent ID to filter by. Defaults to None.
+          """
+          # Implementation details...
+  ```
 
 ### Services (`services`)
 
-Services are high-level classes that orchestrate complex operations by coordinating between multiple components of the system. They act as an abstraction layer between the application logic and the underlying implementation details, providing a unified interface for performing various analyses.
+Services provide high-level interfaces for performing complex operations using the repositories and analyzers. They orchestrate the flow of data between the repositories and the analysis modules, offering convenient methods for application logic to consume. Key services include:
 
-- **`ActionsService`** (`services/actions_service.py`): Orchestrates analysis of agent actions using various analyzers. Provides methods to perform comprehensive analysis and to obtain action summaries.
+- **`ActionsService`** (`services/actions_service.py`): High-level service for analyzing agent actions using various analyzers.
 
-#### Example: `ActionsService` Class
+  ```python:services/actions_service.py
+  class ActionsService:
+      """
+      High-level service for analyzing agent actions using various analyzers.
 
-```python
-class ActionsService:
-    """
-    High-level service for analyzing agent actions using various analyzers.
+      This service orchestrates different types of analysis on agent actions including:
+      - Basic action statistics and metrics
+      - Behavioral patterns and clustering
+      - Causal relationships
+      - Decision patterns
+      - Resource impacts
+      - Action sequences
+      - Temporal patterns
 
-    This service orchestrates different types of analysis on agent actions including:
-    - Basic action statistics and metrics
-    - Behavioral patterns and clustering
-    - Causal relationships
-    - Decision patterns
-    - Resource impacts
-    - Action sequences
-    - Temporal patterns
-    """
+      Attributes:
+          action_repository (AgentActionRepository): Repository for accessing agent action data
+          stats_analyzer (ActionStatsAnalyzer): Analyzer for basic action statistics
+          behavior_analyzer (BehaviorClusteringAnalyzer): Analyzer for behavioral patterns
+          causal_analyzer (CausalAnalyzer): Analyzer for causal relationships
+          decision_analyzer (DecisionPatternAnalyzer): Analyzer for decision patterns
+          resource_analyzer (ResourceImpactAnalyzer): Analyzer for resource impacts
+          sequence_analyzer (SequencePatternAnalyzer): Analyzer for action sequences
+          temporal_analyzer (TemporalPatternAnalyzer): Analyzer for temporal patterns
+      """
 
-    def __init__(self, action_repository: AgentActionRepository):
-        # Initialization code...
+      def __init__(self, action_repository: AgentActionRepository):
+          """
+          Initialize ActionsService with required repositories and analyzers.
 
-    def analyze_actions(
-        self,
-        scope: Union[str, AnalysisScope] = AnalysisScope.SIMULATION,
-        agent_id: Optional[int] = None,
-        step: Optional[int] = None,
-        step_range: Optional[Tuple[int, int]] = None,
-        analysis_types: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
-        # Method implementation...
-```
+          Args:
+              action_repository (AgentActionRepository): Repository for accessing agent action data
+          """
+          self.action_repository = action_repository
 
-### Services Module (`services/__init__.py`)
+          # Initialize analyzers
+          self.stats_analyzer = ActionStatsAnalyzer(action_repository)
+          self.behavior_analyzer = BehaviorClusteringAnalyzer(action_repository)
+          self.causal_analyzer = CausalAnalyzer(action_repository)
+          self.decision_analyzer = DecisionPatternAnalyzer(action_repository)
+          self.resource_analyzer = ResourceImpactAnalyzer(action_repository)
+          self.sequence_analyzer = SequencePatternAnalyzer(action_repository)
+          self.temporal_analyzer = TemporalPatternAnalyzer(action_repository)
 
-The `__init__.py` file in the `services` module provides an easy way to import key services and includes module-level documentation.
+      def analyze_actions(
+          self,
+          scope: Union[str, AnalysisScope] = AnalysisScope.SIMULATION,
+          agent_id: Optional[int] = None,
+          step: Optional[int] = None,
+          step_range: Optional[Tuple[int, int]] = None,
+          analysis_types: Optional[List[str]] = None,
+      ) -> Dict[str, Union[Any]]:
+          """
+          Perform comprehensive analysis on agent actions.
 
-```python
-"""
-Services Module
+          Args:
+              scope (Union[str, AnalysisScope], optional): Scope of analysis. Defaults to SIMULATION.
+              agent_id (Optional[int], optional): Specific agent ID to analyze. Defaults to None.
+              step (Optional[int], optional): Specific simulation step to analyze. Defaults to None.
+              step_range (Optional[Tuple[int, int]], optional): Range of steps to analyze. Defaults to None.
+              analysis_types (Optional[List[str]], optional): List of analysis types to perform. Defaults to all.
 
-This module contains high-level service classes that orchestrate complex operations by coordinating
-between multiple components of the system. Services act as an abstraction layer between the
-application logic and the underlying implementation details.
+          Returns:
+              Dict[str, Union[Any]]: Dictionary containing analysis results keyed by analysis type.
+          """
+          results = {}
 
-Key Services:
--------------
-ActionsService
-    Orchestrates analysis of agent actions using various analyzers. Provides a unified interface
-    for analyzing action patterns, behaviors, resource impacts, and other metrics.
-"""
+          if analysis_types is None:
+              analysis_types = [
+                  "stats", "behavior", "causal", "decision",
+                  "resource", "sequence", "temporal"
+              ]
 
-from services.actions_service import ActionsService
+          # Basic action statistics
+          if "stats" in analysis_types:
+              results["action_stats"] = self.stats_analyzer.analyze(
+                  scope, agent_id, step, step_range
+              )
 
-__all__ = ['ActionsService']
-```
+          # Behavioral clustering
+          if "behavior" in analysis_types:
+              results["behavior_clusters"] = self.behavior_analyzer.analyze(
+                  scope, agent_id, step, step_range
+              )
 
-## Interaction Between Components
+          # Causal analysis
+          if "causal" in analysis_types:
+              results["causal_analysis"] = self.causal_analyzer.analyze(
+                  action_type='attack',  # Example action type
+                  scope=scope,
+                  agent_id=agent_id,
+                  step_range=step_range
+              )
+
+          # Decision pattern analysis
+          if "decision" in analysis_types:
+              results["decision_patterns"] = self.decision_analyzer.analyze(
+                  scope, agent_id, step, step_range
+              )
+
+          # Resource impact analysis
+          if "resource" in analysis_types:
+              results["resource_impacts"] = self.resource_analyzer.analyze(
+                  scope, agent_id, step, step_range
+              )
+
+          # Sequence pattern analysis
+          if "sequence" in analysis_types:
+              results["sequence_patterns"] = self.sequence_analyzer.analyze(
+                  scope, agent_id, step, step_range
+              )
+
+          # Temporal pattern analysis
+          if "temporal" in analysis_types:
+              results["temporal_patterns"] = self.temporal_analyzer.analyze(
+                  scope, agent_id, step_range
+              )
+
+          return results
+  ```
+
+### Interaction Between Components
 
 The Data API is designed with a modular architecture where each component interacts with others to perform its functions:
 
