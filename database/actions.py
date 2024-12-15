@@ -107,7 +107,6 @@ database.retrievers : Base retriever functionality
 database.data_types : Data structure definitions
 """
 
-from enum import Enum
 from typing import List, Optional, Tuple, Union
 
 from analysis.action_stats_analyzer import ActionStatsAnalyzer
@@ -130,6 +129,7 @@ from database.data_types import (
 from database.enums import AnalysisScope
 from database.repositories.agent_action_repository import AgentActionRepository
 from database.retrievers import BaseRetriever
+from database.session_manager import SessionManager
 
 
 class ActionsRetriever(BaseRetriever):
@@ -248,8 +248,18 @@ class ActionsRetriever(BaseRetriever):
     AnalysisScope : Enum defining valid analysis scopes
     """
 
-    def __init__(self, session):
-        self.repository = AgentActionRepository(session)
+    def __init__(self, database_url: str = "sqlite:///results/simulation.db") -> None:
+        """Initialize the actions retriever.
+
+        Parameters
+        ----------
+        database_url : str, optional
+            SQLAlchemy database URL, by default "sqlite:///results/simulation.db"
+        """
+        self.session_manager = SessionManager(database_url)
+        self.repository = AgentActionRepository(self.session_manager)
+
+        # Initialize analyzers with repository
         self.action_stats_analyzer = ActionStatsAnalyzer(self.repository)
         self.temporal_pattern_analyzer = TemporalPatternAnalyzer(self.repository)
         self.resource_impact_analyzer = ResourceImpactAnalyzer(self.repository)
@@ -257,6 +267,19 @@ class ActionsRetriever(BaseRetriever):
         self.sequence_pattern_analyzer = SequencePatternAnalyzer(self.repository)
         self.causal_analyzer = CausalAnalyzer(self.repository)
         self.behavior_clustering_analyzer = BehaviorClusteringAnalyzer(self.repository)
+
+    def close(self) -> None:
+        """Close database connections and clean up resources."""
+        if hasattr(self, "session_manager"):
+            self.session_manager.remove_session()
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit with cleanup."""
+        self.close()
 
     def actions(
         self,
@@ -441,3 +464,7 @@ class ActionsRetriever(BaseRetriever):
             Clustered agent behaviors and strategy classifications
         """
         return self.behavior_clustering_analyzer.analyze()
+
+    def __del__(self):
+        """Destructor to ensure proper cleanup."""
+        self.close()
