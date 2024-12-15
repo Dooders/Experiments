@@ -258,3 +258,97 @@ class Genome:
             # Modifying copy won't affect original
         """
         return Genome.load(Genome.save(genome))
+
+    @staticmethod
+    def encode_parameters(parameters: dict) -> dict:
+        """Encode agent parameters into gene representations.
+
+        Args:
+            parameters (dict): Dictionary of agent parameters to encode.
+
+        Returns:
+            dict: Encoded parameters as genes.
+        """
+        encoded_genes = {}
+        for param, value in parameters.items():
+            if isinstance(value, float):
+                # Example: Encode float values as 8-bit integers
+                encoded_genes[param] = int(value * 255)
+            elif isinstance(value, int):
+                # Example: Encode integer values directly
+                encoded_genes[param] = value
+            else:
+                raise ValueError(f"Unsupported parameter type: {type(value)}")
+        return encoded_genes
+
+    @staticmethod
+    def decode_parameters(genes: dict) -> dict:
+        """Decode genes back into agent parameters.
+
+        Args:
+            genes (dict): Dictionary of genes to decode.
+
+        Returns:
+            dict: Decoded agent parameters.
+        """
+        decoded_parameters = {}
+        for gene, value in genes.items():
+            if isinstance(value, int):
+                # Example: Decode 8-bit integers back to float values
+                decoded_parameters[gene] = value / 255.0
+            else:
+                raise ValueError(f"Unsupported gene type: {type(value)}")
+        return decoded_parameters
+
+    @staticmethod
+    def selection(population: list, fitness_scores: list, num_parents: int) -> list:
+        """Select parents from the population based on fitness scores.
+
+        Args:
+            population (list): List of genomes in the population.
+            fitness_scores (list): List of fitness scores corresponding to the population.
+            num_parents (int): Number of parents to select.
+
+        Returns:
+            list: Selected parent genomes.
+        """
+        selected_parents = random.choices(
+            population, weights=fitness_scores, k=num_parents
+        )
+        return selected_parents
+
+    @staticmethod
+    def crossover(parent1: dict, parent2: dict) -> dict:
+        """Perform crossover between two parent genomes to produce an offspring genome.
+
+        Args:
+            parent1 (dict): First parent genome.
+            parent2 (dict): Second parent genome.
+
+        Returns:
+            dict: Offspring genome.
+        """
+        offspring = {}
+        for gene in parent1.keys():
+            offspring[gene] = parent1[gene] if random.random() < 0.5 else parent2[gene]
+        return offspring
+
+    @staticmethod
+    def mutation(genome: dict, mutation_rate: float) -> dict:
+        """Apply mutation to a genome.
+
+        Args:
+            genome (dict): Genome to mutate.
+            mutation_rate (float): Probability of mutation for each gene.
+
+        Returns:
+            dict: Mutated genome.
+        """
+        mutated_genome = genome.copy()
+        for gene in mutated_genome.keys():
+            if random.random() < mutation_rate:
+                # Example: Apply small random change to the gene value
+                mutated_genome[gene] += random.uniform(-0.1, 0.1)
+                # Ensure gene value stays within valid range
+                mutated_genome[gene] = max(0, min(mutated_genome[gene], 1))
+        return mutated_genome
