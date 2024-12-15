@@ -106,16 +106,49 @@ class SimulationAnalyzer:
             
         return self.db._execute_in_transaction(_query)
 
+    def analyze_allele_frequency_changes(self) -> pd.DataFrame:
+        """Analyze allele frequency changes over generations."""
+        def _query(session):
+            query = (
+                session.query(
+                    Agent.generation,
+                    Agent.allele_frequencies
+                )
+                .order_by(Agent.generation)
+            )
+            
+            results = query.all()
+            allele_frequency_changes = {}
+            for generation, allele_frequencies in results:
+                if generation not in allele_frequency_changes:
+                    allele_frequency_changes[generation] = {}
+                for allele, frequency in allele_frequencies.items():
+                    if allele not in allele_frequency_changes[generation]:
+                        allele_frequency_changes[generation][allele] = 0
+                    allele_frequency_changes[generation][allele] += frequency
+            
+            return pd.DataFrame(allele_frequency_changes).T
+            
+        return self.db._execute_in_transaction(_query)
+
     def generate_report(self, output_file: str = "simulation_report.html"):
         """Generate an HTML report with analysis results."""
         survival_rates = self.calculate_survival_rates()
         efficiency_data = self.analyze_resource_efficiency()
+        allele_frequency_changes = self.analyze_allele_frequency_changes()
 
         # Create plots
         plt.figure(figsize=(10, 6))
         plt.plot(efficiency_data["step"], efficiency_data["efficiency"])
         plt.title("Resource Efficiency Over Time")
         plt.savefig("efficiency_plot.png")
+
+        plt.figure(figsize=(10, 6))
+        allele_frequency_changes.plot(kind='bar', stacked=True)
+        plt.title("Allele Frequency Changes Over Generations")
+        plt.xlabel("Generation")
+        plt.ylabel("Frequency")
+        plt.savefig("allele_frequency_plot.png")
 
         # Generate HTML report
         html = f"""
@@ -133,6 +166,9 @@ class SimulationAnalyzer:
             
             <h2>Resource Efficiency</h2>
             <img src="efficiency_plot.png" />
+            
+            <h2>Allele Frequency Changes</h2>
+            <img src="allele_frequency_plot.png" />
             
             <h2>Summary Statistics</h2>
             <pre>{efficiency_data.describe().to_string()}</pre>

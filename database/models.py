@@ -77,6 +77,8 @@ class Agent(Base):
         ID of the agent's parent (None for initial agents)
     generation : int
         Generational number in evolutionary lineage
+    allele_frequencies : JSON
+        JSON field to store allele frequencies
 
     Relationships
     ------------
@@ -111,6 +113,7 @@ class Agent(Base):
     genome_id = Column(String(64))
     parent_id = Column(Integer, ForeignKey("agents.agent_id"))
     generation = Column(Integer)
+    allele_frequencies = Column(JSON)
 
     # Relationships
     states = relationship("AgentState", back_populates="agent")
@@ -165,6 +168,8 @@ class AgentState(Base):
         Cumulative reward received
     age : int
         Number of steps agent has existed
+    allele_frequencies : JSON
+        JSON field to store allele frequencies
 
     Relationships
     ------------
@@ -196,6 +201,7 @@ class AgentState(Base):
     is_defending = Column(Boolean)
     total_reward = Column(Float)
     age = Column(Integer)
+    allele_frequencies = Column(JSON)
 
     agent = relationship("Agent", back_populates="states")
 
@@ -218,6 +224,7 @@ class AgentState(Base):
             "is_defending": self.is_defending,
             "total_reward": self.total_reward,
             "age": self.age,
+            "allele_frequencies": self.allele_frequencies,
         }
 
 

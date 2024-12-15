@@ -66,3 +66,16 @@ class SimulationAnalyzer:
         Average System Resources: {result['avg_resources'][0]:.2f}
         Average Agent Resources: {result['avg_agent_resources'][0]:.2f}
         """
+
+    def analyze_allele_frequency_changes(self) -> pd.DataFrame:
+        """Analyze allele frequency changes over generations."""
+        allele_frequency_changes = self.retriever.analyze_allele_frequency_changes()
+        return pd.DataFrame(allele_frequency_changes).T
+
+    def get_allele_frequency_stats(self) -> str:
+        """Get allele frequency statistics."""
+        allele_frequency_changes = self.analyze_allele_frequency_changes()
+        return f"""
+        Allele Frequency Changes Over Generations:
+        {allele_frequency_changes.describe()}
+        """

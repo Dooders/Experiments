@@ -75,6 +75,10 @@ class AgentRetriever(BaseRetriever):
         Retrieves all unique agent types in the simulation
     evolution(generation: Optional[int]) -> AgentEvolutionMetrics
         Retrieves evolutionary metrics for specific or all generations
+    allele_frequencies(agent_id: int) -> Dict[str, float]
+        Retrieves allele frequencies for a specific agent
+    analyze_allele_frequency_changes() -> Dict[int, Dict[str, float]]
+        Analyzes allele frequency changes over generations
     """
 
     def _execute(self) -> Dict[str, Any]:
@@ -1337,3 +1341,51 @@ class AgentRetriever(BaseRetriever):
         """
         # Implementation details...
         pass
+
+    @execute_query
+    def allele_frequencies(self, session, agent_id: int) -> Dict[str, float]:
+        """Get allele frequencies for a specific agent.
+
+        Parameters
+        ----------
+        agent_id : int
+            The unique identifier of the agent
+
+        Returns
+        -------
+        Dict[str, float]
+            Allele frequencies for the agent
+        """
+        agent = session.query(Agent).filter(Agent.agent_id == agent_id).first()
+        return agent.allele_frequencies if agent else {}
+
+    @execute_query
+    def analyze_allele_frequency_changes(self, session) -> Dict[int, Dict[str, float]]:
+        """Analyze allele frequency changes over generations.
+
+        Returns
+        -------
+        Dict[int, Dict[str, float]]
+            Allele frequency changes over generations
+        """
+        generations = session.query(Agent.generation).distinct().all()
+        allele_frequency_changes = {}
+
+        for generation in generations:
+            agents = session.query(Agent).filter(Agent.generation == generation[0]).all()
+            allele_counts = {}
+            total_alleles = 0
+
+            for agent in agents:
+                for gene, frequency in agent.allele_frequencies.items():
+                    if gene not in allele_counts:
+                        allele_counts[gene] = 0
+                    allele_counts[gene] += frequency
+                    total_alleles += frequency
+
+            allele_frequencies = {
+                gene: count / total_alleles for gene, count in allele_counts.items()
+            }
+            allele_frequency_changes[generation[0]] = allele_frequencies
+
+        return allele_frequency_changes
