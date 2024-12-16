@@ -970,12 +970,17 @@ class ActionMetrics:
     avg_reward: float
     min_reward: float
     max_reward: float
+    variance_reward: float
+    std_dev_reward: float
+    median_reward: float
+    quartiles_reward: List[float]
+    confidence_interval: float
     interaction_rate: float
     solo_performance: float
     interaction_performance: float
-    temporal_patterns: List[TimePattern]
-    resource_impacts: List[ResourceImpact]
-    decision_patterns: List[DecisionPatternStats]
+    temporal_patterns: List[Any]
+    resource_impacts: List[Any]
+    decision_patterns: List[Any]
 
 
 @dataclass
