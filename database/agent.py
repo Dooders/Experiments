@@ -36,7 +36,7 @@ from database.data_types import (
     ResilienceAnalysis,
     RiskRewardAnalysis,
 )
-from database.models import Agent, AgentAction, AgentState, HealthIncident
+from database.models import AgentModel, AgentAction, AgentState, HealthIncident
 from database.retrievers import BaseRetriever
 from database.utilities import execute_query
 
@@ -120,7 +120,9 @@ class AgentRetriever(BaseRetriever):
             - max_health: float
             - starvation_threshold: float
         """
-        agent = session.query(Agent).filter(Agent.agent_id == agent_id).first()
+        agent = (
+            session.query(AgentModel).filter(AgentModel.agent_id == agent_id).first()
+        )
         return BasicAgentStats(
             agent_id=agent.agent_id,
             agent_type=agent.agent_type,
@@ -151,7 +153,9 @@ class AgentRetriever(BaseRetriever):
             - parent_id: Optional[int]
             - generation: int
         """
-        agent = session.query(Agent).filter(Agent.agent_id == agent_id).first()
+        agent = (
+            session.query(AgentModel).filter(AgentModel.agent_id == agent_id).first()
+        )
         return AgentGenetics(
             genome_id=agent.genome_id,
             parent_id=agent.parent_id,
@@ -365,13 +369,13 @@ class AgentRetriever(BaseRetriever):
         query = session.query(
             AgentState.step_number,
             AgentState.agent_id,
-            Agent.agent_type,
+            AgentModel.agent_type,
             AgentState.position_x,
             AgentState.position_y,
             AgentState.resource_level,
             AgentState.current_health,
             AgentState.is_defending,
-        ).join(Agent)
+        ).join(AgentModel)
 
         if step_number is not None:
             query = query.filter(AgentState.step_number == step_number)
@@ -401,7 +405,7 @@ class AgentRetriever(BaseRetriever):
         List[str]
             List of unique agent type identifiers present in the simulation
         """
-        types = session.query(Agent.agent_type).distinct().all()
+        types = session.query(AgentModel.agent_type).distinct().all()
         return [t[0] for t in types]
 
     @execute_query
@@ -428,9 +432,9 @@ class AgentRetriever(BaseRetriever):
             - generation: Optional[int]
                 Generation number (None if analyzing all generations)
         """
-        query = session.query(Agent)
+        query = session.query(AgentModel)
         if generation is not None:
-            query = query.filter(Agent.generation == generation)
+            query = query.filter(AgentModel.generation == generation)
 
         results = query.all()
 
@@ -539,7 +543,7 @@ class AgentRetriever(BaseRetriever):
                 ),
             },
         )
-        
+
     @execute_query
     def adversarial_analysis(
         self, session, agent_id: Optional[int] = None
@@ -704,7 +708,7 @@ class AgentRetriever(BaseRetriever):
                 else 0
             ),
         )
-        
+
     @execute_query
     def learning_curve(
         self, session, agent_id: Optional[int] = None
@@ -1172,7 +1176,7 @@ class AgentRetriever(BaseRetriever):
                 sum(failure_impacts) / len(failure_impacts) if failure_impacts else 0
             ),
         )
-        
+
     def _calculate_mistake_reduction(self, results) -> float:
         """Calculate the reduction in mistake rate over time.
 
@@ -1208,7 +1212,7 @@ class AgentRetriever(BaseRetriever):
             else 0
         )
         return max(0, early_mistakes - late_mistakes)
-    
+
     def _calculate_correlation(self, x: List[float], y: List[float]) -> float:
         """Calculate Pearson correlation coefficient between two variables.
 
@@ -1247,7 +1251,6 @@ class AgentRetriever(BaseRetriever):
         denominator = (n * sum_x2 - sum_x * sum_x) * (n * sum_y2 - sum_y * sum_y) ** 0.5
 
         return numerator / denominator if denominator != 0 else 0
-    
 
     def _normalize_dict(self, d: Dict[str, int]) -> Dict[str, float]:
         """Normalize dictionary values to proportions.

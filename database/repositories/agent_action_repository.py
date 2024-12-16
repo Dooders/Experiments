@@ -4,11 +4,12 @@ from sqlalchemy.orm import Session
 
 from database.data_types import AgentActionData
 from database.models import AgentAction
+from database.repositories.base_repository import BaseRepository
 from database.scope_utils import filter_scope
 from database.session_manager import SessionManager
 
 
-class AgentActionRepository:
+class AgentActionRepository(BaseRepository[AgentAction]):
     """Repository class for managing agent action records in the database.
 
     This class provides methods to query and retrieve agent actions based on various

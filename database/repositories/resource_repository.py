@@ -10,10 +10,12 @@ from database.data_types import (
     ResourceHotspot,
 )
 from database.models import ResourceModel, SimulationStep
+from database.repositories.base_repository import BaseRepository
+from database.session_manager import SessionManager
 from database.utilities import execute_query
 
 
-class ResourceRetriever:
+class ResourceRepository(BaseRepository[ResourceModel]):
     """Handles retrieval and analysis of resource-related data from simulation database.
 
     Provides methods for analyzing resource dynamics including distribution patterns,
@@ -34,15 +36,15 @@ class ResourceRetriever:
         Performs comprehensive resource analysis
     """
 
-    def __init__(self, database):
-        """Initialize the ResourceRetriever.
+    def __init__(self, session_manager: SessionManager):
+        """Initialize the ResourceRepository.
 
         Parameters
         ----------
         database : SimulationDatabase
             Database connection instance used to execute queries
         """
-        self.db = database
+        super().__init__(session_manager, ResourceModel)
 
     @execute_query
     def resource_distribution(self, session) -> List[ResourceDistributionStep]:
