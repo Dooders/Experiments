@@ -1,4 +1,9 @@
+from collections import defaultdict
 from typing import Dict, List
+
+import numpy as np
+from sklearn.cluster import DBSCAN, SpectralClustering
+from sklearn.preprocessing import StandardScaler
 
 from database.data_types import AgentActionData, BehaviorClustering
 from database.repositories.agent_action_repository import AgentActionRepository
@@ -6,10 +11,8 @@ from database.repositories.agent_action_repository import AgentActionRepository
 
 class BehaviorClusteringAnalyzer:
     """
-    Analyzes agent behaviors and clusters them based on their action patterns.
-
-    This analyzer processes agent actions to identify behavioral patterns and group
-    agents into meaningful clusters based on their interaction styles and performance metrics.
+    Analyzes agent behaviors and clusters them based on their action patterns using
+    dynamic clustering algorithms (DBSCAN and Spectral Clustering).
     """
 
     def __init__(self, repository: AgentActionRepository):
@@ -20,6 +23,7 @@ class BehaviorClusteringAnalyzer:
             repository (AgentActionRepository): Repository to fetch agent action data.
         """
         self.repository = repository
+        self.clustering_method = "dbscan"  # or "spectral"
 
     def analyze(
         self,
@@ -96,38 +100,87 @@ class BehaviorClusteringAnalyzer:
         self, agent_metrics: Dict[int, Dict[str, float]]
     ) -> Dict[str, List[int]]:
         """
-        Cluster agents based on their behavioral metrics.
+        Cluster agents using dynamic clustering algorithms based on behavioral metrics.
 
         Args:
             agent_metrics (Dict[int, Dict[str, float]]): Dictionary of agent metrics.
 
         Returns:
             Dict[str, List[int]]: Dictionary mapping cluster names to lists of agent IDs.
-            Clusters include: 'aggressive', 'cooperative', 'efficient', and 'balanced'.
         """
-        clusters = {
-            "aggressive": [],
-            "cooperative": [],
-            "efficient": [],
-            "balanced": [],
-        }
-        for agent_id, metrics in agent_metrics.items():
+        # Convert metrics to feature matrix
+        agent_ids = list(agent_metrics.keys())
+        features = []
+
+        for agent_id in agent_ids:
+            metrics = agent_metrics[agent_id]
             if metrics["total_actions"] == 0:
                 continue
-            attack_rate = metrics["attack_count"] / metrics["total_actions"]
-            share_rate = metrics["share_count"] / metrics["total_actions"]
-            interaction_rate = metrics["interaction_count"] / metrics["total_actions"]
-            success_rate = metrics["success_count"] / metrics["total_actions"]
-            avg_reward = metrics["total_reward"] / metrics["total_actions"]
-            if attack_rate > 0.3:
-                clusters["aggressive"].append(agent_id)
-            elif share_rate > 0.3 or interaction_rate > 0.4:
-                clusters["cooperative"].append(agent_id)
-            elif success_rate > 0.7 and avg_reward > 1.0:
-                clusters["efficient"].append(agent_id)
+
+            feature_vector = [
+                metrics["attack_count"] / metrics["total_actions"],
+                metrics["share_count"] / metrics["total_actions"],
+                metrics["interaction_count"] / metrics["total_actions"],
+                metrics["success_count"] / metrics["total_actions"],
+                metrics["total_reward"] / metrics["total_actions"],
+            ]
+            features.append(feature_vector)
+
+        if not features:
+            return {"unclustered": []}
+
+        # Standardize features
+        X = StandardScaler().fit_transform(features)
+
+        # Perform clustering
+        if self.clustering_method == "dbscan":
+            clustering = DBSCAN(eps=0.5, min_samples=2).fit(X)
+            labels = clustering.labels_
+        else:  # spectral
+            n_clusters = min(
+                len(features), 4
+            )  # Adjust number of clusters based on data
+            clustering = SpectralClustering(
+                n_clusters=n_clusters, affinity="nearest_neighbors"
+            ).fit(X)
+            labels = clustering.labels_
+
+        # Group agents by cluster
+        clusters = defaultdict(list)
+        for agent_idx, cluster_label in enumerate(labels):
+            if cluster_label == -1:  # Noise points in DBSCAN
+                cluster_name = "outliers"
             else:
-                clusters["balanced"].append(agent_id)
-        return clusters
+                # Analyze cluster characteristics to assign meaningful names
+                cluster_features = X[labels == cluster_label].mean(axis=0)
+                cluster_name = self._get_cluster_name(cluster_features)
+            clusters[cluster_name].append(agent_ids[agent_idx])
+
+        return dict(clusters)
+
+    def _get_cluster_name(self, cluster_features: np.ndarray) -> str:
+        """
+        Determine cluster name based on average feature characteristics.
+
+        Args:
+            cluster_features (np.ndarray): Average feature values for the cluster
+
+        Returns:
+            str: Descriptive name for the cluster
+        """
+        # Features order: [attack_rate, share_rate, interaction_rate, success_rate, avg_reward]
+        if cluster_features[0] > 0.5:  # High attack rate
+            return "aggressive"
+        elif (
+            cluster_features[1] + cluster_features[2] > 0.6
+        ):  # High share + interaction
+            return "cooperative"
+        elif (
+            cluster_features[3] > 0.6 and cluster_features[4] > 0.5
+        ):  # High success + reward
+            return "efficient"
+        else:
+            return "balanced"
 
     def _calculate_cluster_characteristics(
         self, clusters: Dict[str, List[int]], agent_metrics: Dict[int, Dict[str, float]]
