@@ -750,18 +750,36 @@ class SequencePattern:
 
 @dataclass
 class TimePattern:
-    """Temporal patterns of an action.
+    """Temporal patterns of action occurrences and rewards over time.
 
-    Attributes
-    ----------
-    time_distribution : List[int]
-        Distribution of action counts over time periods
-    reward_progression : List[float]
-        Progression of rewards over time periods
+    Attributes:
+        action_type: The type of action analyzed.
+        time_distribution: A list of action counts per time period.
+        reward_progression: A list of average rewards per time period.
+        rolling_average_rewards: A list of rolling average rewards.
+        rolling_average_counts: A list of rolling average action counts.
     """
-
+    action_type: str
     time_distribution: List[int]
     reward_progression: List[float]
+    rolling_average_rewards: List[float]
+    rolling_average_counts: List[float]
+
+
+@dataclass
+class EventSegment:
+    """Metrics segmented by events.
+
+    Attributes:
+        start_step: The starting step of the segment.
+        end_step: The ending step of the segment (exclusive).
+        action_counts: A dictionary of action counts during the segment.
+        average_rewards: A dictionary of average rewards per action type during the segment.
+    """
+    start_step: int
+    end_step: Optional[int]
+    action_counts: Dict[str, int]
+    average_rewards: Dict[str, float]
 
 
 @dataclass
