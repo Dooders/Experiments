@@ -45,7 +45,7 @@ Base = declarative_base()
 
 
 # Define SQLAlchemy Models
-class Agent(Base):
+class AgentModel(Base):
     """Represents a simulation agent and its core attributes.
 
     This model stores the fundamental properties of agents in the simulation,
@@ -131,7 +131,7 @@ class Agent(Base):
     )
 
 
-class AgentState(Base):
+class AgentStateModel(Base):
     """Tracks the state of an agent at a specific simulation step.
 
     This model captures the complete state of an agent at each time step,
@@ -221,7 +221,7 @@ class AgentState(Base):
         }
 
 
-class ResourceState(Base):
+class ResourceModel(Base):
     """Tracks the state of resources in the environment.
 
     This model records the amount and location of resources at each simulation step,
@@ -270,7 +270,7 @@ class ResourceState(Base):
         }
 
 
-class SimulationStep(Base):
+class SimulationStepModel(Base):
     """Records simulation-wide metrics for each time step.
 
     This model captures aggregate statistics and metrics about the entire simulation
@@ -444,7 +444,7 @@ class AgentAction(Base):
     state_after = relationship("AgentState", foreign_keys=[state_after_id])
 
 
-class LearningExperience(Base):
+class LearningExperienceModel(Base):
     """Learning experience records."""
 
     __tablename__ = "learning_experiences"

@@ -22,7 +22,7 @@ from database.data_types import (
     SimulationResults,
     SimulationState,
 )
-from database.models import Agent, AgentState, ResourceState, SimulationStep
+from database.models import AgentModel, AgentState, ResourceState, SimulationStep
 from database.utilities import execute_query
 
 
@@ -108,13 +108,13 @@ class SimulationStateRetriever:
         query = session.query(
             AgentState.step_number,
             AgentState.agent_id,
-            Agent.agent_type,
+            AgentModel.agent_type,
             AgentState.position_x,
             AgentState.position_y,
             AgentState.resource_level,
             AgentState.current_health,
             AgentState.is_defending,
-        ).join(Agent)
+        ).join(AgentModel)
 
         if step_number is not None:
             query = query.filter(AgentState.step_number == step_number)

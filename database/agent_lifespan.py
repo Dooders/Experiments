@@ -6,7 +6,7 @@ from database.data_types import (
     LifespanStatistics,
     SurvivalRatesByGeneration,
 )
-from database.models import Agent
+from database.models import AgentModel
 from database.utilities import execute_query
 
 
@@ -71,11 +71,11 @@ class AgentLifespanRetriever:
         """
         lifespans = (
             session.query(
-                Agent.agent_type,
-                Agent.generation,
-                (Agent.death_time - Agent.birth_time).label("lifespan"),
+                AgentModel.agent_type,
+                AgentModel.generation,
+                (AgentModel.death_time - AgentModel.birth_time).label("lifespan"),
             )
-            .filter(Agent.death_time.isnot(None))
+            .filter(AgentModel.death_time.isnot(None))
             .all()
         )
 
@@ -116,12 +116,12 @@ class AgentLifespanRetriever:
         """
         survival_rates = (
             session.query(
-                Agent.generation,
-                func.count(case((Agent.death_time.is_(None), 1)))
+                AgentModel.generation,
+                func.count(case((AgentModel.death_time.is_(None), 1)))
                 * 100.0
                 / func.count(),
             )
-            .group_by(Agent.generation)
+            .group_by(AgentModel.generation)
             .all()
         )
 

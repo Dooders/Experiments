@@ -120,3 +120,6 @@ To determine whether a balance between system agents (cooperative, system-orient
 2. **Implications**:
    - Discuss potential applications for ecological management, resource conservation, and distributed systems design, where hybrid strategies might balance cooperation and competition.
    - Suggest future studies to refine the hybrid model, such as incorporating learning mechanisms where agents can adaptively switch behaviors based on environmental cues.
+
+- The `ActionStatsAnalyzer` provides essential metrics for understanding agent behaviors.
+- The `ActionStatsAnalyzer` now includes additional statistical metrics such as variance, standard deviation, median, quartiles, and confidence intervals. These provide a deeper understanding of the distribution and reliability of rewards for each action type.

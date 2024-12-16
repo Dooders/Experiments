@@ -547,21 +547,57 @@ class DecisionPatternStats:
 
     Attributes
     ----------
+    action_type : str
+        The type of action
     count : int
         Number of times this action was taken
     frequency : float
         Frequency of this action relative to total decisions
-    reward_stats : Dict[str, float]
+    reward_stats : dict
         Statistics about rewards for this action type including:
         - average: Mean reward
-        - stddev: Standard deviation of rewards
+        - median: Median reward
         - min: Minimum reward received
         - max: Maximum reward received
+        - variance: Variance in rewards
+        - std_dev: Standard deviation of rewards
+        - percentile_25: 25th percentile of rewards
+        - percentile_50: 50th percentile of rewards
+        - percentile_75: 75th percentile of rewards
     """
 
+    action_type: str
     count: int
     frequency: float
-    reward_stats: Dict[str, float]
+    reward_stats: dict = {
+        "average": float,
+        "median": float,
+        "min": float,
+        "max": float,
+        "variance": float,
+        "std_dev": float,
+        "percentile_25": float,
+        "percentile_50": float,
+        "percentile_75": float
+    }
+    contribution_metrics: dict = {
+        "action_share": float,
+        "reward_share": float,
+        "reward_efficiency": float
+    }
+    temporal_stats: dict = {
+        "frequency_trend": float,  # Overall trend in frequency
+        "reward_trend": float,     # Overall trend in rewards
+        "rolling_frequencies": List[float],  # Rolling average of frequencies
+        "rolling_rewards": List[float],      # Rolling average of rewards
+        "consistency": float,      # Measure of frequency consistency
+        "periodicity": float,      # Measure of periodic patterns
+        "recent_trend": str,       # Recent trend direction
+    }
+    first_occurrence: dict = {
+        "step": int,              # First step this action was taken
+        "reward": float,          # Reward from first occurrence
+    }
 
 
 @dataclass
@@ -750,18 +786,36 @@ class SequencePattern:
 
 @dataclass
 class TimePattern:
-    """Temporal patterns of an action.
+    """Temporal patterns of action occurrences and rewards over time.
 
-    Attributes
-    ----------
-    time_distribution : List[int]
-        Distribution of action counts over time periods
-    reward_progression : List[float]
-        Progression of rewards over time periods
+    Attributes:
+        action_type: The type of action analyzed.
+        time_distribution: A list of action counts per time period.
+        reward_progression: A list of average rewards per time period.
+        rolling_average_rewards: A list of rolling average rewards.
+        rolling_average_counts: A list of rolling average action counts.
     """
-
+    action_type: str
     time_distribution: List[int]
     reward_progression: List[float]
+    rolling_average_rewards: List[float]
+    rolling_average_counts: List[float]
+
+
+@dataclass
+class EventSegment:
+    """Metrics segmented by events.
+
+    Attributes:
+        start_step: The starting step of the segment.
+        end_step: The ending step of the segment (exclusive).
+        action_counts: A dictionary of action counts during the segment.
+        average_rewards: A dictionary of average rewards per action type during the segment.
+    """
+    start_step: int
+    end_step: Optional[int]
+    action_counts: Dict[str, int]
+    average_rewards: Dict[str, float]
 
 
 @dataclass
@@ -970,12 +1024,17 @@ class ActionMetrics:
     avg_reward: float
     min_reward: float
     max_reward: float
+    variance_reward: float
+    std_dev_reward: float
+    median_reward: float
+    quartiles_reward: List[float]
+    confidence_interval: float
     interaction_rate: float
     solo_performance: float
     interaction_performance: float
-    temporal_patterns: List[TimePattern]
-    resource_impacts: List[ResourceImpact]
-    decision_patterns: List[DecisionPatternStats]
+    temporal_patterns: List[Any]
+    resource_impacts: List[Any]
+    decision_patterns: List[Any]
 
 
 @dataclass
@@ -1678,7 +1737,7 @@ class BehaviorClustering:
 
     Attributes
     ----------
-    clusters : Dict[str, List[str]]
+    clusters : Dict[str, List[int]]
         Groups of agent IDs with similar behaviors, where:
         - 'aggressive': Agents with high attack rates
         - 'cooperative': Agents focused on sharing and interaction
@@ -1695,6 +1754,7 @@ class BehaviorClustering:
     
     cluster_performance : Dict[str, float]
         Average reward per action for each cluster
+    reduced_features : Optional[Dict[str, Dict]] = None
 
     Examples
     --------
@@ -1711,9 +1771,10 @@ class BehaviorClustering:
     Characteristics: {'attack_rate': 0.25, 'cooperation': 0.85, 'risk_taking': 0.35}
     """
 
-    clusters: Dict[str, List[str]]
+    clusters: Dict[str, List[int]]
     cluster_characteristics: Dict[str, Dict[str, float]]
     cluster_performance: Dict[str, float]
+    reduced_features: Optional[Dict[str, Dict]] = None
 
 
 @dataclass
@@ -2090,3 +2151,42 @@ class AgentActionData:
     state_after_id: Optional[str] = None
     reward: Optional[float] = None
     details: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class DecisionPatternStats:
+    """Statistics for a single decision/action type."""
+    action_type: str
+    count: int
+    frequency: float
+    reward_stats: dict
+    contribution_metrics: dict = {
+        "action_share": float,
+        "reward_share": float,
+        "reward_efficiency": float
+    }
+    temporal_stats: dict = {
+        "frequency_trend": float,  # Overall trend in frequency
+        "reward_trend": float,     # Overall trend in rewards
+        "rolling_frequencies": List[float],  # Rolling average of frequencies
+        "rolling_rewards": List[float],      # Rolling average of rewards
+        "consistency": float,      # Measure of frequency consistency
+        "periodicity": float,      # Measure of periodic patterns
+        "recent_trend": str,       # Recent trend direction
+    }
+    first_occurrence: dict = {
+        "step": int,              # First step this action was taken
+        "reward": float,          # Reward from first occurrence
+    }
+
+
+@dataclass
+class DecisionSummary:
+    """Summary statistics about decision making."""
+    total_decisions: int
+    unique_actions: int
+    most_frequent: Optional[str]
+    most_rewarding: Optional[str]
+    action_diversity: float
+    normalized_diversity: float  # Added normalized diversity
+    co_occurrence_patterns: Dict[str, Dict[str, Dict[str, float]]]  # Added co-occurrence patterns
