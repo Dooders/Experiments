@@ -12,10 +12,18 @@ class TemporalPatternAnalyzer:
     Analyzes temporal patterns in agent actions over time, including rolling averages and event segmentation.
 
     This class processes agent actions to identify patterns in their occurrence
-    and associated rewards across different time periods.
+    and associated rewards across different time periods. It provides functionality
+    for analyzing action frequencies, reward distributions, and temporal segmentation
+    of agent behaviors.
 
     Attributes:
         repository (AgentActionRepository): Repository for accessing agent action data.
+            Handles all database interactions for retrieving agent actions.
+
+    Example:
+        >>> repo = AgentActionRepository()
+        >>> analyzer = TemporalPatternAnalyzer(repo)
+        >>> patterns = analyzer.analyze(scope='simulation', time_period_size=100)
     """
 
     def __init__(self, repository: AgentActionRepository):
@@ -44,16 +52,45 @@ class TemporalPatternAnalyzer:
         2. Calculate reward progression across time periods
         3. Generate rolling averages over specified window sizes
 
+        The analysis divides the timeline into periods of specified size and
+        calculates various metrics for each period, including action frequencies
+        and average rewards.
+
         Args:
-            scope (Union[str, AnalysisScope], optional): Scope of analysis. Defaults to AnalysisScope.SIMULATION.
-            agent_id (Optional[int], optional): Specific agent to analyze. Defaults to None.
-            step (Optional[int], optional): Specific step to analyze. Defaults to None.
-            step_range (Optional[Tuple[int, int]], optional): Range of steps to analyze. Defaults to None.
-            time_period_size (int, optional): Size of time period in steps. Defaults to 100.
-            rolling_window_size (int, optional): Window size for calculating rolling averages. Defaults to 10.
+            scope (Union[str, AnalysisScope]): Scope of analysis (e.g., 'simulation', 'episode').
+                Determines the context in which actions are analyzed.
+            agent_id (Optional[int]): ID of specific agent to analyze. If None,
+                analyzes actions from all agents.
+            step (Optional[int]): Specific step to analyze. If provided, only
+                analyzes actions at this step.
+            step_range (Optional[Tuple[int, int]]): Range of steps to analyze,
+                specified as (start_step, end_step). If None, analyzes all steps.
+            time_period_size (int): Size of each time period in steps. Determines
+                the granularity of the analysis. Larger values provide more
+                aggregated results.
+            rolling_window_size (int): Size of window for calculating rolling
+                averages. Larger windows produce smoother trends but may miss
+                short-term variations.
 
         Returns:
             List[TimePattern]: List of temporal patterns for each action type.
+            Each TimePattern contains:
+                - action_type: The type of action analyzed
+                - time_distribution: Action frequencies per time period
+                - reward_progression: Average rewards per time period
+                - rolling_average_rewards: Smoothed reward progression
+                - rolling_average_counts: Smoothed action frequencies
+
+        Example:
+            >>> patterns = analyzer.analyze(
+            ...     scope='episode',
+            ...     agent_id=1,
+            ...     time_period_size=50,
+            ...     rolling_window_size=5
+            ... )
+            >>> for pattern in patterns:
+            ...     print(f"Action: {pattern.action_type}")
+            ...     print(f"Average reward: {np.mean(pattern.reward_progression)}")
         """
         actions = self.repository.get_actions_by_scope(
             scope, agent_id, step_range=step_range
@@ -129,14 +166,36 @@ class TemporalPatternAnalyzer:
         """
         Segment metrics before and after key events.
 
+        Divides the timeline into segments based on specified event steps and
+        calculates metrics for each segment. This is useful for analyzing how
+        agent behavior changes around significant events.
+
         Args:
             event_steps (List[int]): List of step numbers where events occur.
-            scope (Union[str, AnalysisScope], optional): Scope of analysis. Defaults to AnalysisScope.SIMULATION.
-            agent_id (Optional[int], optional): Specific agent to analyze. Defaults to None.
-            step_range (Optional[Tuple[int, int]], optional): Range of steps to analyze. Defaults to None.
+                These steps mark the boundaries between segments.
+            scope (Union[str, AnalysisScope]): Scope of analysis (e.g., 'simulation', 'episode').
+                Determines the context in which actions are analyzed.
+            agent_id (Optional[int]): ID of specific agent to analyze. If None,
+                analyzes actions from all agents.
+            step_range (Optional[Tuple[int, int]]): Range of steps to analyze,
+                specified as (start_step, end_step). If None, analyzes all steps.
 
         Returns:
-            List[EventSegment]: List of metrics segmented by events.
+            List[EventSegment]: List of metrics segmented by events. Each EventSegment contains:
+                - start_step: Beginning of the segment
+                - end_step: End of the segment
+                - action_counts: Dictionary of action frequencies in the segment
+                - average_rewards: Dictionary of mean rewards per action type
+
+        Example:
+            >>> event_steps = [100, 200, 300]
+            >>> segments = analyzer.segment_events(
+            ...     event_steps=event_steps,
+            ...     scope='simulation'
+            ... )
+            >>> for segment in segments:
+            ...     print(f"Segment: {segment.start_step} to {segment.end_step}")
+            ...     print(f"Action counts: {segment.action_counts}")
         """
         actions = self.repository.get_actions_by_scope(
             scope, agent_id, step_range=step_range
