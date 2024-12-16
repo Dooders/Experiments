@@ -1701,7 +1701,7 @@ class BehaviorClustering:
 
     Attributes
     ----------
-    clusters : Dict[str, List[str]]
+    clusters : Dict[str, List[int]]
         Groups of agent IDs with similar behaviors, where:
         - 'aggressive': Agents with high attack rates
         - 'cooperative': Agents focused on sharing and interaction
@@ -1718,6 +1718,7 @@ class BehaviorClustering:
     
     cluster_performance : Dict[str, float]
         Average reward per action for each cluster
+    reduced_features : Optional[Dict[str, Dict]] = None
 
     Examples
     --------
@@ -1734,9 +1735,10 @@ class BehaviorClustering:
     Characteristics: {'attack_rate': 0.25, 'cooperation': 0.85, 'risk_taking': 0.35}
     """
 
-    clusters: Dict[str, List[str]]
+    clusters: Dict[str, List[int]]
     cluster_characteristics: Dict[str, Dict[str, float]]
     cluster_performance: Dict[str, float]
+    reduced_features: Optional[Dict[str, Dict]] = None
 
 
 @dataclass
