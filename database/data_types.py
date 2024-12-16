@@ -547,21 +547,39 @@ class DecisionPatternStats:
 
     Attributes
     ----------
+    action_type : str
+        The type of action
     count : int
         Number of times this action was taken
     frequency : float
         Frequency of this action relative to total decisions
-    reward_stats : Dict[str, float]
+    reward_stats : dict
         Statistics about rewards for this action type including:
         - average: Mean reward
-        - stddev: Standard deviation of rewards
+        - median: Median reward
         - min: Minimum reward received
         - max: Maximum reward received
+        - variance: Variance in rewards
+        - std_dev: Standard deviation of rewards
+        - percentile_25: 25th percentile of rewards
+        - percentile_50: 50th percentile of rewards
+        - percentile_75: 75th percentile of rewards
     """
 
+    action_type: str
     count: int
     frequency: float
-    reward_stats: Dict[str, float]
+    reward_stats: dict = {
+        "average": float,
+        "median": float,
+        "min": float,
+        "max": float,
+        "variance": float,
+        "std_dev": float,
+        "percentile_25": float,
+        "percentile_50": float,
+        "percentile_75": float
+    }
 
 
 @dataclass
@@ -2115,3 +2133,29 @@ class AgentActionData:
     state_after_id: Optional[str] = None
     reward: Optional[float] = None
     details: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class DecisionPatternStats:
+    """Statistics for a single decision/action type."""
+    action_type: str
+    count: int
+    frequency: float
+    reward_stats: dict
+    contribution_metrics: dict = {
+        "action_share": float,
+        "reward_share": float,
+        "reward_efficiency": float
+    }
+
+
+@dataclass
+class DecisionSummary:
+    """Summary statistics about decision making."""
+    total_decisions: int
+    unique_actions: int
+    most_frequent: Optional[str]
+    most_rewarding: Optional[str]
+    action_diversity: float
+    normalized_diversity: float  # Added normalized diversity
+    co_occurrence_patterns: Dict[str, Dict[str, Dict[str, float]]]  # Added co-occurrence patterns
