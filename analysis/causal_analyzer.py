@@ -1,3 +1,4 @@
+import json
 from typing import List, Optional, Tuple, Union
 
 from database.data_types import CausalAnalysis
@@ -46,8 +47,11 @@ class CausalAnalyzer:
         Returns:
             CausalAnalysis: Analysis results containing:
                 - action_type: The analyzed action type
-                - causal_impact: Average reward for the action
-                - state_transition_probs: Dictionary of state transition probabilities
+                - causal_impact: Average reward for the action (e.g., 2.5 means on average,
+                  this action type results in a positive reward of 2.5)
+                - state_transition_probs: Dictionary mapping transition states to their probabilities
+                  (e.g., {"gather|success_True": 0.7, "share|success_False": 0.3} means 70% chance
+                  of transitioning to a successful gather and 30% chance of transitioning to a failed share)
 
         Note:
             State transitions are encoded as strings containing context information such as:
@@ -55,6 +59,37 @@ class CausalAnalyzer:
             - Resource changes
             - Whether the action was targeted
             - Action-specific details (e.g., amounts gathered or shared)
+
+        Example:
+            A state transition string might look like:
+            "gather|success_True,next_success_False,resource_change_+2.0,gathered_3,next_gathered_1"
+
+            This indicates:
+            - Next action is "gather"
+            - Current action was successful
+            - Next action failed
+            - Resources increased by 2.0
+            - Current action gathered 3 units
+            - Next action gathered 1 unit
+
+            For a complete "gather" action analysis, the result might look like:
+
+            CausalAnalysis(
+                action_type="gather",
+                causal_impact=1.5,  # On average, gather actions yield +1.5 reward
+                state_transition_probs={
+                    "gather|success_True,resource_change_+2.0,gathered_3": 0.6,  # 60% chance
+                    "share|success_True,resource_change_-1.0,shared_2": 0.3,    # 30% chance
+                    "gather|success_False,resource_change_0.0": 0.1             # 10% chance
+                }
+            )
+
+            This indicates:
+            - Gather actions typically result in positive rewards (+1.5 on average)
+            - After a gather action:
+              * 60% chance of another successful gather that yields +2.0 resources
+              * 30% chance of transitioning to a successful share action
+              * 10% chance of a failed gather attempt
         """
         actions = self.repository.get_actions_by_scope(
             scope, agent_id, step_range=step_range
@@ -74,6 +109,16 @@ class CausalAnalyzer:
             filtered_actions
         )
 
+        def parse_details(details):
+            if not details:
+                return {}
+            if isinstance(details, str):
+                try:
+                    return json.loads(details)
+                except json.JSONDecodeError:
+                    return {}
+            return details if isinstance(details, dict) else {}
+
         state_transitions = {}
         for i in range(len(filtered_actions) - 1):
             current = filtered_actions[i]
@@ -81,14 +126,11 @@ class CausalAnalyzer:
 
             context_parts = []
 
-            success = (
-                current.details.get("success", False) if current.details else False
-            )
-            next_success = (
-                next_action.details.get("success", False)
-                if next_action.details
-                else False
-            )
+            current_details = parse_details(current.details)
+            next_details = parse_details(next_action.details)
+
+            success = current_details.get("success", False)
+            next_success = next_details.get("success", False)
             context_parts.append(f"success_{success}")
             context_parts.append(f"next_success_{next_success}")
 
@@ -103,25 +145,23 @@ class CausalAnalyzer:
             if current.action_target_id:
                 context_parts.append("targeted")
 
-            if current.action_type == "gather" and current.details:
-                if "amount_gathered" in current.details:
-                    context_parts.append(
-                        f"gathered_{current.details['amount_gathered']}"
-                    )
-            elif current.action_type == "share" and current.details:
-                if "amount_shared" in current.details:
-                    context_parts.append(f"shared_{current.details['amount_shared']}")
+            if current.action_type == "gather":
+                amount = current_details.get("amount_gathered")
+                if amount is not None:
+                    context_parts.append(f"gathered_{amount}")
+            elif current.action_type == "share":
+                amount = current_details.get("amount_shared")
+                if amount is not None:
+                    context_parts.append(f"shared_{amount}")
 
-            if next_action.action_type == "gather" and next_action.details:
-                if "amount_gathered" in next_action.details:
-                    context_parts.append(
-                        f"next_gathered_{next_action.details['amount_gathered']}"
-                    )
-            elif next_action.action_type == "share" and next_action.details:
-                if "amount_shared" in next_action.details:
-                    context_parts.append(
-                        f"next_shared_{next_action.details['amount_shared']}"
-                    )
+            if next_action.action_type == "gather":
+                amount = next_details.get("amount_gathered")
+                if amount is not None:
+                    context_parts.append(f"next_gathered_{amount}")
+            elif next_action.action_type == "share":
+                amount = next_details.get("amount_shared")
+                if amount is not None:
+                    context_parts.append(f"next_shared_{amount}")
 
             transition_key = f"{next_action.action_type}|{','.join(context_parts)}"
 

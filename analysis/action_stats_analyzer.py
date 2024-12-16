@@ -38,31 +38,54 @@ class ActionStatsAnalyzer:
         """
         Analyze action statistics based on specified scope and filters.
 
-        Processes action data to generate comprehensive metrics including action frequencies,
-        rewards, interaction rates, and various behavioral patterns.
+        This method processes action data to:
+        1. Calculate frequency and reward statistics for each action type
+        2. Determine interaction rates and performance metrics
+        3. Analyze temporal, resource, and decision-making patterns
 
         Args:
-            scope (Union[str, AnalysisScope]): The scope of analysis (e.g., SIMULATION, EPISODE).
-                Defaults to AnalysisScope.SIMULATION.
-            agent_id (Optional[int]): ID of the specific agent to analyze. If None, analyzes all agents.
-            step (Optional[int]): Specific simulation step to analyze. If None, analyzes all steps.
-            step_range (Optional[Tuple[int, int]]): Range of steps to analyze (inclusive).
-                If None, analyzes all steps.
+            scope (Union[str, AnalysisScope], optional): Scope of analysis. Defaults to AnalysisScope.SIMULATION.
+            agent_id (Optional[int], optional): Specific agent to analyze. Defaults to None.
+            step (Optional[int], optional): Specific step to analyze. Defaults to None.
+            step_range (Optional[Tuple[int, int]], optional): Range of steps to analyze. Defaults to None.
 
         Returns:
-            List[ActionMetrics]: List of action metrics objects containing:
-                - action_type: Type of the action
-                - count: Total number of occurrences
-                - frequency: Relative frequency of the action
-                - avg_reward: Average reward received
+            List[ActionMetrics]: List of metrics for each action type containing:
+                - action_type: Type of the analyzed action
+                - count: Total occurrences of the action
+                - frequency: Relative frequency (e.g., 0.3 means 30% of all actions)
+                - avg_reward: Mean reward received (e.g., 2.5 means average reward of +2.5)
                 - min_reward: Minimum reward received
                 - max_reward: Maximum reward received
-                - interaction_rate: Rate of interactions with other agents
-                - solo_performance: Average reward for solo actions
+                - interaction_rate: Proportion of actions involving other agents
+                - solo_performance: Average reward for non-interactive actions
                 - interaction_performance: Average reward for interactive actions
-                - temporal_patterns: Patterns in timing of actions
-                - resource_impacts: Effects on resource utilization
-                - decision_patterns: Patterns in decision-making
+                - temporal_patterns: Timing and sequence patterns
+                - resource_impacts: Resource utilization effects
+                - decision_patterns: Decision-making patterns
+
+        Example:
+            For a complete analysis of "gather" actions, the result might look like:
+
+            ActionMetrics(
+                action_type="gather",
+                count=100,
+                frequency=0.4,                # 40% of all actions were gather
+                avg_reward=2.5,               # Average reward of +2.5
+                min_reward=0.0,               # Minimum reward received
+                max_reward=5.0,               # Maximum reward received
+                interaction_rate=0.1,         # 10% of gather actions involved other agents
+                solo_performance=2.7,         # Average reward when gathering alone
+                interaction_performance=1.2,  # Average reward when gathering with others
+                temporal_patterns=[...],      # See TemporalPatternAnalyzer
+                resource_impacts=[...],       # See ResourceImpactAnalyzer
+                decision_patterns=[...]       # See DecisionPatternAnalyzer
+            )
+
+        Note:
+            - Frequency and rates are expressed as decimals between 0 and 1
+            - Performance metrics are calculated only for actions with valid rewards
+            - Patterns include detailed analysis of behavior sequences and context
         """
         actions = self.repository.get_actions_by_scope(
             scope, agent_id, step, step_range
@@ -137,7 +160,9 @@ class ActionStatsAnalyzer:
                     r for r in resource_impacts if r.action_type == action_type
                 ],
                 decision_patterns=[
-                    d for d in decision_patterns if d.action_type == action_type
+                    d
+                    for d in decision_patterns.decision_patterns
+                    if d.action_type == action_type
                 ],
             )
             for action_type, metrics in action_metrics.items()

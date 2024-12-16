@@ -29,30 +29,50 @@ class TemporalPatternAnalyzer:
         self,
         scope: Union[str, AnalysisScope] = AnalysisScope.SIMULATION,
         agent_id: Optional[int] = None,
+        step: Optional[int] = None,
         step_range: Optional[Tuple[int, int]] = None,
+        time_period_size: int = 100,
     ) -> List[TimePattern]:
         """
         Analyze temporal patterns in agent actions.
 
-        This method processes agent actions to identify patterns in their occurrence
-        and rewards over time. It divides the timeline into periods of 100 steps
-        and aggregates action counts and average rewards for each period.
+        This method processes agent actions to:
+        1. Identify patterns in action occurrence over time
+        2. Calculate reward progression across time periods
+        3. Generate time-based distribution metrics
 
         Args:
-            scope (Union[str, AnalysisScope], optional): The scope of analysis.
-                Defaults to AnalysisScope.SIMULATION.
-            agent_id (Optional[int], optional): ID of the specific agent to analyze.
-                If None, analyzes all agents. Defaults to None.
-            step_range (Optional[Tuple[int, int]], optional): Range of steps to analyze,
-                as (start_step, end_step). If None, analyzes all steps. Defaults to None.
+            scope (Union[str, AnalysisScope], optional): Scope of analysis. Defaults to AnalysisScope.SIMULATION.
+            agent_id (Optional[int], optional): Specific agent to analyze. Defaults to None.
+            step (Optional[int], optional): Specific step to analyze. Defaults to None.
+            step_range (Optional[Tuple[int, int]], optional): Range of steps to analyze. Defaults to None.
+            time_period_size (int, optional): Size of time period in steps. Defaults to 100.
 
         Returns:
-            List[TimePattern]: A list of TimePattern objects, each containing:
-                - action_type: The type of action
-                - time_distribution: List of action counts per time period
+            List[TimePattern]: List of temporal patterns for each action type containing:
+                - action_type: Type of the analyzed action
+                - time_distribution: List of action counts per time period (N-step intervals)
                 - reward_progression: List of average rewards per time period
+
+        Example:
+            For a "gather" action analysis over 300 steps, the result might look like:
+
+            TimePattern(
+                action_type="gather",
+                time_distribution=[25, 30, 15],  # Action counts in each N-step period
+                reward_progression=[2.0, 2.5, 1.8]  # Average rewards in each period
+            )
+
+        Note:
+            - Time periods are fixed N-step intervals
+            - Time distribution shows frequency of actions in each period
+            - Reward progression tracks performance changes over time
+            - Empty periods are represented with zero counts and rewards
+            - Rewards are averaged per period to account for varying action counts
         """
-        actions = self.repository.get_actions_by_scope(scope, agent_id, step_range=step_range)
+        actions = self.repository.get_actions_by_scope(
+            scope, agent_id, step_range=step_range
+        )
         patterns = {}
 
         for action in actions:
@@ -62,13 +82,15 @@ class TemporalPatternAnalyzer:
                     "reward_progression": [],
                 }
 
-            time_period = action.step_number // 100
+            time_period = action.step_number // time_period_size
             while len(patterns[action.action_type]["time_distribution"]) <= time_period:
                 patterns[action.action_type]["time_distribution"].append(0)
                 patterns[action.action_type]["reward_progression"].append(0)
 
             patterns[action.action_type]["time_distribution"][time_period] += 1
-            patterns[action.action_type]["reward_progression"][time_period] += action.reward or 0
+            patterns[action.action_type]["reward_progression"][time_period] += (
+                action.reward or 0
+            )
 
         for action_type, data in patterns.items():
             for i in range(len(data["reward_progression"])):
