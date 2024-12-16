@@ -580,6 +580,24 @@ class DecisionPatternStats:
         "percentile_50": float,
         "percentile_75": float
     }
+    contribution_metrics: dict = {
+        "action_share": float,
+        "reward_share": float,
+        "reward_efficiency": float
+    }
+    temporal_stats: dict = {
+        "frequency_trend": float,  # Overall trend in frequency
+        "reward_trend": float,     # Overall trend in rewards
+        "rolling_frequencies": List[float],  # Rolling average of frequencies
+        "rolling_rewards": List[float],      # Rolling average of rewards
+        "consistency": float,      # Measure of frequency consistency
+        "periodicity": float,      # Measure of periodic patterns
+        "recent_trend": str,       # Recent trend direction
+    }
+    first_occurrence: dict = {
+        "step": int,              # First step this action was taken
+        "reward": float,          # Reward from first occurrence
+    }
 
 
 @dataclass
@@ -2146,6 +2164,19 @@ class DecisionPatternStats:
         "action_share": float,
         "reward_share": float,
         "reward_efficiency": float
+    }
+    temporal_stats: dict = {
+        "frequency_trend": float,  # Overall trend in frequency
+        "reward_trend": float,     # Overall trend in rewards
+        "rolling_frequencies": List[float],  # Rolling average of frequencies
+        "rolling_rewards": List[float],      # Rolling average of rewards
+        "consistency": float,      # Measure of frequency consistency
+        "periodicity": float,      # Measure of periodic patterns
+        "recent_trend": str,       # Recent trend direction
+    }
+    first_occurrence: dict = {
+        "step": int,              # First step this action was taken
+        "reward": float,          # Reward from first occurrence
     }
 
 
