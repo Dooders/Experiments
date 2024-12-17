@@ -9,7 +9,7 @@ from sklearn.manifold import TSNE
 from sklearn.preprocessing import StandardScaler
 
 from database.data_types import AgentActionData, BehaviorClustering
-from database.repositories.agent_action_repository import AgentActionRepository
+from database.repositories.action_repository import ActionRepository
 
 
 class BehaviorClusteringAnalyzer:
@@ -29,7 +29,7 @@ class BehaviorClusteringAnalyzer:
         n_components (int): Number of dimensions to reduce to for visualization
     """
 
-    def __init__(self, repository: AgentActionRepository):
+    def __init__(self, repository: ActionRepository):
         """
         Initialize the analyzer with a repository for accessing agent action data.
 

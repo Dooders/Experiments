@@ -1,85 +1,93 @@
-from typing import List
+from typing import List, Optional
 
-import pandas as pd
-from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
-from database.data_types import (
-    AgentLifespanResults,
-    LifespanStatistics,
-    SurvivalRatesByGeneration,
-)
-from database.models import AgentModel
+from database.models import ActionModel, AgentModel, AgentStateModel
 from database.repositories.base_repository import BaseRepository
 from database.session_manager import SessionManager
-from database.utilities import execute_query
 
 
 class AgentRepository(BaseRepository[AgentModel]):
-    """Repository for handling agent-related data operations."""
+    """Repository for handling agent-related data operations.
+
+    This class provides methods to query and retrieve agents and their related data
+    such as actions and states.
+
+    Args:
+        session_manager (SessionManager): Session manager for database operations.
+    """
 
     def __init__(self, session_manager: SessionManager):
-        """Initialize the repository with a database connection."""
-        super().__init__(session_manager, AgentModel)
+        """Initialize repository with session manager.
 
-    @execute_query
-    def lifespan_statistics(self, session: Session) -> LifespanStatistics:
-        """Calculate comprehensive lifespan statistics across agent types and generations."""
-        lifespans = (
-            session.query(
-                AgentModel.agent_type,
-                AgentModel.generation,
-                (AgentModel.death_time - AgentModel.birth_time).label("lifespan"),
+        Parameters
+        ----------
+        session_manager : SessionManager
+            Session manager instance for database operations
+        """
+        self.session_manager = session_manager
+
+    def get_agent_by_id(self, agent_id: int) -> Optional[AgentModel]:
+        """Retrieve an agent by their unique identifier.
+
+        Parameters
+        ----------
+        agent_id : int
+            The unique identifier of the agent
+
+        Returns
+        -------
+        Optional[AgentModel]
+            The agent if found, None otherwise
+        """
+
+        def query_agent(session: Session) -> Optional[AgentModel]:
+            return session.query(AgentModel).get(agent_id)
+
+        return self.session_manager.execute_with_retry(query_agent)
+
+    def get_actions_by_agent_id(self, agent_id: int) -> List[ActionModel]:
+        """Retrieve actions by agent ID.
+
+        Parameters
+        ----------
+        agent_id : int
+            The unique identifier of the agent
+
+        Returns
+        -------
+        List[ActionModel]
+            List of actions performed by the agent
+        """
+
+        def query_actions(session: Session) -> List[ActionModel]:
+            return (
+                session.query(ActionModel)
+                .filter(ActionModel.agent_id == agent_id)
+                .all()
             )
-            .filter(AgentModel.death_time.isnot(None))
-            .all()
-        )
 
-        lifespan_data = pd.DataFrame(
-            lifespans, columns=["agent_type", "generation", "lifespan"]
-        )
+        return self.session_manager.execute_with_retry(query_actions)
 
-        return LifespanStatistics(
-            average_lifespan=lifespan_data["lifespan"].mean(),
-            maximum_lifespan=lifespan_data["lifespan"].max(),
-            minimum_lifespan=lifespan_data["lifespan"].min(),
-            lifespan_by_type=lifespan_data.groupby("agent_type")["lifespan"]
-            .mean()
-            .to_dict(),
-            lifespan_by_generation=lifespan_data.groupby("generation")["lifespan"]
-            .mean()
-            .to_dict(),
-        )
+    def get_states_by_agent_id(self, agent_id: int) -> List[AgentStateModel]:
+        """Retrieve states by agent ID.
 
-    @execute_query
-    def survival_rates(self, session: Session) -> SurvivalRatesByGeneration:
-        """Calculate the survival rates for each generation of agents."""
-        survival_rates = (
-            session.query(
-                AgentModel.generation,
-                func.count(case((AgentModel.death_time.is_(None), 1)))
-                * 100.0
-                / func.count(),
+        Parameters
+        ----------
+        agent_id : int
+            The unique identifier of the agent
+
+        Returns
+        -------
+        List[AgentStateModel]
+            List of states associated with the agent
+        """
+
+        def query_states(session: Session) -> List[AgentStateModel]:
+            return (
+                session.query(AgentStateModel)
+                .filter(AgentStateModel.agent_id == agent_id)
+                .all()
             )
-            .group_by(AgentModel.generation)
-            .all()
-        )
 
-        survival_data = pd.DataFrame(
-            survival_rates, columns=["generation", "survival_rate"]
-        )
-
-        return SurvivalRatesByGeneration(
-            rates=survival_data.set_index("generation")["survival_rate"].to_dict()
-        )
-
-    @execute_query
-    def execute(self, session: Session) -> AgentLifespanResults:
-        """Calculate and combine all agent lifespan statistics."""
-        lifespan_stats = self.lifespan_statistics()
-        survival_rates = self.survival_rates()
-
-        return AgentLifespanResults(
-            lifespan_statistics=lifespan_stats,
-            survival_rates=survival_rates,
-        )
+        return self.session_manager.execute_with_retry(query_states)

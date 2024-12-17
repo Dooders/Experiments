@@ -379,7 +379,7 @@ class SimulationStepModel(Base):
         }
 
 
-class AgentAction(Base):
+class ActionModel(Base):
     """Record of an action taken by an agent during simulation.
 
     This model tracks individual actions performed by agents, including the type of action,

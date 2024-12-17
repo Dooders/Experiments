@@ -8,12 +8,12 @@ from analysis.decision_pattern_analyzer import DecisionPatternAnalyzer
 from analysis.resource_impact_analyzer import ResourceImpactAnalyzer
 from analysis.sequence_pattern_analyzer import SequencePatternAnalyzer
 from analysis.temporal_pattern_analyzer import TemporalPatternAnalyzer
-from database.repositories.agent_action_repository import AgentActionRepository
+from database.repositories.action_repository import ActionRepository
 
 class TestActionsService(unittest.TestCase):
     def setUp(self):
         # Create mocks for all dependencies
-        self.action_repo = MagicMock(spec=AgentActionRepository)
+        self.action_repo = MagicMock(spec=ActionRepository)
         self.action_stats = MagicMock(spec=ActionStatsAnalyzer)
         self.behavior_clustering = MagicMock(spec=BehaviorClusteringAnalyzer)
         self.causal = MagicMock(spec=CausalAnalyzer)

@@ -5,7 +5,7 @@ import numpy as np
 
 from database.data_types import DecisionPatterns, DecisionPatternStats, DecisionSummary
 from database.enums import AnalysisScope
-from database.repositories.agent_action_repository import AgentActionRepository
+from database.repositories.action_repository import ActionRepository
 
 
 class DecisionPatternAnalyzer:
@@ -28,7 +28,7 @@ class DecisionPatternAnalyzer:
     - Whether there are temporal patterns or correlations between actions
     """
 
-    def __init__(self, repository: AgentActionRepository):
+    def __init__(self, repository: ActionRepository):
         """
         Initialize the DecisionPatternAnalyzer.
 
