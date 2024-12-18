@@ -169,8 +169,8 @@ class GatherModule(BaseDQNModule):
         should_gather = target_resource is not None
 
         # Store state for learning
-        self.last_state = state
-        self.last_action = action
+        self.previous_state = state
+        self.previous_action = action
 
         return should_gather, target_resource
 

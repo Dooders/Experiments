@@ -50,12 +50,12 @@ class AgentAnalysisWindow(ttk.Frame):
         ttk.Label(selection_frame, text="Select Agent:").grid(
             row=0, column=0, padx=(0, 10)
         )
-        
+
         self.agent_var = tk.StringVar()
         self.agent_combobox = ttk.Combobox(
             selection_frame,
             textvariable=self.agent_var,
-            style="AgentAnalysis.TCombobox"
+            style="AgentAnalysis.TCombobox",
         )
         self.agent_combobox.grid(row=0, column=1, sticky="ew")
         self.agent_combobox.bind("<<ComboboxSelected>>", self._on_agent_selected)
@@ -158,12 +158,11 @@ class AgentAnalysisWindow(ttk.Frame):
             ("Birth Time", "birth_time"),
             ("Death Time", "death_time"),
             ("Generation", "generation"),
-            ("Parent ID", "parent_id"),
         ]
 
         basic_fields_right = [
             ("Initial Resources", "initial_resources"),
-            ("Max Health", "max_health"),
+            ("Starting Health", "starting_health"),
             ("Starvation Threshold", "starvation_threshold"),
             ("Genome ID", "genome_id"),
         ]
@@ -299,7 +298,7 @@ class AgentAnalysisWindow(ttk.Frame):
             children_frame,
             columns=("child_id", "birth_time", "age"),
             show="headings",
-            height=5  # Show 5 rows at a time
+            height=5,  # Show 5 rows at a time
         )
 
         # Configure columns
@@ -314,9 +313,7 @@ class AgentAnalysisWindow(ttk.Frame):
 
         # Add scrollbar
         children_scrollbar = ttk.Scrollbar(
-            children_frame,
-            orient="vertical",
-            command=self.children_tree.yview
+            children_frame, orient="vertical", command=self.children_tree.yview
         )
         self.children_tree.configure(yscrollcommand=children_scrollbar.set)
 
@@ -331,20 +328,22 @@ class AgentAnalysisWindow(ttk.Frame):
         """Load available agents from database."""
         try:
             db = SimulationDatabase(self.db_path)
-            
+
             def _query(session):
                 # Use SQLAlchemy ORM query
-                agents = (session.query(Agent.agent_id, Agent.agent_type, Agent.birth_time)
-                         .order_by(Agent.birth_time.desc())
-                         .all())
-                
+                agents = (
+                    session.query(Agent.agent_id, Agent.agent_type, Agent.birth_time)
+                    .order_by(Agent.birth_time.desc())
+                    .all()
+                )
+
                 # Format combobox values
                 values = [
                     f"Agent {agent.agent_id} ({agent.agent_type}) - Born: {agent.birth_time}"
                     for agent in agents
                 ]
                 return values
-                
+
             values = db._execute_in_transaction(_query)
 
             self.agent_combobox["values"] = values
@@ -374,62 +373,63 @@ class AgentAnalysisWindow(ttk.Frame):
             agent_data = self.retriever.get_agent_data(agent_id)
             agent_actions = self.retriever.get_agent_actions(agent_id)
             agent_decisions = self.retriever.get_agent_decisions(agent_id)
-            
+
             # Update info labels with basic info
-            self._update_info_labels(agent_data['basic_info'])
-            
+            self._update_info_labels(agent_data["basic_info"])
+
             # Update current state
-            self._update_stat_labels(agent_data['current_state'])
-            
+            self._update_stat_labels(agent_data["current_state"])
+
             # Update performance metrics
-            self._update_metric_labels(agent_data['historical_metrics'])
-            
+            self._update_metric_labels(agent_data["historical_metrics"])
+
             # Update metrics chart with time series data
             self._update_metrics_chart(agent_data, agent_actions)
-            
+
             # Update children table
             self._update_children_table(agent_id)
-            
+
             # Update action analysis
             self._update_action_analysis(agent_actions, agent_decisions)
-            
+
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load agent data: {e}")
 
     def _load_basic_info(self, db: SimulationDatabase, agent_id: int) -> Dict:
         """Load basic agent information from database."""
+
         def _query(session):
-            agent = (session.query(Agent)
-                    .filter(Agent.agent_id == agent_id)
-                    .first())
-            
+            agent = session.query(Agent).filter(Agent.agent_id == agent_id).first()
+
             if agent:
                 return {
                     "type": agent.agent_type,
                     "birth_time": agent.birth_time,
                     "death_time": agent.death_time,
                     "generation": agent.generation,
-                    "parent_id": agent.parent_id,
                     "initial_resources": agent.initial_resources,
-                    "max_health": agent.max_health,
+                    "starting_health": agent.starting_health,
                     "starvation_threshold": agent.starvation_threshold,
-                    "genome_id": agent.genome_id
+                    "genome_id": agent.genome_id,
                 }
             return {}
-            
+
         return db._execute_in_transaction(_query)
 
     def _load_agent_stats(self, db: SimulationDatabase, agent_id: int) -> Dict:
         """Load current agent statistics from database."""
+
         def _query(session):
             # Get latest state using window function
             from sqlalchemy import func
-            
-            latest_state = (session.query(AgentState)
-                           .filter(AgentState.agent_id == agent_id)
-                           .order_by(AgentState.step_number.desc())
-                           .first())
-            
+
+            latest_state = (
+                session.query(AgentState)
+                .filter(AgentState.agent_id == agent_id)
+                .order_by(AgentState.step_number.desc())
+                .first()
+            )
+
             if latest_state:
                 return {
                     "current_health": latest_state.current_health,
@@ -437,79 +437,94 @@ class AgentAnalysisWindow(ttk.Frame):
                     "total_reward": latest_state.total_reward,
                     "age": latest_state.age,
                     "is_defending": latest_state.is_defending,
-                    "current_position": f"{latest_state.position_x}, {latest_state.position_y}"
+                    "current_position": f"{latest_state.position_x}, {latest_state.position_y}",
                 }
-            
+
             return {
                 "current_health": 0,
                 "resource_level": 0,
                 "total_reward": 0,
                 "age": 0,
                 "is_defending": False,
-                "current_position": "0, 0"
+                "current_position": "0, 0",
             }
-            
+
         return db._execute_in_transaction(_query)
 
     def _load_performance_metrics(self, db: SimulationDatabase, agent_id: int) -> Dict:
         """Load agent performance metrics from database."""
+
         def _query(session):
             from sqlalchemy import func
-            
-            metrics = (session.query(
-                (func.max(AgentState.step_number) - 
-                 func.min(AgentState.step_number)).label('survival_time'),
-                func.max(AgentState.current_health).label('peak_health'),
-                func.max(AgentState.resource_level).label('peak_resources'),
-                func.count(AgentAction.action_id).label('total_actions')
+
+            metrics = (
+                session.query(
+                    (
+                        func.max(AgentState.step_number)
+                        - func.min(AgentState.step_number)
+                    ).label("survival_time"),
+                    func.max(AgentState.current_health).label("peak_health"),
+                    func.max(AgentState.resource_level).label("peak_resources"),
+                    func.count(AgentAction.action_id).label("total_actions"),
+                )
+                .select_from(AgentState)
+                .outerjoin(
+                    AgentAction,
+                    (AgentAction.agent_id == AgentState.agent_id)
+                    & (AgentAction.step_number == AgentState.step_number),
+                )
+                .filter(AgentState.agent_id == agent_id)
+                .group_by(AgentState.agent_id)
+                .first()
             )
-            .select_from(AgentState)
-            .outerjoin(AgentAction, 
-                      (AgentAction.agent_id == AgentState.agent_id) & 
-                      (AgentAction.step_number == AgentState.step_number))
-            .filter(AgentState.agent_id == agent_id)
-            .group_by(AgentState.agent_id)
-            .first())
-            
+
             if metrics:
                 return {
                     "survival_time": metrics.survival_time or 0,
                     "peak_health": metrics.peak_health or 0,
                     "peak_resources": metrics.peak_resources or 0,
-                    "total_actions": metrics.total_actions or 0
+                    "total_actions": metrics.total_actions or 0,
                 }
-                
+
             return {
                 "survival_time": 0,
                 "peak_health": 0,
                 "peak_resources": 0,
-                "total_actions": 0
+                "total_actions": 0,
             }
-            
+
         return db._execute_in_transaction(_query)
 
     def _update_metrics_chart(self, db: SimulationDatabase, agent_id):
         """Update the metrics chart with agent's time series data."""
+
         def _query(session):
-            states = (session.query(
-                AgentState.step_number,
-                AgentState.current_health,
-                AgentState.resource_level,
-                AgentState.total_reward,
-                AgentState.is_defending
+            states = (
+                session.query(
+                    AgentState.step_number,
+                    AgentState.current_health,
+                    AgentState.resource_level,
+                    AgentState.total_reward,
+                    AgentState.is_defending,
+                )
+                .filter(AgentState.agent_id == agent_id)
+                .order_by(AgentState.step_number)
+                .all()
             )
-            .filter(AgentState.agent_id == agent_id)
-            .order_by(AgentState.step_number)
-            .all())
-            
-            return pd.DataFrame([{
-                'step_number': state.step_number,
-                'current_health': state.current_health,
-                'resource_level': state.resource_level,
-                'total_reward': state.total_reward,
-                'is_defending': state.is_defending
-            } for state in states])
-        
+
+            return pd.DataFrame(
+                [
+                    {
+                        "step_number": state.step_number,
+                        "current_health": state.current_health,
+                        "resource_level": state.resource_level,
+                        "total_reward": state.total_reward,
+                        "is_defending": state.is_defending,
+                    }
+                    for state in states
+                ]
+            )
+
         df = db._execute_in_transaction(_query)
 
         # Clear previous chart
@@ -523,7 +538,7 @@ class AgentAnalysisWindow(ttk.Frame):
         """Create the metrics plot."""
         # Store DataFrame for event handlers
         self.df = df
-        
+
         # Clear previous plot
         for widget in self.metrics_frame.winfo_children():
             widget.destroy()
@@ -575,16 +590,24 @@ class AgentAnalysisWindow(ttk.Frame):
         )
 
         # Add action indicators
-        y_min = ax1.get_ylim()[0] - (ax1.get_ylim()[1] - ax1.get_ylim()[0]) * 0.02  # 2% below bottom
-        
+        y_min = (
+            ax1.get_ylim()[0] - (ax1.get_ylim()[1] - ax1.get_ylim()[0]) * 0.02
+        )  # 2% below bottom
+
         # Get steps for each action type
         defense_steps = df[df["is_defending"] == 1]["step_number"]
-        
+
         # Query attack and reproduction steps
-        action_data = self._get_action_data(df["step_number"].min(), df["step_number"].max())
-        attack_steps = action_data[action_data["action_type"] == "attack"]["step_number"]
-        reproduce_steps = action_data[action_data["action_type"] == "reproduce"]["step_number"]
-        
+        action_data = self._get_action_data(
+            df["step_number"].min(), df["step_number"].max()
+        )
+        attack_steps = action_data[action_data["action_type"] == "attack"][
+            "step_number"
+        ]
+        reproduce_steps = action_data[action_data["action_type"] == "reproduce"][
+            "step_number"
+        ]
+
         # Add markers for each action type
         if not defense_steps.empty:
             lines.append(
@@ -596,10 +619,10 @@ class AgentAnalysisWindow(ttk.Frame):
                     label="Defending",
                     alpha=0.5,
                     zorder=3,
-                    clip_on=False
+                    clip_on=False,
                 )
             )
-            
+
         if not attack_steps.empty:
             lines.append(
                 ax1.scatter(
@@ -610,10 +633,10 @@ class AgentAnalysisWindow(ttk.Frame):
                     label="Attack",
                     alpha=0.5,
                     zorder=3,
-                    clip_on=False
+                    clip_on=False,
                 )
             )
-            
+
         if not reproduce_steps.empty:
             lines.append(
                 ax1.scatter(
@@ -624,10 +647,10 @@ class AgentAnalysisWindow(ttk.Frame):
                     label="Reproduce",
                     alpha=0.5,
                     zorder=3,
-                    clip_on=False
+                    clip_on=False,
                 )
             )
-        
+
         # Adjust bottom margin to make room for markers
         ax1.set_ylim(bottom=y_min - (ax1.get_ylim()[1] - ax1.get_ylim()[0]) * 0.01)
 
@@ -663,10 +686,10 @@ class AgentAnalysisWindow(ttk.Frame):
         x_min = df["step_number"].min()
         x_max = df["step_number"].max()
         x_padding = (x_max - x_min) * 0.02  # 2% padding
-        
+
         ax1.set_xlim(x_min, x_max + x_padding)  # Add padding only to right side
         ax1.set_xticks([])  # Remove x-ticks from top plot
-        
+
         # Ensure bottom plot shares the same x-axis limits
         ax2.set_xlim(x_min, x_max + x_padding)
 
@@ -681,19 +704,16 @@ class AgentAnalysisWindow(ttk.Frame):
 
         # Add vertical line for current step
         self.current_step_line = ax1.axvline(
-            x=df["step_number"].iloc[0],
-            color="gray",
-            linestyle="--",
-            alpha=0.5
+            x=df["step_number"].iloc[0], color="gray", linestyle="--", alpha=0.5
         )
 
         # Create canvas with all event connections
         canvas = FigureCanvasTkAgg(fig, master=self.metrics_frame)
-        canvas.mpl_connect('button_press_event', lambda e: self._on_click(e))
-        canvas.mpl_connect('button_release_event', lambda e: self._on_release(e))
-        canvas.mpl_connect('motion_notify_event', lambda e: self._on_drag(e))
-        canvas.mpl_connect('key_press_event', lambda e: self._on_key(e))
-        
+        canvas.mpl_connect("button_press_event", lambda e: self._on_click(e))
+        canvas.mpl_connect("button_release_event", lambda e: self._on_release(e))
+        canvas.mpl_connect("motion_notify_event", lambda e: self._on_drag(e))
+        canvas.mpl_connect("key_press_event", lambda e: self._on_key(e))
+
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
@@ -705,27 +725,34 @@ class AgentAnalysisWindow(ttk.Frame):
         """Get total population and resource data for the timeline."""
         try:
             db = SimulationDatabase(self.db_path)
-            
+
             def _query(session):
                 from database.database import SimulationStep
-                
-                steps = (session.query(
-                    SimulationStep.step_number,
-                    SimulationStep.total_agents,
-                    SimulationStep.total_resources
+
+                steps = (
+                    session.query(
+                        SimulationStep.step_number,
+                        SimulationStep.total_agents,
+                        SimulationStep.total_resources,
+                    )
+                    .filter(
+                        SimulationStep.step_number >= start_step,
+                        SimulationStep.step_number <= end_step,
+                    )
+                    .order_by(SimulationStep.step_number)
+                    .all()
                 )
-                .filter(
-                    SimulationStep.step_number >= start_step,
-                    SimulationStep.step_number <= end_step
+
+                return pd.DataFrame(
+                    [
+                        {
+                            "step_number": step.step_number,
+                            "total_agents": step.total_agents,
+                            "total_resources": step.total_resources,
+                        }
+                        for step in steps
+                    ]
                 )
-                .order_by(SimulationStep.step_number)
-                .all())
-                
-                return pd.DataFrame([{
-                    'step_number': step.step_number,
-                    'total_agents': step.total_agents,
-                    'total_resources': step.total_resources
-                } for step in steps])
 
             return db._execute_in_transaction(_query)
 
@@ -744,17 +771,29 @@ class AgentAnalysisWindow(ttk.Frame):
         ax2 = ax.twinx()
 
         # Plot total population data on left axis
-        l1 = ax.plot(df["step_number"], df["total_agents"], 
-                     color="blue", label="Total Agents", alpha=0.7, linewidth=2)
+        l1 = ax.plot(
+            df["step_number"],
+            df["total_agents"],
+            color="blue",
+            label="Total Agents",
+            alpha=0.7,
+            linewidth=2,
+        )
 
         # Plot resources on right axis
-        l2 = ax2.plot(df["step_number"], df["total_resources"], 
-                      color="green", label="Resources", alpha=0.7, linewidth=2)
+        l2 = ax2.plot(
+            df["step_number"],
+            df["total_resources"],
+            color="green",
+            label="Resources",
+            alpha=0.7,
+            linewidth=2,
+        )
 
         # Add legends
         lines = l1 + l2
         labels = [l.get_label() for l in lines]
-        ax.legend(lines, labels, loc='upper left', bbox_to_anchor=(1.15, 1.0))
+        ax.legend(lines, labels, loc="upper left", bbox_to_anchor=(1.15, 1.0))
 
         # Set labels
         ax.set_ylabel("Population", color="black")
@@ -763,16 +802,16 @@ class AgentAnalysisWindow(ttk.Frame):
         # Add padding to y-axes (10% padding)
         y1_min, y1_max = ax.get_ylim()
         y2_min, y2_max = ax2.get_ylim()
-        
+
         y1_padding = (y1_max - y1_min) * 0.1
         y2_padding = (y2_max - y2_min) * 0.1
-        
+
         ax.set_ylim(max(0, y1_min - y1_padding), y1_max + y1_padding)
         ax2.set_ylim(max(0, y2_min - y2_padding), y2_max + y2_padding)
 
         # Set colors for tick labels
-        ax.tick_params(axis='y', labelcolor="black")
-        ax2.tick_params(axis='y', labelcolor="green")
+        ax.tick_params(axis="y", labelcolor="black")
+        ax2.tick_params(axis="y", labelcolor="green")
 
         # Add grid
         ax.grid(True, alpha=0.2)
@@ -782,7 +821,7 @@ class AgentAnalysisWindow(ttk.Frame):
             x=self.df["step_number"].iloc[0],  # Start at first step
             color="gray",
             linestyle="--",
-            alpha=0.5
+            alpha=0.5,
         )
 
     def _get_action_data(self, start_step, end_step):
@@ -792,36 +831,47 @@ class AgentAnalysisWindow(ttk.Frame):
             agent_id = int(self.agent_var.get().split()[1])
 
             def _query(session):
-                actions = (session.query(
-                    AgentAction.step_number,
-                    AgentAction.action_type,
-                    AgentAction.reward,
-                    AgentAction.action_id,
-                    AgentAction.action_target_id,
-                    AgentAction.resources_before,
-                    AgentAction.resources_after,
-                    AgentAction.details,
-                    AgentAction.agent_id
+                actions = (
+                    session.query(
+                        AgentAction.step_number,
+                        AgentAction.action_type,
+                        AgentAction.reward,
+                        AgentAction.action_id,
+                        AgentAction.action_target_id,
+                        AgentAction.resources_before,
+                        AgentAction.resources_after,
+                        AgentAction.details,
+                        AgentAction.agent_id,
+                    )
+                    .filter(
+                        AgentAction.agent_id == agent_id,
+                        AgentAction.step_number >= start_step,
+                        AgentAction.step_number <= end_step,
+                    )
+                    .order_by(AgentAction.step_number)
+                    .all()
                 )
-                .filter(
-                    AgentAction.agent_id == agent_id,
-                    AgentAction.step_number >= start_step,
-                    AgentAction.step_number <= end_step
+
+                return pd.DataFrame(
+                    [
+                        {
+                            "step_number": action.step_number,
+                            "action_type": (
+                                action.action_type.lower()
+                                if action.action_type
+                                else None
+                            ),
+                            "reward": action.reward,
+                            "action_id": action.action_id,
+                            "action_target_id": action.action_target_id,
+                            "resources_before": action.resources_before,
+                            "resources_after": action.resources_after,
+                            "details": action.details,
+                            "agent_id": action.agent_id,
+                        }
+                        for action in actions
+                    ]
                 )
-                .order_by(AgentAction.step_number)
-                .all())
-                
-                return pd.DataFrame([{
-                    'step_number': action.step_number,
-                    'action_type': action.action_type.lower() if action.action_type else None,
-                    'reward': action.reward,
-                    'action_id': action.action_id,
-                    'action_target_id': action.action_target_id,
-                    'resources_before': action.resources_before,
-                    'resources_after': action.resources_after,
-                    'details': action.details,
-                    'agent_id': action.agent_id
-                } for action in actions])
 
             return db._execute_in_transaction(_query)
 
@@ -1028,7 +1078,7 @@ class AgentAnalysisWindow(ttk.Frame):
         try:
             conn = sqlite3.connect(self.db_path)
             agent_id = int(self.agent_var.get().split()[1])
-            
+
             # Get basic state information
             query = """
                 SELECT 
@@ -1043,22 +1093,30 @@ class AgentAnalysisWindow(ttk.Frame):
                 WHERE s.agent_id = ? AND s.step_number = ?
             """
             df = pd.read_sql_query(query, conn, params=(agent_id, step))
-            
+
             if not df.empty:
                 state = df.iloc[0]
-                
+
                 # Update stat labels with step-specific data
                 self.stat_labels["health"].config(text=f"{state['current_health']:.2f}")
-                self.stat_labels["resources"].config(text=f"{state['resource_level']:.2f}")
-                self.stat_labels["total_reward"].config(text=f"{state['total_reward']:.2f}")
-                self.stat_labels["age"].config(text=str(state['age']))
-                self.stat_labels["is_defending"].config(text=str(bool(state['is_defending'])))
-                self.stat_labels["current_position"].config(text=state['current_position'])
-                
+                self.stat_labels["resources"].config(
+                    text=f"{state['resource_level']:.2f}"
+                )
+                self.stat_labels["total_reward"].config(
+                    text=f"{state['total_reward']:.2f}"
+                )
+                self.stat_labels["age"].config(text=str(state["age"]))
+                self.stat_labels["is_defending"].config(
+                    text=str(bool(state["is_defending"]))
+                )
+                self.stat_labels["current_position"].config(
+                    text=state["current_position"]
+                )
+
                 # Get action details for this step
                 db = SimulationDatabase(self.db_path)
                 action_details = db.get_step_actions(agent_id, step)
-                
+
                 # Update action details in the UI
                 if action_details:
                     action_text = f"""Step {step} Action Details:
@@ -1068,29 +1126,30 @@ Resources Before: {action_details['resources_before']:.2f}
 Resources After: {action_details['resources_after']:.2f}
 Reward: {action_details['reward']:.2f}
 """
-                    if action_details['details']:
+                    if action_details["details"]:
                         import json
-                        details = json.loads(action_details['details'])
+
+                        details = json.loads(action_details["details"])
                         action_text += "\nAdditional Details:\n"
                         for key, value in details.items():
                             action_text += f"{key}: {value}\n"
                 else:
                     action_text = f"No action recorded for step {step}"
-                
+
                 # Create or update action details label
-                if not hasattr(self, 'action_details_label'):
+                if not hasattr(self, "action_details_label"):
                     self.action_details_label = ttk.Label(
                         self.scrollable_info,
                         text=action_text,
                         style="InfoValue.TLabel",
-                        justify=tk.LEFT
+                        justify=tk.LEFT,
                     )
                     self.action_details_label.pack(fill="x", pady=(10, 0), padx=5)
                 else:
                     self.action_details_label.config(text=action_text)
-            
+
             conn.close()
-            
+
         except Exception as e:
             print(f"Error updating step info: {e}")
             traceback.print_exc()
@@ -1102,7 +1161,10 @@ Reward: {action_details['reward']:.2f}
                 self.is_dragging = True
                 step = int(round(event.xdata))
                 # Constrain step to valid range
-                step = max(self.df["step_number"].min(), min(step, self.df["step_number"].max()))
+                step = max(
+                    self.df["step_number"].min(),
+                    min(step, self.df["step_number"].max()),
+                )
                 self._update_step_info(step)
                 # Update both vertical lines
                 self.current_step_line.set_xdata([step, step])
@@ -1117,12 +1179,15 @@ Reward: {action_details['reward']:.2f}
 
     def _on_drag(self, event):
         """Handle mouse drag on the chart."""
-        if hasattr(self, 'is_dragging') and self.is_dragging and event.inaxes:
+        if hasattr(self, "is_dragging") and self.is_dragging and event.inaxes:
             try:
                 step = int(round(event.xdata))
                 # Constrain step to valid range
-                if hasattr(self, 'df'):
-                    step = max(self.df["step_number"].min(), min(step, self.df["step_number"].max()))
+                if hasattr(self, "df"):
+                    step = max(
+                        self.df["step_number"].min(),
+                        min(step, self.df["step_number"].max()),
+                    )
                     self._update_step_info(step)
                     # Update both vertical lines
                     self.current_step_line.set_xdata([step, step])
@@ -1137,15 +1202,15 @@ Reward: {action_details['reward']:.2f}
             try:
                 current_x = self.current_step_line.get_xdata()[0]
                 step = int(current_x)
-                
+
                 # Handle left/right arrow keys
-                if event.key == 'left':
+                if event.key == "left":
                     step = max(self.df["step_number"].min(), step - 1)
-                elif event.key == 'right':
+                elif event.key == "right":
                     step = min(self.df["step_number"].max(), step + 1)
                 else:
                     return
-                
+
                 # Update line positions and info
                 self._update_step_info(step)
                 self.current_step_line.set_xdata([step, step])
@@ -1158,27 +1223,27 @@ Reward: {action_details['reward']:.2f}
         """Update the children table for the given agent."""
         try:
             db = SimulationDatabase(self.db_path)
-            
+
             def _query(session):
                 from sqlalchemy import case
-                
-                children = (session.query(
-                    Agent.agent_id.label('child_id'),
-                    Agent.birth_time,
-                    case(
-                        (Agent.death_time.is_(None),
-                         func.max(AgentState.age)),
-                        else_=Agent.death_time - Agent.birth_time
-                    ).label('age')
+
+                children = (
+                    session.query(
+                        Agent.agent_id.label("child_id"),
+                        Agent.birth_time,
+                        case(
+                            (Agent.death_time.is_(None), func.max(AgentState.age)),
+                            else_=Agent.death_time - Agent.birth_time,
+                        ).label("age"),
+                    )
+                    .outerjoin(AgentState)
+                    .group_by(Agent.agent_id)
+                    .order_by(Agent.birth_time.desc())
+                    .all()
                 )
-                .outerjoin(AgentState)
-                .filter(Agent.parent_id == agent_id)
-                .group_by(Agent.agent_id)
-                .order_by(Agent.birth_time.desc())
-                .all())
-                
+
                 return children
-                
+
             children = db._execute_in_transaction(_query)
 
             # Clear existing items
@@ -1194,15 +1259,11 @@ Reward: {action_details['reward']:.2f}
                         values=(
                             child.child_id,
                             child.birth_time,
-                            child.age or 0  # Handle None case
-                        )
+                            child.age or 0,  # Handle None case
+                        ),
                     )
             else:
-                self.children_tree.insert(
-                    "",
-                    "end",
-                    values=("No children", "-", "-")
-                )
+                self.children_tree.insert("", "end", values=("No children", "-", "-"))
 
         except Exception as e:
             print(f"Error updating children table: {e}")
@@ -1213,16 +1274,18 @@ Reward: {action_details['reward']:.2f}
         try:
             # Get agent data using DataRetriever
             data = self.retriever.get_simulation_data(self.current_step)
-            agent_states = [s for s in data['agent_states'] if s[0] == agent_id]
-            
+            agent_states = [s for s in data["agent_states"] if s[0] == agent_id]
+
             if agent_states:
                 state = agent_states[0]
-                self._update_info_labels({
-                    "Agent ID": state[0],
-                    "Type": state[1],
-                    "Position": f"({state[2]:.1f}, {state[3]:.1f})",
-                    "Resources": f"{state[4]:.1f}",
-                    "Health": f"{state[5]:.1f}",
-                })
+                self._update_info_labels(
+                    {
+                        "Agent ID": state[0],
+                        "Type": state[1],
+                        "Position": f"({state[2]:.1f}, {state[3]:.1f})",
+                        "Resources": f"{state[4]:.1f}",
+                        "Health": f"{state[5]:.1f}",
+                    }
+                )
         except Exception as e:
             self.show_error("Error", f"Failed to update agent info: {str(e)}")

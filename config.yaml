@@ -82,7 +82,7 @@ attack_defense_threshold: 0.3
 attack_defense_boost: 2.0
 
 # Combat Parameters
-max_health: 100.0
+starting_health: 100.0
 attack_range: 20.0
 attack_base_damage: 10.0
 attack_kill_reward: 5.0

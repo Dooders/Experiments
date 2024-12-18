@@ -92,7 +92,7 @@ class SimulationConfig:
     tau: float = 0.005
 
     # Combat Parameters
-    max_health: float = 100.0
+    starting_health: float = 100.0
     attack_range: float = 20.0
     attack_base_damage: float = 10.0
     attack_kill_reward: float = 5.0

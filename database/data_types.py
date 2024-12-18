@@ -578,25 +578,25 @@ class DecisionPatternStats:
         "std_dev": float,
         "percentile_25": float,
         "percentile_50": float,
-        "percentile_75": float
+        "percentile_75": float,
     }
     contribution_metrics: dict = {
         "action_share": float,
         "reward_share": float,
-        "reward_efficiency": float
+        "reward_efficiency": float,
     }
     temporal_stats: dict = {
         "frequency_trend": float,  # Overall trend in frequency
-        "reward_trend": float,     # Overall trend in rewards
+        "reward_trend": float,  # Overall trend in rewards
         "rolling_frequencies": List[float],  # Rolling average of frequencies
-        "rolling_rewards": List[float],      # Rolling average of rewards
-        "consistency": float,      # Measure of frequency consistency
-        "periodicity": float,      # Measure of periodic patterns
-        "recent_trend": str,       # Recent trend direction
+        "rolling_rewards": List[float],  # Rolling average of rewards
+        "consistency": float,  # Measure of frequency consistency
+        "periodicity": float,  # Measure of periodic patterns
+        "recent_trend": str,  # Recent trend direction
     }
     first_occurrence: dict = {
-        "step": int,              # First step this action was taken
-        "reward": float,          # Reward from first occurrence
+        "step": int,  # First step this action was taken
+        "reward": float,  # Reward from first occurrence
     }
 
 
@@ -678,6 +678,7 @@ class InteractionSummary:
 
     interaction_count: int
     average_reward: float
+
 
 @dataclass
 class PerformanceMetrics:
@@ -795,6 +796,7 @@ class TimePattern:
         rolling_average_rewards: A list of rolling average rewards.
         rolling_average_counts: A list of rolling average action counts.
     """
+
     action_type: str
     time_distribution: List[int]
     reward_progression: List[float]
@@ -812,6 +814,7 @@ class EventSegment:
         action_counts: A dictionary of action counts during the segment.
         average_rewards: A dictionary of average rewards per action type during the segment.
     """
+
     start_step: int
     end_step: Optional[int]
     action_counts: Dict[str, int]
@@ -1018,6 +1021,7 @@ class InteractionMetrics:
 @dataclass
 class ActionMetrics:
     """Statistics for a specific action type."""
+
     action_type: str
     count: int
     frequency: float
@@ -1217,7 +1221,7 @@ class AgentStates:
     resource_level : float
         Current resource level of the agent (0.0 to max_resources)
     current_health : float
-        Current health level of the agent (0.0 to max_health)
+        Current health level of the agent (0.0 to starting_health)
     is_defending : bool
         Whether the agent is currently in a defensive state
     """
@@ -1499,7 +1503,7 @@ class LearningEfficiencyMetrics:
 
 
 @dataclass
-class BasicAgentStats:
+class BasicAgentInfo:
     """Basic statistics for an agent.
 
     Attributes
@@ -1516,14 +1520,12 @@ class BasicAgentStats:
         How long the agent lived (None if still alive)
     initial_resources : float
         Starting resource amount
-    max_health : float
+    starting_health : float
         Maximum possible health value
     starvation_threshold : float
         Resource level below which agent starts starving
     last_known_position : Tuple[float, float]
         Last recorded position (x, y) coordinates
-    parent_id : Optional[int]
-        ID of parent agent (None for initial agents)
     generation : int
         Which generation this agent belongs to
     genome_id : str
@@ -1544,16 +1546,10 @@ class BasicAgentStats:
     death_time: Optional[datetime]
     lifespan: Optional[timedelta]
     initial_resources: float
-    max_health: float
+    starting_health: float
     starvation_threshold: float
-    last_known_position: Tuple[float, float]
-    parent_id: Optional[int]
-    generation: int
     genome_id: str
-    total_actions: int
-    total_health_incidents: int
-    learning_experiences_count: int
-    times_targeted: int
+    generation: int
 
 
 @dataclass
@@ -1581,13 +1577,13 @@ class AgentMetrics:
 
     Attributes
     ----------
-    basic_stats : BasicAgentStats
+    basic_info : BasicAgentInfo
         Basic statistical measures
     performance : AgentPerformance
         Performance-related metrics
     """
 
-    basic_stats: BasicAgentStats
+    basic_info: BasicAgentInfo
     performance: AgentPerformance
 
 
@@ -1631,7 +1627,7 @@ class AgentInfo:
         How long the agent lived (None if still alive)
     initial_resources : float
         Starting resource amount
-    max_health : float
+    starting_health : float
         Maximum possible health value
     starvation_threshold : float
         Resource level below which agent starts starving
@@ -1643,7 +1639,7 @@ class AgentInfo:
     death_time: Optional[datetime]
     lifespan: Optional[timedelta]
     initial_resources: float
-    max_health: float
+    starting_health: float
     starvation_threshold: float
 
 
@@ -1655,14 +1651,11 @@ class AgentGenetics:
     ----------
     genome_id : str
         Unique identifier for this genome
-    parent_id : Optional[int]
-        ID of parent agent (None if original agent)
     generation : int
         Which generation this agent belongs to
     """
 
     genome_id: str
-    parent_id: Optional[int]
     generation: int
 
 
@@ -1779,7 +1772,7 @@ class BehaviorClustering:
         - 'cooperative': Agents focused on sharing and interaction
         - 'efficient': Agents with high success rates and rewards
         - 'balanced': Agents with mixed behavior patterns
-    
+
     cluster_characteristics : Dict[str, Dict[str, float]]
         Key behavioral metrics for each cluster, containing:
         - 'attack_rate': Proportion of attack actions
@@ -1787,7 +1780,7 @@ class BehaviorClustering:
         - 'risk_taking': Measure of risky behavior
         - 'success_rate': Proportion of successful actions
         - 'resource_efficiency': Efficiency of resource management
-    
+
     cluster_performance : Dict[str, float]
         Average reward per action for each cluster
     reduced_features : Optional[Dict[str, Dict]] = None
@@ -2192,6 +2185,7 @@ class AgentActionData:
 @dataclass
 class DecisionPatternStats:
     """Statistics for a single decision/action type."""
+
     action_type: str
     count: int
     frequency: float
@@ -2199,30 +2193,33 @@ class DecisionPatternStats:
     contribution_metrics: dict = {
         "action_share": float,
         "reward_share": float,
-        "reward_efficiency": float
+        "reward_efficiency": float,
     }
     temporal_stats: dict = {
         "frequency_trend": float,  # Overall trend in frequency
-        "reward_trend": float,     # Overall trend in rewards
+        "reward_trend": float,  # Overall trend in rewards
         "rolling_frequencies": List[float],  # Rolling average of frequencies
-        "rolling_rewards": List[float],      # Rolling average of rewards
-        "consistency": float,      # Measure of frequency consistency
-        "periodicity": float,      # Measure of periodic patterns
-        "recent_trend": str,       # Recent trend direction
+        "rolling_rewards": List[float],  # Rolling average of rewards
+        "consistency": float,  # Measure of frequency consistency
+        "periodicity": float,  # Measure of periodic patterns
+        "recent_trend": str,  # Recent trend direction
     }
     first_occurrence: dict = {
-        "step": int,              # First step this action was taken
-        "reward": float,          # Reward from first occurrence
+        "step": int,  # First step this action was taken
+        "reward": float,  # Reward from first occurrence
     }
 
 
 @dataclass
 class DecisionSummary:
     """Summary statistics about decision making."""
+
     total_decisions: int
     unique_actions: int
     most_frequent: Optional[str]
     most_rewarding: Optional[str]
     action_diversity: float
     normalized_diversity: float  # Added normalized diversity
-    co_occurrence_patterns: Dict[str, Dict[str, Dict[str, float]]]  # Added co-occurrence patterns
+    co_occurrence_patterns: Dict[
+        str, Dict[str, Dict[str, float]]
+    ]  # Added co-occurrence patterns

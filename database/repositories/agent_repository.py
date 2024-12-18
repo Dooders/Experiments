@@ -2,7 +2,6 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from database.data_types import AgentGenetics
 from database.models import ActionModel, AgentModel, AgentStateModel
 from database.repositories.base_repository import BaseRepository
 from database.session_manager import SessionManager
@@ -29,6 +28,7 @@ class AgentRepository(BaseRepository[AgentModel]):
         self.session_manager = session_manager
 
     def get_agent_by_id(self, agent_id: str) -> Optional[AgentModel]:
+        #! make this the agent info return???
         """Retrieve an agent by their unique identifier.
 
         Parameters
@@ -40,6 +40,25 @@ class AgentRepository(BaseRepository[AgentModel]):
         -------
         Optional[AgentModel]
             The agent if found, None otherwise
+            Fields:
+            - agent_id: str (primary key)
+            - birth_time: int
+            - death_time: Optional[int]
+            - agent_type: str
+            - position_x: float
+            - position_y: float
+            - initial_resources: float
+            - starting_health: float
+            - starvation_threshold: int
+            - genome_id: str
+            - generation: int
+
+            Relationships:
+            - states: List[AgentStateModel]
+            - actions: List[ActionModel]
+            - health_incidents: List[HealthIncident]
+            - learning_experiences: List[LearningExperience]
+            - targeted_actions: List[ActionModel]
         """
 
         def query_agent(session: Session) -> Optional[AgentModel]:
@@ -59,6 +78,23 @@ class AgentRepository(BaseRepository[AgentModel]):
         -------
         List[ActionModel]
             List of actions performed by the agent
+            Fields:
+            - action_id: int (primary key)
+            - step_number: int
+            - agent_id: str
+            - action_type: str
+            - action_target_id: Optional[str]
+            - state_before_id: Optional[str]
+            - state_after_id: Optional[str]
+            - resources_before: float
+            - resources_after: float
+            - reward: float
+            - details: Optional[str]
+
+            Relationships:
+            - agent: AgentModel
+            - state_before: Optional[AgentStateModel]
+            - state_after: Optional[AgentStateModel]
         """
 
         def query_actions(session: Session) -> List[ActionModel]:
@@ -82,6 +118,21 @@ class AgentRepository(BaseRepository[AgentModel]):
         -------
         List[AgentStateModel]
             List of states associated with the agent
+            Fields:
+            - id: str (primary key, format: "agent_id-step_number")
+            - step_number: int
+            - agent_id: str
+            - position_x: float
+            - position_y: float
+            - position_z: float
+            - resource_level: float
+            - current_health: float
+            - is_defending: bool
+            - total_reward: float
+            - age: int
+
+            Relationships:
+            - agent: AgentModel
         """
 
         def query_states(session: Session) -> List[AgentStateModel]:
@@ -92,35 +143,3 @@ class AgentRepository(BaseRepository[AgentModel]):
             )
 
         return self.session_manager.execute_with_retry(query_states)
-
-    def get_genetics_by_agent_id(self, agent_id: str) -> AgentGenetics:
-        """Get genetic information about an agent.
-        #! better define the ids for genome and parent
-
-        Parameters
-        ----------
-        agent_id : str
-            The unique identifier of the agent to query
-
-        Returns
-        -------
-        AgentGenetics
-            Genetic information including:
-            - genome_id: str
-            - parent_id: Optional[int]
-            - generation: int
-        """
-
-        def query_genetics(session: Session) -> AgentGenetics:
-            agent = (
-                session.query(AgentModel)
-                .filter(AgentModel.agent_id == agent_id)
-                .first()
-            )
-            return AgentGenetics(
-                genome_id=agent.genome_id,
-                parent_id=agent.parent_id,
-                generation=agent.generation,
-            )
-
-        return self.session_manager.execute_with_retry(query_genetics)

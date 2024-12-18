@@ -4,13 +4,13 @@ from typing import TYPE_CHECKING, Optional
 import numpy as np
 import torch
 
-from core.action import *
 from actions.attack import AttackActionSpace, AttackModule, attack_action
 from actions.gather import GatherModule, gather_action
 from actions.move import MoveModule, move_action
 from actions.reproduce import ReproduceModule, reproduce_action
 from actions.select import SelectConfig, SelectModule, create_selection_state
 from actions.share import ShareModule, share_action
+from core.action import *
 from core.genome import Genome
 from core.state import AgentState
 
@@ -46,7 +46,7 @@ class BaseAgent:
         device (torch.device): Computing device (CPU/GPU) for neural operations
         total_reward (float): Cumulative reward earned
         current_health (float): Current health points
-        max_health (float): Maximum possible health points
+        starting_health (float): Maximum possible health points
     """
 
     def __init__(
@@ -56,7 +56,6 @@ class BaseAgent:
         resource_level: int,
         environment: "Environment",
         action_set: list[Action] = BASE_ACTION_SET,
-        parent_id: Optional[str] = None,
         generation: int = 0,
         skip_logging: bool = False,
     ):
@@ -77,8 +76,8 @@ class BaseAgent:
         self.config = environment.config
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.last_state: AgentState | None = None #! change to previous_state
-        self.last_action = None #! change to previous_action
+        self.previous_state: AgentState | None = None
+        self.previous_action = None
         self.max_movement = self.config.max_movement
         self.total_reward = 0
         self.episode_rewards = []
@@ -88,14 +87,13 @@ class BaseAgent:
         self.birth_time = environment.time
 
         # Initialize health tracking first
-        self.max_health = self.config.max_health #! change to starting_health
-        self.current_health = self.max_health
+        self.starting_health = self.config.starting_health
+        self.current_health = self.starting_health
         self.is_defending = False
 
         # Generate genome info
-        #! make this 'parent_a_id-parent_b_id'
+        #! make this 'agent_id:generation:parent_a_id:parent_b_id:time'
         self.genome_id = f"{self.__class__.__name__}_{agent_id}_{environment.time}"
-        self.parent_id = parent_id
         self.generation = generation
 
         # Initialize all modules first
@@ -105,29 +103,11 @@ class BaseAgent:
         self.share_module = ShareModule(self.config)
         self.gather_module = GatherModule(self.config)
         self.reproduce_module = ReproduceModule(self.config)
+        #! change to ChoiceModule
         self.select_module = SelectModule(
             num_actions=len(self.actions), config=SelectConfig(), device=self.device
         )
 
-        # Log agent creation to database only if not skipped
-        if not skip_logging:
-            environment.db.logger.log_agent(
-                agent_id=self.agent_id,
-                birth_time=environment.time,
-                agent_type=self.__class__.__name__,
-                position=self.position,
-                initial_resources=self.resource_level,
-                max_health=self.max_health,
-                starvation_threshold=self.starvation_threshold,
-                genome_id=self.genome_id,
-                parent_id=self.parent_id,
-                generation=self.generation,
-            )
-
-            logger.info(
-                f"Agent {self.agent_id} created at {self.position} during step {environment.time} of type {self.__class__.__name__}"
-            )
-            
     def get_perception(self) -> AgentState:
         #! make this a list of perception modules that can be provided to the agent at init
         pass
@@ -153,7 +133,7 @@ class BaseAgent:
             AgentState: Normalized state representation containing all relevant metrics
         """
         # Get closest resource position
-        #! this is the perception module
+        #! this is the perception module???
         closest_resource = None
         min_distance = float("inf")
         for resource in self.environment.resources:
@@ -196,6 +176,7 @@ class BaseAgent:
         )
 
     def select_action(self):
+        #! change to make_choice
         """Select an action using the SelectModule's intelligent decision making.
 
         The selection process involves:
@@ -235,9 +216,8 @@ class BaseAgent:
         # Reset defense status at start of turn
         self.is_defending = False
 
-        starting_resources = self.resource_level #! whats this for?
+        starting_resources = self.resource_level  #! whats this for?
         self.resource_level -= self.config.base_consumption_rate
-
 
         #! encapsulate this in a method
         #! maybe even change the logic
@@ -257,8 +237,8 @@ class BaseAgent:
         action.execute(self)
 
         # Store state for learning
-        self.last_state = current_state
-        self.last_action = action
+        self.previous_state = current_state
+        self.previous_action = action
 
     def clone(self) -> "BaseAgent":
         """Create a mutated copy of this agent.
@@ -310,7 +290,6 @@ class BaseAgent:
             position=self.position,
             resource_level=self.config.offspring_initial_resources,
             environment=self.environment,
-            parent_id=self.agent_id,
             generation=generation,
             skip_logging=True,  # Skip individual logging since we'll batch it
         )
@@ -533,7 +512,7 @@ class BaseAgent:
         if action == AttackActionSpace.DEFEND:
             if (
                 self.current_health
-                < self.max_health * self.config.attack_defense_threshold
+                < self.starting_health * self.config.attack_defense_threshold
             ):
                 reward += (
                     self.config.attack_success_reward

@@ -167,7 +167,7 @@ def format_agent_state(
         "step_number": step,
         "agent_id": agent_id,
         "current_health": state_data.get("current_health", 0.0),
-        "max_health": state_data.get("max_health", 0.0),
+        "starting_health": state_data.get("starting_health", 0.0),
         "resource_level": state_data.get("resource_level", 0.0),
         "position_x": position[0],
         "position_y": position[1],

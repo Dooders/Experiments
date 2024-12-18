@@ -24,7 +24,6 @@ class ControlAgent(BaseAgent):
         position: tuple[int, int],
         resource_level: int,
         environment: "Environment",
-        parent_id: Optional[int] = None,
         generation: int = 0,
         skip_logging: bool = False,
         action_set: list[Action] = None
@@ -41,8 +40,6 @@ class ControlAgent(BaseAgent):
             Starting resource amount
         environment : Environment
             Reference to simulation environment
-        parent_id : Optional[int]
-            ID of parent agent if this agent was created through reproduction
         generation : int
             Generation number in evolutionary lineage
         skip_logging : bool
@@ -69,7 +66,6 @@ class ControlAgent(BaseAgent):
             resource_level=resource_level,
             environment=environment,
             action_set=action_set,
-            parent_id=parent_id,
             generation=generation,
             skip_logging=skip_logging
         )

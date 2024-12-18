@@ -251,8 +251,8 @@ class BaseDQNModule:
         #     step_number=step_number,
         #     agent_id=agent_id,
         #     module_type=module_type,
-        #     action_taken=self.last_action,
-        #     action_taken_mapped=self.last_action_mapped,
+        #     action_taken=self.previous_action,
+        #     action_taken_mapped=self.previous_action_mapped,
         #     reward=reward,
         # )
 

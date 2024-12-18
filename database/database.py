@@ -472,7 +472,7 @@ class SimulationDatabase:
         state_data : Dict
             Dictionary containing state data:
             - current_health: float
-            - max_health: float
+            - starting_health: float
             - resource_level: float
             - position: Tuple[float, float]
             - is_defending: bool

@@ -104,7 +104,7 @@ def attack_action(agent: "BaseAgent") -> None:
     """Execute attack action using the AttackModule."""
     # Get current state and health ratio
     state = agent.get_state()
-    health_ratio = agent.current_health / agent.max_health
+    health_ratio = agent.current_health / agent.starting_health
     initial_resources = agent.resource_level
 
     # Select attack action

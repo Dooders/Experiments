@@ -1,8 +1,10 @@
-from database.data_types import BasicAgentStats
+from database.data_types import BasicAgentInfo
 from database.repositories.agent_repository import AgentRepository
 
 
-class AgentStatsAnalyzer:
+class AgentAnalyzer:
+    #! maybe add this to repository as a method
+
     def __init__(self, repository: AgentRepository):
         """Initialize the AgentStatsAnalyzer.
 
@@ -11,7 +13,7 @@ class AgentStatsAnalyzer:
         """
         self.repository = repository
 
-    def analyze(self, agent_id: str) -> BasicAgentStats:
+    def analyze(self, agent_id: str) -> BasicAgentInfo:
         """Analyze comprehensive statistics for a specific agent.
 
         Compiles and returns various statistical metrics about an agent including:
@@ -35,7 +37,7 @@ class AgentStatsAnalyzer:
             - times_targeted: Number of times this agent was targeted by others
         """
         agent = self.repository.get_agent_by_id(agent_id)
-        return BasicAgentStats(
+        return BasicAgentInfo(
             agent_id=agent.agent_id,
             agent_type=agent.agent_type,
             birth_time=agent.birth_time,
@@ -44,20 +46,9 @@ class AgentStatsAnalyzer:
                 (agent.death_time - agent.birth_time) if agent.death_time else None
             ),
             initial_resources=agent.initial_resources,
-            max_health=agent.max_health,
+            starting_health=agent.starting_health,
             starvation_threshold=agent.starvation_threshold,
-            
-            # Position data
-            last_known_position=(agent.position_x, agent.position_y),
-            
             # Genealogy
-            parent_id=agent.parent_id,
             generation=agent.generation,
             genome_id=agent.genome_id,
-            
-            # Performance metrics (these would need to be calculated from relationships)
-            total_actions=len(agent.actions),
-            total_health_incidents=len(agent.health_incidents),
-            learning_experiences_count=len(agent.learning_experiences),
-            times_targeted=len(agent.targeted_actions)
         )

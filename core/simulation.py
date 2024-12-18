@@ -74,7 +74,6 @@ def create_initial_agents(
             position=position,
             resource_level=10,
             environment=environment,
-            parent_id=None,
             generation=0,
         )
         environment.add_agent(agent)
@@ -91,7 +90,6 @@ def create_initial_agents(
             position=position,
             resource_level=10,
             environment=environment,
-            parent_id=None,
             generation=0,
         )
         environment.add_agent(agent)

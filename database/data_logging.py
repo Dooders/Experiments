@@ -257,10 +257,9 @@ class DataLogger:
             - agent_type: str
             - position: Tuple[float, float]
             - initial_resources: float
-            - max_health: float
+            - starting_health: float
             - starvation_threshold: int
             - genome_id: Optional[str]
-            - parent_id: Optional[int]
             - generation: int
 
         Raises
@@ -281,10 +280,9 @@ class DataLogger:
                         "position_x": data["position"][0],
                         "position_y": data["position"][1],
                         "initial_resources": data["initial_resources"],
-                        "max_health": data["max_health"],
+                        "starting_health": data["starting_health"],
                         "starvation_threshold": data["starvation_threshold"],
                         "genome_id": data.get("genome_id"),
-                        "parent_id": data.get("parent_id"),
                         "generation": data.get("generation", 0),
                     }
                     for data in agent_data_list
@@ -310,10 +308,9 @@ class DataLogger:
         agent_type: str,
         position: Tuple[float, float],
         initial_resources: float,
-        max_health: float,
+        starting_health: float,
         starvation_threshold: int,
         genome_id: Optional[str] = None,
-        parent_id: Optional[int] = None,
         generation: int = 0,
     ) -> None:
         """Log a single agent's creation to the database.
@@ -330,14 +327,12 @@ class DataLogger:
             Initial (x, y) coordinates
         initial_resources : float
             Starting resource level
-        max_health : float
+        starting_health : float
             Maximum health points
         starvation_threshold : int
             Steps agent can survive without resources
         genome_id : Optional[str]
             Unique identifier for agent's genome
-        parent_id : Optional[int]
-            ID of parent agent if created through reproduction
         generation : int
             Generation number in evolutionary lineage
 
@@ -354,10 +349,9 @@ class DataLogger:
             "agent_type": agent_type,
             "position": position,
             "initial_resources": initial_resources,
-            "max_health": max_health,
+            "starting_health": starting_health,
             "starvation_threshold": starvation_threshold,
             "genome_id": genome_id,
-            "parent_id": parent_id,
             "generation": generation,
         }
         self.log_agents_batch([agent_data])
@@ -378,7 +372,7 @@ class DataLogger:
         agent_states : List[Tuple]
             List of agent state tuples containing:
             (agent_id, position_x, position_y, resource_level, current_health,
-             max_health, starvation_threshold, is_defending, total_reward, age)
+             starting_health, starvation_threshold, is_defending, total_reward, age)
         resource_states : List[Tuple]
             List of resource state tuples containing:
             (resource_id, amount, position_x, position_y)
@@ -419,7 +413,7 @@ class DataLogger:
                             "position_y": state[2],
                             "resource_level": state[3],
                             "current_health": state[4],
-                            "max_health": state[5],
+                            "starting_health": state[5],
                             "starvation_threshold": state[6],
                             "is_defending": bool(state[7]),
                             "total_reward": state[8],

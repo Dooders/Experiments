@@ -107,180 +107,178 @@ class AgentRetriever(BaseRetriever):
             "agent_data": self.data(),
         }
 
-    @execute_query
-    def info(self, session, agent_id: int) -> BasicAgentStats:
-        """Get basic information about an agent.
+    # @execute_query
+    # def info(self, session, agent_id: int) -> BasicAgentStats:
+    #     """Get basic information about an agent.
 
-        Parameters
-        ----------
-        agent_id : int
-            The unique identifier of the agent to query
+    #     Parameters
+    #     ----------
+    #     agent_id : int
+    #         The unique identifier of the agent to query
 
-        Returns
-        -------
-        BasicAgentStats
-            Basic agent information including:
-            - agent_id: int
-            - agent_type: str
-            - birth_time: datetime
-            - death_time: Optional[datetime]
-            - lifespan: Optional[timedelta]
-            - initial_resources: float
-            - max_health: float
-            - starvation_threshold: float
-        """
-        agent = (
-            session.query(AgentModel).filter(AgentModel.agent_id == agent_id).first()
-        )
-        return BasicAgentStats(
-            agent_id=agent.agent_id,
-            agent_type=agent.agent_type,
-            birth_time=agent.birth_time,
-            death_time=agent.death_time,
-            lifespan=(
-                (agent.death_time - agent.birth_time) if agent.death_time else None
-            ),
-            initial_resources=agent.initial_resources,
-            max_health=agent.max_health,
-            starvation_threshold=agent.starvation_threshold,
-        )
+    #     Returns
+    #     -------
+    #     BasicAgentStats
+    #         Basic agent information including:
+    #         - agent_id: int
+    #         - agent_type: str
+    #         - birth_time: datetime
+    #         - death_time: Optional[datetime]
+    #         - lifespan: Optional[timedelta]
+    #         - initial_resources: float
+    #         - starting_health: float
+    #         - starvation_threshold: float
+    #     """
+    #     agent = (
+    #         session.query(AgentModel).filter(AgentModel.agent_id == agent_id).first()
+    #     )
+    #     return BasicAgentStats(
+    #         agent_id=agent.agent_id,
+    #         agent_type=agent.agent_type,
+    #         birth_time=agent.birth_time,
+    #         death_time=agent.death_time,
+    #         lifespan=(
+    #             (agent.death_time - agent.birth_time) if agent.death_time else None
+    #         ),
+    #         initial_resources=agent.initial_resources,
+    #         starting_health=agent.starting_health,
+    #         starvation_threshold=agent.starvation_threshold,
+    #     )
 
-    @execute_query
-    def genetics(self, session, agent_id: int) -> AgentGenetics:
-        """Get genetic information about an agent.
+    # @execute_query
+    # def genetics(self, session, agent_id: int) -> AgentGenetics:
+    #     """Get genetic information about an agent.
 
-        Parameters
-        ----------
-        agent_id : int
-            The unique identifier of the agent to query
+    #     Parameters
+    #     ----------
+    #     agent_id : int
+    #         The unique identifier of the agent to query
 
-        Returns
-        -------
-        AgentGenetics
-            Genetic information including:
-            - genome_id: str
-            - parent_id: Optional[int]
-            - generation: int
-        """
-        agent = (
-            session.query(AgentModel).filter(AgentModel.agent_id == agent_id).first()
-        )
-        return AgentGenetics(
-            genome_id=agent.genome_id,
-            parent_id=agent.parent_id,
-            generation=agent.generation,
-        )
+    #     Returns
+    #     -------
+    #     AgentGenetics
+    #         Genetic information including:
+    #         - genome_id: str
+    #         - generation: int
+    #     """
+    #     agent = (
+    #         session.query(AgentModel).filter(AgentModel.agent_id == agent_id).first()
+    #     )
+    #     return AgentGenetics(
+    #         genome_id=agent.genome_id,
+    #         generation=agent.generation,
+    #     )
 
-    @execute_query
-    def state(
-        self, session, agent_id: int, step_number: Optional[int] = None
-    ) -> Optional[AgentStateModel]:
-        """Get the state for a specific agent. If a step number is provided, the state
-        for that specific step is returned. Otherwise, the most recent state is returned.
+    # @execute_query
+    # def state(
+    #     self, session, agent_id: int, step_number: Optional[int] = None
+    # ) -> Optional[AgentStateModel]:
+    #     """Get the state for a specific agent. If a step number is provided, the state
+    #     for that specific step is returned. Otherwise, the most recent state is returned.
 
-        Parameters
-        ----------
-        agent_id : int
-            The unique identifier of the agent
-        step_number : Optional[int], default=None
-            Specific step to get state for. If None, retrieves most recent state.
+    #     Parameters
+    #     ----------
+    #     agent_id : int
+    #         The unique identifier of the agent
+    #     step_number : Optional[int], default=None
+    #         Specific step to get state for. If None, retrieves most recent state.
 
-        Returns
-        -------
-        Optional[AgentState]
-            The most recent state of the agent, or None if no states exist
-        """
-        query = session.query(AgentStateModel).filter(
-            AgentStateModel.agent_id == agent_id
-        )
-        if step_number is not None:
-            query = query.filter(AgentStateModel.step_number == step_number)
-        return query.order_by(AgentStateModel.step_number.desc()).first()
+    #     Returns
+    #     -------
+    #     Optional[AgentState]
+    #         The most recent state of the agent, or None if no states exist
+    #     """
+    #     query = session.query(AgentStateModel).filter(
+    #         AgentStateModel.agent_id == agent_id
+    #     )
+    #     if step_number is not None:
+    #         query = query.filter(AgentStateModel.step_number == step_number)
+    #     return query.order_by(AgentStateModel.step_number.desc()).first()
 
-    @execute_query
-    def history(self, session, agent_id: int) -> AgentHistory:
-        """Get historical metrics for a specific agent.
+    # @execute_query
+    # def history(self, session, agent_id: int) -> AgentHistory:
+    #     """Get historical metrics for a specific agent.
 
-        Parameters
-        ----------
-        agent_id : int
-            The unique identifier of the agent
+    #     Parameters
+    #     ----------
+    #     agent_id : int
+    #         The unique identifier of the agent
 
-        Returns
-        -------
-        AgentHistory
-            Historical metrics including:
-            - average_health: float
-                Mean health value across all states
-            - average_resources: float
-                Mean resource level across all states
-            - total_steps: int
-                Total number of simulation steps
-            - total_reward: float
-                Cumulative reward earned
-        """
-        metrics = (
-            session.query(
-                func.avg(AgentStateModel.current_health).label("avg_health"),
-                func.avg(AgentStateModel.resource_level).label("avg_resources"),
-                func.count(AgentStateModel.step_number).label("total_steps"),
-                func.max(AgentStateModel.total_reward).label("total_reward"),
-            )
-            .filter(AgentStateModel.agent_id == agent_id)
-            .first()
-        )
+    #     Returns
+    #     -------
+    #     AgentHistory
+    #         Historical metrics including:
+    #         - average_health: float
+    #             Mean health value across all states
+    #         - average_resources: float
+    #             Mean resource level across all states
+    #         - total_steps: int
+    #             Total number of simulation steps
+    #         - total_reward: float
+    #             Cumulative reward earned
+    #     """
+    #     metrics = (
+    #         session.query(
+    #             func.avg(AgentStateModel.current_health).label("avg_health"),
+    #             func.avg(AgentStateModel.resource_level).label("avg_resources"),
+    #             func.count(AgentStateModel.step_number).label("total_steps"),
+    #             func.max(AgentStateModel.total_reward).label("total_reward"),
+    #         )
+    #         .filter(AgentStateModel.agent_id == agent_id)
+    #         .first()
+    #     )
 
-        return AgentHistory(
-            average_health=float(metrics[0] or 0),
-            average_resources=float(metrics[1] or 0),
-            total_steps=int(metrics[2] or 0),
-            total_reward=float(metrics[3] or 0),
-        )
+    #     return AgentHistory(
+    #         average_health=float(metrics[0] or 0),
+    #         average_resources=float(metrics[1] or 0),
+    #         total_steps=int(metrics[2] or 0),
+    #         total_reward=float(metrics[3] or 0),
+    #     )
 
-    @execute_query
-    def actions(self, session, agent_id: int) -> AgentActionHistory:
-        """Get action statistics for a specific agent.
+    # @execute_query
+    # def actions(self, session, agent_id: int) -> AgentActionHistory:
+    #     """Get action statistics for a specific agent.
 
-        Parameters
-        ----------
-        agent_id : int
-            The unique identifier of the agent
+    #     Parameters
+    #     ----------
+    #     agent_id : int
+    #         The unique identifier of the agent
 
-        Returns
-        -------
-        AgentActionHistory
-            Dictionary mapping action types to their statistics:
-            - count: Number of times action was taken
-            - average_reward: Mean reward for this action
-            - total_actions: Total number of actions by agent
-            - action_diversity: Number of unique actions used
-        """
-        stats = (
-            session.query(
-                ActionModel.action_type,
-                func.count().label("count"),
-                func.avg(ActionModel.reward).label("avg_reward"),
-                func.count(ActionModel.action_id).over().label("total_actions"),
-                func.count(distinct(ActionModel.action_type))
-                .over()
-                .label("action_diversity"),
-            )
-            .filter(ActionModel.agent_id == agent_id)
-            .group_by(ActionModel.action_type)
-            .all()
-        )
+    #     Returns
+    #     -------
+    #     AgentActionHistory
+    #         Dictionary mapping action types to their statistics:
+    #         - count: Number of times action was taken
+    #         - average_reward: Mean reward for this action
+    #         - total_actions: Total number of actions by agent
+    #         - action_diversity: Number of unique actions used
+    #     """
+    #     stats = (
+    #         session.query(
+    #             ActionModel.action_type,
+    #             func.count().label("count"),
+    #             func.avg(ActionModel.reward).label("avg_reward"),
+    #             func.count(ActionModel.action_id).over().label("total_actions"),
+    #             func.count(distinct(ActionModel.action_type))
+    #             .over()
+    #             .label("action_diversity"),
+    #         )
+    #         .filter(ActionModel.agent_id == agent_id)
+    #         .group_by(ActionModel.action_type)
+    #         .all()
+    #     )
 
-        actions = {
-            action_type: ActionStats(
-                count=count,
-                average_reward=float(avg_reward or 0),
-                total_actions=int(total_actions),
-                action_diversity=int(action_diversity),
-            )
-            for action_type, count, avg_reward, total_actions, action_diversity in stats
-        }
+    #     actions = {
+    #         action_type: ActionStats(
+    #             count=count,
+    #             average_reward=float(avg_reward or 0),
+    #             total_actions=int(total_actions),
+    #             action_diversity=int(action_diversity),
+    #         )
+    #         for action_type, count, avg_reward, total_actions, action_diversity in stats
+    #     }
 
-        return AgentActionHistory(actions=actions)
+    #     return AgentActionHistory(actions=actions)
 
     @execute_query
     def health(self, session, agent_id: int) -> List[HealthIncidentData]:
@@ -319,45 +317,45 @@ class AgentRetriever(BaseRetriever):
             for incident in incidents
         ]
 
-    @execute_query
-    def data(self, session, agent_id: int) -> AgentStateData:
-        """Get comprehensive data for a specific agent.
+    # @execute_query
+    # def data(self, session, agent_id: int) -> AgentStateData:
+    #     """Get comprehensive data for a specific agent.
 
-        Parameters
-        ----------
-        agent_id : int
-            The unique identifier of the agent
+    #     Parameters
+    #     ----------
+    #     agent_id : int
+    #         The unique identifier of the agent
 
-        Returns
-        -------
-        AgentStateData
-            Complete agent data including:
-            - basic_info: Dict[str, Any]
-                Fundamental agent attributes
-            - genetic_info: Dict[str, Any]
-                Genetic and evolutionary data
-            - current_state: Optional[AgentState]
-                Most recent agent state
-            - historical_metrics: Dict[str, float]
-                Performance statistics
-            - action_history: Dict[str, Dict[str, float]]
-                Action statistics and patterns
-            - health_incidents: List[Dict[str, Any]]
-                Health incident records
-        """
+    #     Returns
+    #     -------
+    #     AgentStateData
+    #         Complete agent data including:
+    #         - basic_info: Dict[str, Any]
+    #             Fundamental agent attributes
+    #         - genetic_info: Dict[str, Any]
+    #             Genetic and evolutionary data
+    #         - current_state: Optional[AgentState]
+    #             Most recent agent state
+    #         - historical_metrics: Dict[str, float]
+    #             Performance statistics
+    #         - action_history: Dict[str, Dict[str, float]]
+    #             Action statistics and patterns
+    #         - health_incidents: List[Dict[str, Any]]
+    #             Health incident records
+    #     """
 
-        return AgentStateData(
-            basic_info=self.basic_info(agent_id),
-            genetic_info=self.genetic_info(agent_id),
-            current_state=self.state(agent_id),
-            historical_metrics=self.historical(agent_id),
-            action_history=self.actions(agent_id),
-            health_incidents=self.health(agent_id),
-        )
+    #     return AgentStateData(
+    #         basic_info=self.basic_info(agent_id),
+    #         genetic_info=self.genetic_info(agent_id),
+    #         current_state=self.state(agent_id),
+    #         historical_metrics=self.historical(agent_id),
+    #         action_history=self.actions(agent_id),
+    #         health_incidents=self.health(agent_id),
+    #     )
 
     @execute_query
     def states(self, session, step_number: Optional[int] = None) -> List[AgentStates]:
-        #! change to state and make sure states is in population repository
+        #! move to population repository
         #! takes a range, if no range, returns all states
         """Get agent states for a specific step or all steps.
 
@@ -474,7 +472,7 @@ class AgentRetriever(BaseRetriever):
     def exploration_exploitation(
         self, session, agent_id: Optional[int] = None
     ) -> ExplorationExploitation:
-        #! did I have this already somewhere else?
+        #! add to agent analyzer
         """Analyze how agents balance exploration and exploitation.
 
         Examines the trade-off between trying new actions (exploration) and
@@ -564,7 +562,7 @@ class AgentRetriever(BaseRetriever):
     def adversarial_analysis(
         self, session, agent_id: Optional[int] = None
     ) -> AdversarialInteractionAnalysis:
-        #! did I have this already somewhere else?
+        #! add to agent analyzer
         """Analyze performance in competitive scenarios.
 
         Examines the relationship between action risk levels and rewards,
@@ -658,6 +656,7 @@ class AgentRetriever(BaseRetriever):
     def collaborative_analysis(
         self, session, agent_id: Optional[int] = None
     ) -> CollaborativeInteractionAnalysis:
+        #! add to agent analyzer
         """Analyze patterns and outcomes of cooperative behaviors.
 
         Examines collaborative interactions between agents, including resource sharing,
@@ -727,6 +726,7 @@ class AgentRetriever(BaseRetriever):
         )
 
     @execute_query
+    #! add to agent analyzer
     def learning_curve(
         self, session, agent_id: Optional[int] = None
     ) -> LearningCurveAnalysis:
@@ -857,6 +857,7 @@ class AgentRetriever(BaseRetriever):
         )
 
     @execute_query
+    #! add to agent analyzer
     def get_conflict_analysis(
         self, session, agent_id: Optional[int] = None
     ) -> ConflictAnalysis:
@@ -932,6 +933,7 @@ class AgentRetriever(BaseRetriever):
         )
 
     @execute_query
+    #! add to agent analyzer
     def get_risk_reward_analysis(
         self, session, agent_id: Optional[int] = None
     ) -> RiskRewardAnalysis:
@@ -1009,6 +1011,7 @@ class AgentRetriever(BaseRetriever):
         )
 
     @execute_query
+    #! add to agent analyzer
     def get_counterfactual_analysis(
         self, session, agent_id: Optional[int] = None
     ) -> CounterfactualAnalysis:
@@ -1095,6 +1098,7 @@ class AgentRetriever(BaseRetriever):
         )
 
     @execute_query
+    #! add to agent analyzer
     def get_resilience_analysis(
         self, session, agent_id: Optional[int] = None
     ) -> ResilienceAnalysis:
