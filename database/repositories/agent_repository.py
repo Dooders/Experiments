@@ -2,6 +2,7 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
+from database.data_types import AgentGenetics
 from database.models import ActionModel, AgentModel, AgentStateModel
 from database.repositories.base_repository import BaseRepository
 from database.session_manager import SessionManager
@@ -27,12 +28,12 @@ class AgentRepository(BaseRepository[AgentModel]):
         """
         self.session_manager = session_manager
 
-    def get_agent_by_id(self, agent_id: int) -> Optional[AgentModel]:
+    def get_agent_by_id(self, agent_id: str) -> Optional[AgentModel]:
         """Retrieve an agent by their unique identifier.
 
         Parameters
         ----------
-        agent_id : int
+        agent_id : str
             The unique identifier of the agent
 
         Returns
@@ -46,12 +47,12 @@ class AgentRepository(BaseRepository[AgentModel]):
 
         return self.session_manager.execute_with_retry(query_agent)
 
-    def get_actions_by_agent_id(self, agent_id: int) -> List[ActionModel]:
+    def get_actions_by_agent_id(self, agent_id: str) -> List[ActionModel]:
         """Retrieve actions by agent ID.
 
         Parameters
         ----------
-        agent_id : int
+        agent_id : str
             The unique identifier of the agent
 
         Returns
@@ -69,12 +70,12 @@ class AgentRepository(BaseRepository[AgentModel]):
 
         return self.session_manager.execute_with_retry(query_actions)
 
-    def get_states_by_agent_id(self, agent_id: int) -> List[AgentStateModel]:
+    def get_states_by_agent_id(self, agent_id: str) -> List[AgentStateModel]:
         """Retrieve states by agent ID.
 
         Parameters
         ----------
-        agent_id : int
+        agent_id : str
             The unique identifier of the agent
 
         Returns
@@ -91,3 +92,35 @@ class AgentRepository(BaseRepository[AgentModel]):
             )
 
         return self.session_manager.execute_with_retry(query_states)
+
+    def get_genetics_by_agent_id(self, agent_id: str) -> AgentGenetics:
+        """Get genetic information about an agent.
+        #! better define the ids for genome and parent
+
+        Parameters
+        ----------
+        agent_id : str
+            The unique identifier of the agent to query
+
+        Returns
+        -------
+        AgentGenetics
+            Genetic information including:
+            - genome_id: str
+            - parent_id: Optional[int]
+            - generation: int
+        """
+
+        def query_genetics(session: Session) -> AgentGenetics:
+            agent = (
+                session.query(AgentModel)
+                .filter(AgentModel.agent_id == agent_id)
+                .first()
+            )
+            return AgentGenetics(
+                genome_id=agent.genome_id,
+                parent_id=agent.parent_id,
+                generation=agent.generation,
+            )
+
+        return self.session_manager.execute_with_retry(query_genetics)

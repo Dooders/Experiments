@@ -1504,20 +1504,56 @@ class BasicAgentStats:
 
     Attributes
     ----------
-    average_health : float
-        Mean health level over lifetime
-    average_resources : float
-        Mean resource level over lifetime
-    lifespan : int
-        Number of steps lived
-    total_reward : float
-        Total reward accumulated
+    agent_id : int
+        Unique identifier for the agent
+    agent_type : str
+        Type of agent (system, independent, control)
+    birth_time : datetime
+        When the agent was created
+    death_time : Optional[datetime]
+        When the agent died (None if still alive)
+    lifespan : Optional[timedelta]
+        How long the agent lived (None if still alive)
+    initial_resources : float
+        Starting resource amount
+    max_health : float
+        Maximum possible health value
+    starvation_threshold : float
+        Resource level below which agent starts starving
+    last_known_position : Tuple[float, float]
+        Last recorded position (x, y) coordinates
+    parent_id : Optional[int]
+        ID of parent agent (None for initial agents)
+    generation : int
+        Which generation this agent belongs to
+    genome_id : str
+        Unique identifier for agent's genetic code
+    total_actions : int
+        Total number of actions taken by agent
+    total_health_incidents : int
+        Number of health-affecting events
+    learning_experiences_count : int
+        Number of learning experiences recorded
+    times_targeted : int
+        Number of times this agent was targeted by others
     """
 
-    average_health: float
-    average_resources: float
-    lifespan: int
-    total_reward: float
+    agent_id: int
+    agent_type: str
+    birth_time: datetime
+    death_time: Optional[datetime]
+    lifespan: Optional[timedelta]
+    initial_resources: float
+    max_health: float
+    starvation_threshold: float
+    last_known_position: Tuple[float, float]
+    parent_id: Optional[int]
+    generation: int
+    genome_id: str
+    total_actions: int
+    total_health_incidents: int
+    learning_experiences_count: int
+    times_targeted: int
 
 
 @dataclass
