@@ -654,3 +654,48 @@ class BaseAgent:
             BaseAgent: New agent instance with genome's characteristics
         """
         return Genome.to_agent(genome, agent_id, position, environment)
+
+    def encode_parameters(self) -> dict:
+        """Encode agent parameters into gene representations.
+
+        Returns:
+            dict: Encoded parameters as genes.
+        """
+        parameters = {
+            "learning_rate": self.config.learning_rate,
+            "gamma": self.config.gamma,
+            "epsilon_start": self.config.epsilon_start,
+            "epsilon_min": self.config.epsilon_min,
+            "epsilon_decay": self.config.epsilon_decay,
+            "memory_size": self.config.memory_size,
+            "batch_size": self.config.batch_size,
+            "training_frequency": self.config.training_frequency,
+            "dqn_hidden_size": self.config.dqn_hidden_size,
+            "tau": self.config.tau,
+        }
+        return Genome.encode_parameters(parameters)
+
+    def decode_parameters(self, genes: dict) -> None:
+        """Decode genes back into agent parameters.
+
+        Args:
+            genes (dict): Dictionary of genes to decode.
+        """
+        parameters = Genome.decode_parameters(genes)
+        self.config.learning_rate = parameters["learning_rate"]
+        self.config.gamma = parameters["gamma"]
+        self.config.epsilon_start = parameters["epsilon_start"]
+        self.config.epsilon_min = parameters["epsilon_min"]
+        self.config.epsilon_decay = parameters["epsilon_decay"]
+        self.config.memory_size = parameters["memory_size"]
+        self.config.batch_size = parameters["batch_size"]
+        self.config.training_frequency = parameters["training_frequency"]
+        self.config.dqn_hidden_size = parameters["dqn_hidden_size"]
+        self.config.tau = parameters["tau"]
+
+    def integrate_genetic_processes(self) -> None:
+        """Integrate genetic processes for evolving agent parameters."""
+        # Example: Apply mutation to agent's genome
+        genome = self.to_genome()
+        mutated_genome = Genome.mutate(genome, mutation_rate=0.1)
+        self.decode_parameters(mutated_genome)

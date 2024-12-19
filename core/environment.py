@@ -11,6 +11,7 @@ from agents import ControlAgent, IndependentAgent, SystemAgent
 from database.database import SimulationDatabase
 from core.resources import Resource
 from core.state import EnvironmentState
+from core.genome import Genome
 from utils.short_id import ShortUUID
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,13 @@ class Environment:
         self.initialize_resources(resource_distribution)
         self._initialize_agents()
         self._update_kdtrees()
+
+        # Initialize evolutionary process
+        self.population_size = 100
+        self.mutation_rate = 0.1
+        self.num_generations = 50
+        self.current_generation = 0
+        self.fitness_scores = []
 
     def _update_kdtrees(self):
         """Update KD-trees for efficient spatial queries."""
@@ -234,6 +242,9 @@ class Environment:
                 ],
                 metrics=metrics
             )
+
+        # Perform evolutionary process
+        self._evolve_population()
 
     def _calculate_metrics(self):
         """Calculate various metrics for the current simulation state."""
@@ -435,96 +446,33 @@ class Environment:
         y = random.uniform(0, self.height)
         return (x, y)
 
-    # def get_step_metrics(self) -> Dict:
-    #     """Calculate comprehensive metrics for the current simulation step."""
-    #     alive_agents = [a for a in self.agents if a.alive]
+    def _evolve_population(self):
+        """Perform evolutionary process to evolve agent parameters."""
+        if self.current_generation >= self.num_generations:
+            return
 
-    #     # Calculate basic population metrics
-    #     total_agents = len(alive_agents)
-    #     system_agents = len([a for a in alive_agents if isinstance(a, SystemAgent)])
-    #     independent_agents = len(
-    #         [a for a in alive_agents if isinstance(a, IndependentAgent)]
-    #     )
+        # Evaluate fitness of each agent
+        self.fitness_scores = [self._evaluate_fitness(agent) for agent in self.agents]
 
-    #     # Calculate new metrics
-    #     births = len([a for a in alive_agents if self.time - a.birth_time == 0])
-    #     deaths = (
-    #         self.previous_population - total_agents
-    #         if hasattr(self, "previous_population")
-    #         else 0
-    #     )
-    #     self.previous_population = total_agents
+        # Select parents based on fitness scores
+        parents = Genome.selection(self.agents, self.fitness_scores, self.population_size // 2)
 
-    #     # Calculate generation metrics
-    #     current_max_generation = (
-    #         max([a.generation for a in alive_agents]) if alive_agents else 0
-    #     )
+        # Generate offspring through crossover and mutation
+        offspring = []
+        for i in range(0, len(parents), 2):
+            parent1 = parents[i]
+            parent2 = parents[i + 1] if i + 1 < len(parents) else parents[0]
+            child_genome = Genome.crossover(parent1.to_genome(), parent2.to_genome())
+            mutated_genome = Genome.mutate(child_genome, self.mutation_rate)
+            offspring.append(Genome.to_agent(mutated_genome, self.get_next_agent_id(), self._get_random_position(), self))
 
-    #     # Calculate health and age metrics
-    #     average_health = (
-    #         sum(a.current_health for a in alive_agents) / total_agents
-    #         if total_agents > 0
-    #         else 0
-    #     )
-    #     average_age = (
-    #         sum(self.time - a.birth_time for a in alive_agents) / total_agents
-    #         if total_agents > 0
-    #         else 0
-    #     )
-    #     average_reward = (
-    #         sum(a.total_reward for a in alive_agents) / total_agents
-    #         if total_agents > 0
-    #         else 0
-    #     )
+        # Replace old population with new offspring
+        self.agents = offspring
+        self.current_generation += 1
 
-    #     # Calculate resource metrics
-    #     total_resources = sum(r.amount for r in self.resources)
-    #     resource_efficiency = (
-    #         total_resources / (len(self.resources) * self.config.max_resource_amount)
-    #         if self.resources
-    #         else 0
-    #     )
-
-    #     # Calculate genetic diversity (example implementation)
-    #     genome_counts = {}
-    #     for agent in alive_agents:
-    #         genome_counts[agent.genome_id] = genome_counts.get(agent.genome_id, 0) + 1
-    #     genetic_diversity = len(genome_counts) / total_agents if total_agents > 0 else 0
-    #     dominant_genome_ratio = (
-    #         max(genome_counts.values()) / total_agents if total_agents > 0 else 0
-    #     )
-
-    #     return {
-    #         "total_agents": total_agents,
-    #         "system_agents": system_agents,
-    #         "independent_agents": independent_agents,
-    #         "control_agents": 0,  # If you're not using control agents
-    #         "total_resources": total_resources,
-    #         "average_agent_resources": (
-    #             sum(a.resource_level for a in alive_agents) / total_agents
-    #             if total_agents > 0
-    #             else 0
-    #         ),
-    #         "births": births,
-    #         "deaths": deaths,
-    #         "current_max_generation": current_max_generation,
-    #         "resource_efficiency": resource_efficiency,
-    #         "resource_distribution_entropy": 0.0,  # Implement entropy calculation if needed
-    #         "average_agent_health": average_health,
-    #         "average_agent_age": average_age,
-    #         "average_reward": average_reward,
-    #         "combat_encounters": (
-    #             self.combat_encounters if hasattr(self, "combat_encounters") else 0
-    #         ),
-    #         "successful_attacks": (
-    #             self.successful_attacks if hasattr(self, "successful_attacks") else 0
-    #         ),
-    #         "resources_shared": (
-    #             self.resources_shared if hasattr(self, "resources_shared") else 0
-    #         ),
-    #         "genetic_diversity": genetic_diversity,
-    #         "dominant_genome_ratio": dominant_genome_ratio,
-    #     }
+    def _evaluate_fitness(self, agent):
+        """Evaluate fitness of an agent based on its performance."""
+        return agent.total_reward
 
     def close(self):
         """Clean up environment resources."""
