@@ -2,9 +2,10 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from database.models import ActionModel, AgentModel, AgentStateModel
+from database.models import ActionModel, AgentModel, AgentStateModel, HealthIncident
 from database.repositories.base_repository import BaseRepository
 from database.session_manager import SessionManager
+from database.data_types import HealthIncidentData
 
 
 class AgentRepository(BaseRepository[AgentModel]):
@@ -143,3 +144,42 @@ class AgentRepository(BaseRepository[AgentModel]):
             )
 
         return self.session_manager.execute_with_retry(query_states)
+
+    def get_health_incidents_by_agent_id(self, agent_id: str) -> List[HealthIncidentData]:
+        """Retrieve health incident history for a specific agent.
+
+        Parameters
+        ----------
+        agent_id : str
+            The unique identifier of the agent
+
+        Returns
+        -------
+        List[HealthIncidentData]
+            List of health incidents, each containing:
+            - step: Simulation step when incident occurred
+            - health_before: Health value before incident
+            - health_after: Health value after incident
+            - cause: Reason for health change
+            - details: Additional incident-specific information
+        """
+        def query_incidents(session: Session) -> List[HealthIncidentData]:
+            incidents = (
+                session.query(HealthIncident)
+                .filter(HealthIncident.agent_id == agent_id)
+                .order_by(HealthIncident.step_number)
+                .all()
+            )
+
+            return [
+                HealthIncidentData(
+                    step=incident.step_number,
+                    health_before=incident.health_before,
+                    health_after=incident.health_after,
+                    cause=incident.cause,
+                    details=incident.details,
+                )
+                for incident in incidents
+            ]
+
+        return self.session_manager.execute_with_retry(query_incidents)

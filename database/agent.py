@@ -280,42 +280,42 @@ class AgentRetriever(BaseRetriever):
 
     #     return AgentActionHistory(actions=actions)
 
-    @execute_query
-    def health(self, session, agent_id: int) -> List[HealthIncidentData]:
-        """Get health incident history for a specific agent.
+    # @execute_query
+    # def health(self, session, agent_id: int) -> List[HealthIncidentData]:
+    #     """Get health incident history for a specific agent.
 
-        Parameters
-        ----------
-        agent_id : int
-            The unique identifier of the agent
+    #     Parameters
+    #     ----------
+    #     agent_id : int
+    #         The unique identifier of the agent
 
-        Returns
-        -------
-        List[HealthIncidentData]
-            List of health incidents, each containing:
-            - step: Simulation step when incident occurred
-            - health_before: Health value before incident
-            - health_after: Health value after incident
-            - cause: Reason for health change
-            - details: Additional incident-specific information
-        """
-        incidents = (
-            session.query(HealthIncident)
-            .filter(HealthIncident.agent_id == agent_id)
-            .order_by(HealthIncident.step_number)
-            .all()
-        )
+    #     Returns
+    #     -------
+    #     List[HealthIncidentData]
+    #         List of health incidents, each containing:
+    #         - step: Simulation step when incident occurred
+    #         - health_before: Health value before incident
+    #         - health_after: Health value after incident
+    #         - cause: Reason for health change
+    #         - details: Additional incident-specific information
+    #     """
+    #     incidents = (
+    #         session.query(HealthIncident)
+    #         .filter(HealthIncident.agent_id == agent_id)
+    #         .order_by(HealthIncident.step_number)
+    #         .all()
+    #     )
 
-        return [
-            HealthIncidentData(
-                step=incident.step_number,
-                health_before=incident.health_before,
-                health_after=incident.health_after,
-                cause=incident.cause,
-                details=incident.details,
-            )
-            for incident in incidents
-        ]
+    #     return [
+    #         HealthIncidentData(
+    #             step=incident.step_number,
+    #             health_before=incident.health_before,
+    #             health_after=incident.health_after,
+    #             cause=incident.cause,
+    #             details=incident.details,
+    #         )
+    #         for incident in incidents
+    #     ]
 
     # @execute_query
     # def data(self, session, agent_id: int) -> AgentStateData:
@@ -352,73 +352,6 @@ class AgentRetriever(BaseRetriever):
     #         action_history=self.actions(agent_id),
     #         health_incidents=self.health(agent_id),
     #     )
-
-    @execute_query
-    def states(self, session, step_number: Optional[int] = None) -> List[AgentStates]:
-        #! move to population repository
-        #! takes a range, if no range, returns all states
-        """Get agent states for a specific step or all steps.
-
-        Parameters
-        ----------
-        step_number : Optional[int], default=None
-            Specific step to get states for. If None, retrieves states for all steps.
-
-        Returns
-        -------
-        List[AgentStates]
-            List of agent states, each containing:
-            - step_number: int
-            - agent_id: int
-            - agent_type: str
-            - position_x: float
-            - position_y: float
-            - resource_level: float
-            - current_health: float
-            - is_defending: bool
-        """
-        query = session.query(
-            AgentStateModel.step_number,
-            AgentStateModel.agent_id,
-            AgentModel.agent_type,
-            AgentStateModel.position_x,
-            AgentStateModel.position_y,
-            AgentStateModel.resource_level,
-            AgentStateModel.current_health,
-            AgentStateModel.is_defending,
-        ).join(AgentModel)
-
-        if step_number is not None:
-            query = query.filter(AgentStateModel.step_number == step_number)
-
-        results = query.all()
-
-        return [
-            AgentStates(
-                step_number=row[0],
-                agent_id=row[1],
-                agent_type=row[2],
-                position_x=row[3],
-                position_y=row[4],
-                resource_level=row[5],
-                current_health=row[6],
-                is_defending=row[7],
-            )
-            for row in results
-        ]
-
-    @execute_query
-    def types(self, session) -> List[str]:
-        #! move to population repository
-        """Get list of all unique agent types.
-
-        Returns
-        -------
-        List[str]
-            List of unique agent type identifiers present in the simulation
-        """
-        types = session.query(AgentModel.agent_type).distinct().all()
-        return [t[0] for t in types]
 
     @execute_query
     def evolution(
