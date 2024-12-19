@@ -540,10 +540,9 @@ class Environment:
                 "agent_type": agent.__class__.__name__,
                 "position": agent.position,
                 "initial_resources": agent.resource_level,
-                "max_health": agent.max_health,
+                "starting_health": agent.starting_health,
                 "starvation_threshold": agent.starvation_threshold,
                 "genome_id": getattr(agent, "genome_id", None),
-                "parent_id": getattr(agent, "parent_id", None),
                 "generation": getattr(agent, "generation", 0),
             }
             for agent in agents
@@ -617,7 +616,7 @@ class Environment:
             agent.position[1],  # y coordinate
             agent.resource_level,
             agent.current_health,
-            agent.max_health,
+            agent.starting_health,
             agent.starvation_threshold,
             int(agent.is_defending),
             agent.total_reward,

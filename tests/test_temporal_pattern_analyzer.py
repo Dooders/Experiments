@@ -1,11 +1,11 @@
 import unittest
 from analysis.temporal_pattern_analyzer import TemporalPatternAnalyzer
-from database.repositories.agent_action_repository import AgentActionRepository
+from database.repositories.action_repository import ActionRepository
 
 class TestTemporalPatternAnalyzer(unittest.TestCase):
     def setUp(self):
         # Setup mock repository and data for testing
-        self.repository = AgentActionRepository(session_manager=None)  # Mock or use a test database
+        self.repository = ActionRepository(session_manager=None)  # Mock or use a test database
         self.analyzer = TemporalPatternAnalyzer(self.repository)
 
     def test_analyze_with_rolling_average(self):

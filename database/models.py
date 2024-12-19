@@ -67,14 +67,12 @@ class AgentModel(Base):
         Y-coordinate of agent's position
     initial_resources : float
         Starting resource level of the agent
-    max_health : float
+    starting_health : float
         Maximum health capacity of the agent
     starvation_threshold : int
         Resource level below which agent begins to starve
     genome_id : str
         Unique identifier for agent's genetic code
-    parent_id : Optional[int]
-        ID of the agent's parent (None for initial agents)
     generation : int
         Generational number in evolutionary lineage
 
@@ -106,10 +104,9 @@ class AgentModel(Base):
     position_x = Column(Float(precision=6))
     position_y = Column(Float(precision=6))
     initial_resources = Column(Float(precision=6))
-    max_health = Column(Float(precision=4))
+    starting_health = Column(Float(precision=4))
     starvation_threshold = Column(Integer)
     genome_id = Column(String(64))
-    parent_id = Column(Integer, ForeignKey("agents.agent_id"))
     generation = Column(Integer)
 
     # Relationships
@@ -155,7 +152,7 @@ class AgentStateModel(Base):
         Current resource amount held by agent
     current_health : float
         Current health level
-    max_health : float
+    starting_health : float
         Maximum possible health
     starvation_threshold : int
         Resource level that triggers starvation
@@ -213,7 +210,7 @@ class AgentStateModel(Base):
             "position": (self.position_x, self.position_y, self.position_z),
             "resource_level": self.resource_level,
             "current_health": self.current_health,
-            "max_health": self.max_health,
+            "starting_health": self.starting_health,
             "starvation_threshold": self.starvation_threshold,
             "is_defending": self.is_defending,
             "total_reward": self.total_reward,
@@ -379,7 +376,7 @@ class SimulationStepModel(Base):
         }
 
 
-class AgentAction(Base):
+class ActionModel(Base):
     """Record of an action taken by an agent during simulation.
 
     This model tracks individual actions performed by agents, including the type of action,

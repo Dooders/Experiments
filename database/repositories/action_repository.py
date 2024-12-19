@@ -3,13 +3,13 @@ from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from database.data_types import AgentActionData
-from database.models import AgentAction
+from database.models import ActionModel
 from database.repositories.base_repository import BaseRepository
 from database.scope_utils import filter_scope
 from database.session_manager import SessionManager
 
 
-class AgentActionRepository(BaseRepository[AgentAction]):
+class ActionRepository(BaseRepository[ActionModel]):
     """Repository class for managing agent action records in the database.
 
     This class provides methods to query and retrieve agent actions based on various
@@ -57,8 +57,8 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         """
 
         def query_actions(session: Session) -> List[AgentActionData]:
-            query = session.query(AgentAction).order_by(
-                AgentAction.step_number, AgentAction.agent_id
+            query = session.query(ActionModel).order_by(
+                ActionModel.step_number, ActionModel.agent_id
             )
 
             query = filter_scope(query, scope, agent_id, step, step_range)

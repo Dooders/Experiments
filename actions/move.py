@@ -137,8 +137,8 @@ class MoveModule(BaseDQNModule):
         new_y = max(0, min(agent.environment.height, agent.position[1] + dy))
 
         # Store state for learning (already a tensor)
-        self.last_state = state
-        self.last_action = action
+        self.previous_state = state
+        self.previous_action = action
 
         return (new_x, new_y)
 
@@ -290,7 +290,7 @@ def _ensure_tensor(state: Any, device: torch.device) -> torch.Tensor:
 
 def _store_and_train(agent: "BaseAgent", state: Any, reward: float) -> None:
     """Store experience and perform training if possible."""
-    if agent.move_module.last_state is not None:
+    if agent.move_module.previous_state is not None:
         next_state = _ensure_tensor(agent.get_state(), agent.move_module.device)
 
         # Map action number to direction string
@@ -300,15 +300,15 @@ def _store_and_train(agent: "BaseAgent", state: Any, reward: float) -> None:
             MoveActionSpace.UP: "up",
             MoveActionSpace.DOWN: "down",
         }
-        direction = direction_map[agent.move_module.last_action]
+        direction = direction_map[agent.move_module.previous_action]
 
         agent.move_module.store_experience(
             step_number=agent.environment.time,
             agent_id=agent.agent_id,
             module_type="move",
             module_id=agent.move_module.module_id,
-            state=agent.move_module.last_state,
-            action=agent.move_module.last_action,
+            state=agent.move_module.previous_state,
+            action=agent.move_module.previous_action,
             action_taken_mapped=direction,
             reward=reward,
             next_state=next_state,

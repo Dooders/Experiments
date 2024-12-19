@@ -17,10 +17,9 @@ Stores metadata and lifecycle information for each agent.
 | position_x           | FLOAT               | Initial X coordinate                            |
 | position_y           | FLOAT               | Initial Y coordinate                            |
 | initial_resources    | FLOAT               | Starting resource amount                        |
-| max_health           | FLOAT               | Maximum health points                           |
+| starting_health      | FLOAT               | Starting health points                           |
 | starvation_threshold | INTEGER             | Steps agent can survive without resources       |
 | genome_id            | STRING(64)          | Unique identifier for agent's genome            |
-| parent_id            | INTEGER             | ID of parent agent (NULL for initial agents)    |
 | generation           | INTEGER             | Generation number in evolutionary lineage       |
 
 ### AgentStates Table
@@ -36,7 +35,7 @@ Tracks the state of each agent at each simulation step.
 | position_y           | FLOAT               | Y coordinate                         |
 | resource_level       | FLOAT               | Current resource amount              |
 | current_health       | FLOAT               | Current health points                |
-| max_health           | FLOAT               | Maximum health points                |
+| starting_health      | FLOAT               | Starting health points                |
 | starvation_threshold | INTEGER             | Current starvation counter           |
 | is_defending         | BOOLEAN             | Whether agent is in defensive stance |
 | total_reward         | FLOAT               | Accumulated reward                   |
@@ -141,7 +140,6 @@ Stores metadata about simulation runs.
 ## Relationships
 
 - `AgentStates.agent_id` → `Agents.agent_id`: Links agent states to their agent records
-- `Agents.parent_id` → `Agents.agent_id`: Tracks parent-child relationships
 - `AgentActions.agent_id` → `Agents.agent_id`: Links actions to agents
 - `HealthIncidents.agent_id` → `Agents.agent_id`: Links health incidents to agents
 

@@ -17,7 +17,7 @@ from database.data_types import (
     TimePattern,
 )
 from database.enums import AnalysisScope
-from database.repositories.agent_action_repository import AgentActionRepository
+from database.repositories.action_repository import ActionRepository
 
 
 class ActionsService:
@@ -44,7 +44,7 @@ class ActionsService:
         temporal_analyzer (TemporalPatternAnalyzer): Analyzer for temporal patterns
     """
 
-    def __init__(self, action_repository: AgentActionRepository):
+    def __init__(self, action_repository: ActionRepository):
         """
         Initialize the ActionsService with required analyzers.
 

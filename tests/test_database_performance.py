@@ -45,7 +45,7 @@ class TestDatabasePerformance(unittest.TestCase):
             "agent_type": random.choice(["SystemAgent", "IndependentAgent", "ControlAgent"]),
             "position": (random.uniform(0, 100), random.uniform(0, 100)),
             "initial_resources": random.uniform(0, 100),
-            "max_health": random.uniform(50, 100),
+            "starting_health": random.uniform(50, 100),
             "starvation_threshold": random.randint(10, 50),
             "genome_id": f"genome_{random.randint(1, 1000)}",
             "generation": random.randint(0, 10)
@@ -89,7 +89,7 @@ class TestDatabasePerformance(unittest.TestCase):
             agent_data["agent_type"],
             agent_data["position"],
             agent_data["initial_resources"],
-            agent_data["max_health"],
+            agent_data["starting_health"],
             agent_data["starvation_threshold"]
         )
         
@@ -113,7 +113,7 @@ class TestDatabasePerformance(unittest.TestCase):
                     step_number=update['step_number'],
                     agent_id=update['agent_id'],
                     current_health=state_data["current_health"],
-                    max_health=100.0,  # Default for test
+                    starting_health=100.0,  # Default for test
                     resource_level=state_data["resource_level"],
                     position_x=state_data["position"][0],
                     position_y=state_data["position"][1],
@@ -144,7 +144,7 @@ class TestDatabasePerformance(unittest.TestCase):
             agent_data["agent_type"],
             agent_data["position"],
             agent_data["initial_resources"],
-            agent_data["max_health"],
+            agent_data["starting_health"],
             agent_data["starvation_threshold"]
         )
         
@@ -187,7 +187,7 @@ class TestDatabasePerformance(unittest.TestCase):
                     agent_data["agent_type"],
                     agent_data["position"],
                     agent_data["initial_resources"],
-                    agent_data["max_health"],
+                    agent_data["starting_health"],
                     agent_data["starvation_threshold"]
                 )
                 
@@ -224,7 +224,7 @@ class TestDatabasePerformance(unittest.TestCase):
                 agent_data["agent_type"],
                 agent_data["position"],
                 agent_data["initial_resources"],
-                agent_data["max_health"],
+                agent_data["starting_health"],
                 agent_data["starvation_threshold"]
             )
             agent_ids.append(agent_data["agent_id"])
@@ -266,7 +266,7 @@ class TestDatabasePerformance(unittest.TestCase):
                 agent_data["agent_type"],
                 agent_data["position"],
                 agent_data["initial_resources"],
-                agent_data["max_health"],
+                agent_data["starting_health"],
                 agent_data["starvation_threshold"]
             )
             
@@ -416,7 +416,7 @@ class TestDatabasePerformance(unittest.TestCase):
                     agent_data["agent_type"],
                     agent_data["position"],
                     agent_data["initial_resources"],
-                    agent_data["max_health"],
+                    agent_data["starting_health"],
                     agent_data["starvation_threshold"]
                 )
                 

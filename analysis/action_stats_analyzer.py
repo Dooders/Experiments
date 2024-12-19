@@ -6,7 +6,7 @@ from analysis.resource_impact_analyzer import ResourceImpactAnalyzer
 from analysis.temporal_pattern_analyzer import TemporalPatternAnalyzer
 from database.data_types import ActionMetrics
 from database.enums import AnalysisScope
-from database.repositories.agent_action_repository import AgentActionRepository
+from database.repositories.action_repository import ActionRepository
 
 
 class ActionStatsAnalyzer:
@@ -22,7 +22,7 @@ class ActionStatsAnalyzer:
         repository (AgentActionRepository): Repository for accessing agent action data.
     """
 
-    def __init__(self, repository: AgentActionRepository):
+    def __init__(self, repository: ActionRepository):
         """
         Initialize the ActionStatsAnalyzer.
 

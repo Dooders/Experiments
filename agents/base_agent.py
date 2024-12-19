@@ -1,18 +1,20 @@
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
+from pydantic import BaseModel
 
-from core.action import *
 from actions.attack import AttackActionSpace, AttackModule, attack_action
 from actions.gather import GatherModule, gather_action
 from actions.move import MoveModule, move_action
 from actions.reproduce import ReproduceModule, reproduce_action
 from actions.select import SelectConfig, SelectModule, create_selection_state
 from actions.share import ShareModule, share_action
+from core.action import *
 from core.genome import Genome
 from core.state import AgentState
+from core.perception import PerceptionData
 
 if TYPE_CHECKING:
     from core.environment import Environment
@@ -20,6 +22,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+#! why do this if I explicitly set the action set in the agent init?
 BASE_ACTION_SET = [
     Action("move", 0.4, move_action),
     Action("gather", 0.3, gather_action),
@@ -27,6 +30,37 @@ BASE_ACTION_SET = [
     Action("attack", 0.1, attack_action),
     Action("reproduce", 0.15, reproduce_action),
 ]
+
+
+class GenomeId(BaseModel):
+    #! move this to data types
+    """Structured representation of a genome identifier.
+
+    Format: 'AgentType:generation:parents:time'
+    where parents is either 'none' or parent IDs joined by '_'
+    """
+
+    agent_type: str
+    generation: int
+    parent_ids: list[str]
+    creation_time: int
+
+    @classmethod
+    def from_string(cls, genome_id: str) -> "GenomeId":
+        """Parse a genome ID string into a structured object."""
+        agent_type, generation, parents, time = genome_id.split(":")
+        parent_ids = [] if parents == "none" else parents.split("_")
+        return cls(
+            agent_type=agent_type,
+            generation=int(generation),
+            parent_ids=parent_ids,
+            creation_time=int(time),
+        )
+
+    def to_string(self) -> str:
+        """Convert the genome ID object back to string format."""
+        parent_str = "_".join(self.parent_ids) if self.parent_ids else "none"
+        return f"{self.agent_type}:{self.generation}:{parent_str}:{self.creation_time}"
 
 
 class BaseAgent:
@@ -46,7 +80,7 @@ class BaseAgent:
         device (torch.device): Computing device (CPU/GPU) for neural operations
         total_reward (float): Cumulative reward earned
         current_health (float): Current health points
-        max_health (float): Maximum possible health points
+        starting_health (float): Maximum possible health points
     """
 
     def __init__(
@@ -56,9 +90,8 @@ class BaseAgent:
         resource_level: int,
         environment: "Environment",
         action_set: list[Action] = BASE_ACTION_SET,
-        parent_id: Optional[str] = None,
+        parent_ids: list[str] = [],
         generation: int = 0,
-        skip_logging: bool = False,
     ):
         """Initialize a new agent with given parameters."""
         # Add default actions
@@ -77,8 +110,8 @@ class BaseAgent:
         self.config = environment.config
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.last_state: AgentState | None = None #! change to previous_state
-        self.last_action = None #! change to previous_action
+        self.previous_state: AgentState | None = None
+        self.previous_action = None
         self.max_movement = self.config.max_movement
         self.total_reward = 0
         self.episode_rewards = []
@@ -88,15 +121,13 @@ class BaseAgent:
         self.birth_time = environment.time
 
         # Initialize health tracking first
-        self.max_health = self.config.max_health #! change to starting_health
-        self.current_health = self.max_health
+        self.starting_health = self.config.starting_health
+        self.current_health = self.starting_health
         self.is_defending = False
 
         # Generate genome info
-        #! make this 'parent_a_id-parent_b_id'
-        self.genome_id = f"{self.__class__.__name__}_{agent_id}_{environment.time}"
-        self.parent_id = parent_id
         self.generation = generation
+        self.genome_id = self._generate_genome_id(parent_ids)
 
         # Initialize all modules first
         #! make this a list of action modules that can be provided to the agent at init
@@ -105,97 +136,118 @@ class BaseAgent:
         self.share_module = ShareModule(self.config)
         self.gather_module = GatherModule(self.config)
         self.reproduce_module = ReproduceModule(self.config)
+        #! change to ChoiceModule
         self.select_module = SelectModule(
             num_actions=len(self.actions), config=SelectConfig(), device=self.device
         )
 
-        # Log agent creation to database only if not skipped
-        if not skip_logging:
-            environment.db.logger.log_agent(
-                agent_id=self.agent_id,
-                birth_time=environment.time,
-                agent_type=self.__class__.__name__,
-                position=self.position,
-                initial_resources=self.resource_level,
-                max_health=self.max_health,
-                starvation_threshold=self.starvation_threshold,
-                genome_id=self.genome_id,
-                parent_id=self.parent_id,
-                generation=self.generation,
-            )
+    def _generate_genome_id(self, parent_ids: list[str]) -> str:
+        """Generate a unique genome ID for this agent.
 
-            logger.info(
-                f"Agent {self.agent_id} created at {self.position} during step {environment.time} of type {self.__class__.__name__}"
-            )
-            
-    def get_perception(self) -> AgentState:
-        #! make this a list of perception modules that can be provided to the agent at init
-        pass
-
-    def get_state(self) -> AgentState:
-        #! rethink state, needs to return a full state with an option to normalize and/or return a smaller state representation
-        #! then need to update the state in the database and the input tensor to the neural network
-        #! include perception with state? or just the state and perception is seperate?
-        #! also incorporate 3rd dimension for position
-        """Get the current normalized state of the agent.
-
-        Calculates the agent's state relative to the nearest available resource,
-        including normalized values for:
-        - Distance to nearest resource
-        - Angle to nearest resource
-        - Current resource level
-        - Amount of resources at nearest location
-
-        If no resources are available, returns a default state with maximum distance
-        and neutral angle values.
+        Args:
+            parent_ids (list[str]): List of parent agent IDs, if any
 
         Returns:
-            AgentState: Normalized state representation containing all relevant metrics
+            str: Formatted genome ID string in format 'AgentType:generation:parents:time'
         """
-        # Get closest resource position
-        #! this is the perception module
-        closest_resource = None
-        min_distance = float("inf")
-        for resource in self.environment.resources:
-            if resource.amount > 0:
-                dist = np.sqrt(
-                    (self.position[0] - resource.position[0]) ** 2
-                    + (self.position[1] - resource.position[1]) ** 2
-                )
-                if dist < min_distance:
-                    min_distance = dist
-                    closest_resource = resource
+        genome_id = GenomeId(
+            agent_type=self.__class__.__name__,
+            generation=self.generation,
+            parent_ids=parent_ids,
+            creation_time=self.environment.time,
+        )
+        return genome_id.to_string()
 
-        if closest_resource is None:
-            # Return zero state if no resources available
-            return AgentState(
-                normalized_distance=1.0,  # Maximum distance
-                normalized_angle=0.5,  # Neutral angle
-                normalized_resource_level=0.0,
-                normalized_target_amount=0.0,
-            )
+    def get_perception(self) -> PerceptionData:
+        """Get agent's perception of nearby environment elements.
 
-        # Calculate raw values
-        dx = closest_resource.position[0] - self.position[0]
-        dy = closest_resource.position[1] - self.position[1]
-        angle = np.arctan2(dy, dx)
+        Creates a grid representation of the agent's surroundings within its perception radius.
+        The grid uses the following encoding:
+        - 0: Empty space
+        - 1: Resource
+        - 2: Other agent
+        - 3: Boundary/obstacle
 
-        # Calculate environment diagonal for distance normalization
-        env_diagonal = np.sqrt(self.environment.width**2 + self.environment.height**2)
+        Returns:
+            PerceptionData: Structured perception data centered on agent, with dimensions
+                (2 * perception_radius + 1) x (2 * perception_radius + 1)
+        """
+        # Get perception radius from config
+        #! need to add this to the config
+        radius = self.config.perception_radius
 
-        # Ensure resource level is non-negative
-        resource_level = max(0.0, self.resource_level)
+        # Create perception grid centered on agent
+        size = 2 * radius + 1
+        perception = np.zeros((size, size), dtype=np.int8)
 
-        # Create normalized state using factory method
+        # Get nearby entities using environment's spatial indexing
+        nearby_resources = self.environment.get_nearby_resources(self.position, radius)
+        nearby_agents = self.environment.get_nearby_agents(self.position, radius)
+
+        # Helper function to convert world coordinates to grid coordinates
+        def world_to_grid(wx: float, wy: float) -> tuple[int, int]:
+            # Convert world position to grid position relative to agent
+            gx = int(round(wx - self.position[0] + radius))
+            gy = int(round(wy - self.position[1] + radius))
+            return gx, gy
+
+        # Add resources to perception
+        for resource in nearby_resources:
+            gx, gy = world_to_grid(resource.position[0], resource.position[1])
+            if 0 <= gx < size and 0 <= gy < size:
+                perception[gy, gx] = 1
+
+        # Add other agents to perception
+        for agent in nearby_agents:
+            if agent.agent_id != self.agent_id:  # Don't include self
+                gx, gy = world_to_grid(agent.position[0], agent.position[1])
+                if 0 <= gx < size and 0 <= gy < size:
+                    perception[gy, gx] = 2
+
+        # Add boundary/obstacle markers
+        x_min = self.position[0] - radius
+        y_min = self.position[1] - radius
+
+        # Mark cells outside environment bounds as obstacles
+        for i in range(size):
+            for j in range(size):
+                world_x = x_min + j
+                world_y = y_min + i
+                if not self.environment.is_valid_position((world_x, world_y)):
+                    perception[i, j] = 3
+
+        return PerceptionData(perception)
+
+    def get_state(self) -> AgentState:
+        """Returns the current state of the agent as an AgentState object.
+
+        This method captures the agent's current state including:
+        - Unique identifier
+        - Current simulation step
+        - 3D position coordinates
+        - Resource level
+        - Health status
+        - Defense status
+        - Cumulative reward
+        - Agent age
+
+        Returns:
+            AgentState: A structured object containing all current state information
+        """
         return AgentState.from_raw_values(
-            distance=min_distance,
-            angle=angle,
-            resource_level=resource_level,  # Use clamped value
-            target_amount=closest_resource.amount,
-            env_diagonal=env_diagonal,
+            agent_id=self.agent_id,
+            step_number=self.environment.time,
+            position_x=self.position[0],
+            position_y=self.position[1],
+            position_z=self.position[2],
+            resource_level=self.resource_level,
+            current_health=self.current_health,
+            is_defending=self.is_defending,
+            total_reward=self.total_reward,
+            age=self.age,
         )
 
-    def select_action(self):
+    def choose_action(self):
         """Select an action using the SelectModule's intelligent decision making.
 
         The selection process involves:
@@ -208,6 +260,7 @@ class BaseAgent:
             Action: Selected action object to execute
         """
         # Get current state for selection
+        #! is this needed? its different from the state in the agent
         state = create_selection_state(self)
 
         # Select action using selection module
@@ -217,7 +270,27 @@ class BaseAgent:
 
         return selected_action
 
-    def act(self):
+    def check_starvation(self) -> bool:
+        """Check and handle agent starvation state.
+
+        Manages the agent's starvation threshold based on resource levels:
+        - Increments threshold when resources are depleted
+        - Resets threshold when resources are available
+        - Triggers death if threshold exceeds maximum starvation time
+
+        Returns:
+            bool: True if agent died from starvation, False otherwise
+        """
+        if self.resource_level <= 0:
+            self.starvation_threshold += 1
+            if self.starvation_threshold >= self.max_starvation:
+                self.die()
+                return True
+        else:
+            self.starvation_threshold = 0
+        return False
+
+    def act(self) -> None:
         """Execute the agent's turn in the simulation.
 
         This method handles the core action loop including:
@@ -235,30 +308,22 @@ class BaseAgent:
         # Reset defense status at start of turn
         self.is_defending = False
 
-        starting_resources = self.resource_level #! whats this for?
         self.resource_level -= self.config.base_consumption_rate
 
-
-        #! encapsulate this in a method
-        #! maybe even change the logic
-        if self.resource_level <= 0:
-            self.starvation_threshold += 1
-            if self.starvation_threshold >= self.max_starvation:
-                self.die()
-                return
-        else:
-            self.starvation_threshold = 0
+        # Check starvation state
+        if self.check_starvation():
+            return
 
         # Get current state before action
         current_state = self.get_state()
 
         # Select and execute action
-        action = self.select_action()
+        action = self.choose_action()
         action.execute(self)
 
         # Store state for learning
-        self.last_state = current_state
-        self.last_action = action
+        self.previous_state = current_state
+        self.previous_action = action
 
     def clone(self) -> "BaseAgent":
         """Create a mutated copy of this agent.
@@ -310,7 +375,6 @@ class BaseAgent:
             position=self.position,
             resource_level=self.config.offspring_initial_resources,
             environment=self.environment,
-            parent_id=self.agent_id,
             generation=generation,
             skip_logging=True,  # Skip individual logging since we'll batch it
         )
@@ -364,20 +428,18 @@ class BaseAgent:
     def calculate_new_position(self, action):
         """Calculate new position based on movement action.
 
-        Takes into account:
-        1. Environment boundaries
-        2. Maximum movement distance
-        3. Direction vectors for each action type
+        Takes into account environment boundaries and maximum movement distance.
+        Movement is grid-based with four possible directions.
 
         Args:
             action (int): Movement direction index
-                0: Right
-                1: Left
-                2: Up
-                3: Down
+                0: Right  (+x direction)
+                1: Left   (-x direction)
+                2: Up     (+y direction)
+                3: Down   (-y direction)
 
         Returns:
-            tuple: New (x, y) position coordinates, bounded by environment limits
+            tuple[float, float]: New (x, y) position coordinates, bounded by environment limits
         """
         # Define movement vectors for each action
         action_vectors = {
@@ -482,8 +544,8 @@ class BaseAgent:
         """Handle incoming attack and calculate actual damage taken.
 
         Processes combat mechanics including:
-        - Damage reduction from defensive stance
-        - Health reduction
+        - Damage reduction from defensive stance (50% reduction when defending)
+        - Health reduction (clamped to minimum of 0)
         - Death checking if health drops to 0
 
         Args:
@@ -511,20 +573,20 @@ class BaseAgent:
     ) -> float:
         """Calculate reward for an attack action based on outcome.
 
-        Rewards are based on:
-        - Base attack cost (negative)
-        - Successful hits (positive, scaled by damage)
-        - Killing blows (bonus reward)
-        - Defensive actions (contextual based on health)
-        - Missed attacks (penalty)
+        Reward components:
+        - Base cost: Negative value from config.attack_base_cost
+        - Successful hits: Positive reward scaled by damage ratio
+        - Killing blows: Additional bonus from config.attack_kill_reward
+        - Defensive actions: Positive when health below threshold, negative otherwise
+        - Missed attacks: Penalty from config.attack_failure_penalty
 
         Args:
-            target: The agent that was attacked
-            damage_dealt: Amount of damage successfully dealt
-            action: The attack action that was taken
+            target (BaseAgent): The agent that was attacked
+            damage_dealt (float): Amount of damage successfully dealt
+            action (int): The attack action that was taken (from AttackActionSpace)
 
         Returns:
-            float: The calculated reward value
+            float: The calculated reward value, combining all applicable components
         """
         # Base reward starts with the attack cost
         reward = self.config.attack_base_cost
@@ -533,7 +595,7 @@ class BaseAgent:
         if action == AttackActionSpace.DEFEND:
             if (
                 self.current_health
-                < self.max_health * self.config.attack_defense_threshold
+                < self.starting_health * self.config.attack_defense_threshold
             ):
                 reward += (
                     self.config.attack_success_reward

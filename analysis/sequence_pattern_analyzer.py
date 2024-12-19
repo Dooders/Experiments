@@ -2,7 +2,7 @@ from typing import List, Optional, Tuple, Union
 
 from database.data_types import SequencePattern
 from database.enums import AnalysisScope
-from database.repositories.agent_action_repository import AgentActionRepository
+from database.repositories.action_repository import ActionRepository
 
 
 class SequencePatternAnalyzer:
@@ -13,7 +13,7 @@ class SequencePatternAnalyzer:
     calculates the frequency and probability of these action sequences occurring.
     """
 
-    def __init__(self, repository: AgentActionRepository):
+    def __init__(self, repository: ActionRepository):
         """
         Initialize the SequencePatternAnalyzer with a repository.
 

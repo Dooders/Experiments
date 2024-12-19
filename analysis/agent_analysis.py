@@ -249,9 +249,8 @@ class AgentAnalysis:
                     "birth_time": agent.birth_time,
                     "death_time": agent.death_time,
                     "generation": agent.generation,
-                    "parent_id": agent.parent_id,
                     "initial_resources": agent.initial_resources,
-                    "max_health": agent.max_health,
+                    "starting_health": agent.starting_health,
                     "starvation_threshold": agent.starvation_threshold,
                     "genome_id": agent.genome_id
                 }

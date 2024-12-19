@@ -40,7 +40,7 @@ def plot_starvation_thresholds(dataframe):
     plt.show()
 
 def plot_lineage_size(dataframe):
-    lineage_sizes = dataframe['parent_id'].value_counts()
+    lineage_sizes = dataframe['genome_id'].value_counts()
     plt.figure(figsize=(10, 6))
     plt.hist(lineage_sizes, bins=20, edgecolor='k', alpha=0.7)
     plt.title('Lineage Size Distribution')
@@ -50,10 +50,10 @@ def plot_lineage_size(dataframe):
 
 def plot_health_vs_resources(dataframe):
     plt.figure(figsize=(10, 6))
-    plt.scatter(dataframe['initial_resources'], dataframe['max_health'], alpha=0.6)
-    plt.title('Maximum Health vs. Initial Resources')
+    plt.scatter(dataframe['initial_resources'], dataframe['starting_health'], alpha=0.6)
+    plt.title('Starting Health vs. Initial Resources')
     plt.xlabel('Initial Resources')
-    plt.ylabel('Maximum Health')
+    plt.ylabel('Starting Health')
     plt.show()
 
 def plot_agent_types_over_time(dataframe):

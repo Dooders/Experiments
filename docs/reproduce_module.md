@@ -92,7 +92,7 @@ min_space_required: float = 20.0
 The reproduce module uses an 8-dimensional state vector:
 
 1. **Resource Ratio**: `agent.resource_level / min_reproduction_resources`
-2. **Health Ratio**: `current_health / max_health`
+2. **Health Ratio**: `current_health / starting_health`
 3. **Local Density**: Nearby agents / total agents
 4. **Resource Availability**: Nearby resources / total resources
 5. **Population Ratio**: Current population / max population

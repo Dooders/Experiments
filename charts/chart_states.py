@@ -7,7 +7,7 @@ def plot_health_over_time(dataframe, agent_id):
     agent_data = dataframe[dataframe['agent_id'] == agent_id]
     plt.figure(figsize=(10, 6))
     plt.plot(agent_data['step_number'], agent_data['current_health'], label='Current Health')
-    plt.plot(agent_data['step_number'], agent_data['max_health'], label='Max Health', linestyle='--')
+    plt.plot(agent_data['step_number'], agent_data['starting_health'], label='Starting Health', linestyle='--')
     plt.axhline(agent_data['starvation_threshold'].iloc[0], color='red', linestyle=':', label='Starvation Threshold')
     plt.title(f'Health Over Time for Agent {agent_id}')
     plt.xlabel('Step Number')

@@ -4,7 +4,7 @@ import numpy as np
 
 from database.data_types import EventSegment, TimePattern
 from database.enums import AnalysisScope
-from database.repositories.agent_action_repository import AgentActionRepository
+from database.repositories.action_repository import ActionRepository
 
 
 class TemporalPatternAnalyzer:
@@ -26,7 +26,7 @@ class TemporalPatternAnalyzer:
         >>> patterns = analyzer.analyze(scope='simulation', time_period_size=100)
     """
 
-    def __init__(self, repository: AgentActionRepository):
+    def __init__(self, repository: ActionRepository):
         """
         Initialize the TemporalPatternAnalyzer.
 

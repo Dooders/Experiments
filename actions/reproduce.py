@@ -229,7 +229,7 @@ def _get_reproduce_state(agent: "BaseAgent") -> torch.Tensor:
         [
             agent.resource_level
             / agent.config.min_reproduction_resources,  # Resource ratio
-            agent.current_health / agent.max_health,  # Health ratio
+            agent.current_health / agent.starting_health,  # Health ratio
             local_density,  # Local population density
             resource_availability,  # Local resource availability
             len(agent.environment.agents)
@@ -258,7 +258,7 @@ def _check_reproduction_conditions(agent: "BaseAgent") -> bool:
         return False
 
     # Check health status
-    if agent.current_health < agent.max_health * ReproduceConfig.min_health_ratio:
+    if agent.current_health < agent.starting_health * ReproduceConfig.min_health_ratio:
         return False
 
     # Check local population density

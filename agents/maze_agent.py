@@ -22,7 +22,6 @@ class MazeAgent(BaseAgent):
         position: tuple[int, int],
         resource_level: int,
         environment: "Environment",
-        parent_id: Optional[int] = None,
         generation: int = 0,
         skip_logging: bool = False,
         action_set: list[Action] = None
@@ -43,7 +42,6 @@ class MazeAgent(BaseAgent):
             resource_level=resource_level,
             environment=environment,
             action_set=action_set,
-            parent_id=parent_id,
             generation=generation,
             skip_logging=skip_logging
         )

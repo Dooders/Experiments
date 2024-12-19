@@ -85,194 +85,120 @@ class BaseState(BaseModel):
 class AgentState(BaseState):
     """State representation for agent decision making.
 
-    Represents an agent's state in the environment using normalized values
-    for stable learning. All values are constrained to the range [0,1].
+    Captures the current state of an individual agent including its position,
+    resources, health, and other key attributes. All continuous values are
+    normalized to [0,1] for consistency with other state representations.
 
     Attributes:
-        normalized_distance (float): Distance to nearest resource
-        normalized_angle (float): Angle to nearest resource
-        normalized_resource_level (float): Agent's current resource amount
-        normalized_target_amount (float): Amount in nearest resource
-        RESOURCE_NORMALIZER (ClassVar[float]): Constant for resource normalization
-        ANGLE_NORMALIZER (ClassVar[float]): Constant for angle normalization
-        DIMENSIONS (ClassVar[int]): Number of dimensions in state vector
+        agent_id (str): Unique identifier for the agent
+        step_number (int): Current simulation step
+        position_x (float): Normalized X coordinate in environment
+        position_y (float): Normalized Y coordinate in environment
+        position_z (float): Normalized Z coordinate (usually 0 for 2D)
+        resource_level (float): Current resource amount [0,1]
+        current_health (float): Current health level [0,1]
+        is_defending (bool): Whether agent is in defensive stance
+        total_reward (float): Cumulative reward received
+        age (int): Number of steps agent has existed
 
     Example:
         >>> state = AgentState(
-        ...     normalized_distance=0.5,
-        ...     normalized_angle=0.25,
-        ...     normalized_resource_level=0.8,
-        ...     normalized_target_amount=0.6
+        ...     agent_id="agent_1",
+        ...     step_number=100,
+        ...     position_x=0.5,
+        ...     position_y=0.3,
+        ...     position_z=0.0,
+        ...     resource_level=0.7,
+        ...     current_health=0.9,
+        ...     is_defending=False,
+        ...     total_reward=10.5,
+        ...     age=50
         ... )
-        >>> tensor = state.to_tensor(device)
-        >>> state_dict = state.to_dict()
     """
-#! remove the normalization, maybe as an option
-    normalized_distance: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Distance to nearest resource, normalized by environment diagonal. "
-        "0 = at resource, 1 = maximum possible distance",
-    )
 
-    normalized_angle: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Angle to nearest resource, normalized by π. "
-        "0 = -π radians, 0.5 = 0 radians, 1 = π radians",
-    )
-
-    normalized_resource_level: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Agent's current resource amount, normalized by max capacity (20). "
-        "0 = empty, 1 = full capacity",
-    )
-
-    normalized_target_amount: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Amount in nearest resource, normalized by max amount (20). "
-        "0 = depleted, 1 = full capacity",
-    )
-
-    # Class constants
-    RESOURCE_NORMALIZER: ClassVar[float] = 20.0  # Maximum resource capacity
-    ANGLE_NORMALIZER: ClassVar[float] = np.pi  # Used for angle normalization
-    DIMENSIONS: ClassVar[int] = 4  # State vector dimensionality
-
-    def to_tensor(self, device: torch.device) -> torch.Tensor:
-        """Convert state to tensor format for neural network input.
-
-        Converts the normalized state values into a tensor suitable for
-        neural network processing. The tensor contains all state dimensions
-        in a consistent order.
-
-        Args:
-            device (torch.device): Device to place tensor on (CPU/GPU)
-
-        Returns:
-            torch.Tensor: State tensor of shape (4,) containing:
-                [normalized_distance,
-                 normalized_angle,
-                 normalized_resource_level,
-                 normalized_target_amount]
-
-        Example:
-            >>> state = AgentState(...)
-            >>> device = torch.device("cuda")
-            >>> tensor = state.to_tensor(device)
-            >>> print(tensor.shape)
-            torch.Size([4])
-        """
-        return torch.FloatTensor(
-            [
-                self.normalized_distance,
-                self.normalized_angle,
-                self.normalized_resource_level,
-                self.normalized_target_amount,
-            ]
-        ).to(device)
+    # Required fields from AgentStateModel
+    agent_id: str
+    step_number: int
+    position_x: float
+    position_y: float
+    position_z: float
+    resource_level: float
+    current_health: float
+    is_defending: bool
+    total_reward: float
+    age: int
 
     @classmethod
     def from_raw_values(
         cls,
-        distance: float,
-        angle: float,
+        agent_id: str,
+        step_number: int,
+        position_x: float,
+        position_y: float,
+        position_z: float,
         resource_level: float,
-        target_amount: float,
-        env_diagonal: float,
+        current_health: float,
+        is_defending: bool,
+        total_reward: float,
+        age: int,
     ) -> "AgentState":
-        """Create a normalized state from raw (unnormalized) values.
+        """Create a state instance from raw values.
 
         Args:
-            distance (float): Raw distance to resource
-            angle (float): Raw angle in radians (-π to π)
-            resource_level (float): Raw resource amount (0 to RESOURCE_NORMALIZER)
-            target_amount (float): Raw target resource amount (0 to RESOURCE_NORMALIZER)
-            env_diagonal (float): Environment diagonal length for distance normalization
+            agent_id: Unique identifier for the agent
+            step_number: Current simulation step
+            position_x: X coordinate
+            position_y: Y coordinate
+            position_z: Z coordinate (usually 0 for 2D)
+            resource_level: Current resource amount
+            current_health: Current health level
+            is_defending: Whether agent is in defensive stance
+            total_reward: Cumulative reward received
+            age: Number of steps agent has existed
 
         Returns:
-            AgentState: Normalized state instance
+            AgentState: State instance with provided values
         """
-        # Clamp values to valid ranges before normalization
-        resource_level = max(0.0, min(resource_level, cls.RESOURCE_NORMALIZER))
-        target_amount = max(0.0, min(target_amount, cls.RESOURCE_NORMALIZER))
-        distance = max(0.0, min(distance, env_diagonal))
-
         return cls(
-            normalized_distance=distance / env_diagonal,
-            normalized_angle=(angle + np.pi) / (2 * np.pi),
-            normalized_resource_level=resource_level / cls.RESOURCE_NORMALIZER,
-            normalized_target_amount=target_amount / cls.RESOURCE_NORMALIZER,
+            agent_id=agent_id,
+            step_number=step_number,
+            position_x=position_x,
+            position_y=position_y,
+            position_z=position_z,
+            resource_level=resource_level,
+            current_health=current_health,
+            is_defending=is_defending,
+            total_reward=total_reward,
+            age=age,
         )
 
-    def to_dict(self) -> Dict[str, float]:
-        """Convert state to dictionary with descriptive keys.
-
-        Returns:
-            Dict[str, float]: Dictionary containing state values with descriptive keys
-
-        Example:
-            >>> state.to_dict()
-            {
-                'distance_to_resource': 0.5,
-                'angle_to_resource': 0.25,
-                'agent_resource_level': 0.8,
-                'target_resource_amount': 0.6
-            }
-        """
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert state to dictionary representation."""
         return {
-            "distance_to_resource": self.normalized_distance,
-            "angle_to_resource": self.normalized_angle,
-            "agent_resource_level": self.normalized_resource_level,
-            "target_resource_amount": self.normalized_target_amount,
+            "agent_id": self.agent_id,
+            "step_number": self.step_number,
+            "position": (self.position_x, self.position_y, self.position_z),
+            "resource_level": self.resource_level,
+            "current_health": self.current_health,
+            "is_defending": self.is_defending,
+            "total_reward": self.total_reward,
+            "age": self.age,
         }
 
-    @property
-    def raw_angle(self) -> float:
-        """Convert normalized angle back to radians.
-
-        Returns:
-            float: Angle in radians (-π to π)
-        """
-        return (self.normalized_angle * 2 * np.pi) - np.pi
-
-    def __eq__(self, other: object) -> bool:
-        """Compare two states for equality.
-
-        Parameters
-        ----------
-        other : object
-            Other state to compare with
-
-        Returns
-        -------
-        bool
-            True if states are equal, False otherwise
-        """
-        if not isinstance(other, AgentState):
-            return NotImplemented
-
-        return (
-            self.normalized_distance == other.normalized_distance
-            and self.normalized_angle == other.normalized_angle
-            and self.normalized_resource_level == other.normalized_resource_level
-            and self.normalized_target_amount == other.normalized_target_amount
-        )
-
-    def to_array(self) -> np.ndarray:
-        """Convert agent state to numpy array for neural network input."""
-        return np.array([
-            self.normalized_distance,
-            self.normalized_angle, 
-            self.normalized_resource_level,
-            self.normalized_target_amount
-        ], dtype=np.float32)
+    def to_tensor(self, device: torch.device) -> torch.Tensor:
+        """Convert state to tensor format for neural network input."""
+        return torch.FloatTensor(
+            [
+                self.position_x,
+                self.position_y,
+                self.position_z,
+                self.resource_level,
+                self.current_health,
+                self.is_defending,
+                self.total_reward,
+                self.age,
+            ]
+        ).to(device)
 
 
 class EnvironmentState(BaseState):
@@ -595,7 +521,7 @@ class SimulationState(BaseState):
     """State representation for the overall simulation.
 
     Captures the current state of the entire simulation including time progression,
-    population metrics, resource metrics, and performance indicators. All values 
+    population metrics, resource metrics, and performance indicators. All values
     are normalized to [0,1] for consistency with other state representations.
 
     Attributes:
@@ -606,7 +532,7 @@ class SimulationState(BaseState):
         normalized_system_performance (float): System agents' performance metric
         DIMENSIONS (ClassVar[int]): Number of dimensions in state vector
         MAX_POPULATION (ClassVar[int]): Maximum expected population for normalization
-        
+
     Example:
         >>> state = SimulationState(
         ...     normalized_time_progress=0.5,
@@ -622,7 +548,7 @@ class SimulationState(BaseState):
         ge=0.0,
         le=1.0,
         description="Current simulation step relative to total steps. "
-        "0 = start, 1 = completion"
+        "0 = start, 1 = completion",
     )
 
     normalized_population_size: float = Field(
@@ -630,7 +556,7 @@ class SimulationState(BaseState):
         ge=0.0,
         le=1.0,
         description="Current population relative to maximum capacity. "
-        "0 = empty, 1 = at capacity"
+        "0 = empty, 1 = at capacity",
     )
 
     normalized_survival_rate: float = Field(
@@ -638,7 +564,7 @@ class SimulationState(BaseState):
         ge=0.0,
         le=1.0,
         description="Portion of original agents still alive. "
-        "0 = none survived, 1 = all survived"
+        "0 = none survived, 1 = all survived",
     )
 
     normalized_resource_efficiency: float = Field(
@@ -646,7 +572,7 @@ class SimulationState(BaseState):
         ge=0.0,
         le=1.0,
         description="Resource utilization effectiveness. "
-        "0 = inefficient, 1 = optimal usage"
+        "0 = inefficient, 1 = optimal usage",
     )
 
     normalized_system_performance: float = Field(
@@ -654,7 +580,7 @@ class SimulationState(BaseState):
         ge=0.0,
         le=1.0,
         description="System agents' performance metric. "
-        "0 = poor performance, 1 = optimal performance"
+        "0 = poor performance, 1 = optimal performance",
     )
 
     # Class constants
@@ -670,13 +596,15 @@ class SimulationState(BaseState):
         Returns:
             torch.Tensor: 1D tensor of shape (DIMENSIONS,) containing state values
         """
-        return torch.FloatTensor([
-            self.normalized_time_progress,
-            self.normalized_population_size,
-            self.normalized_survival_rate,
-            self.normalized_resource_efficiency,
-            self.normalized_system_performance
-        ]).to(device)
+        return torch.FloatTensor(
+            [
+                self.normalized_time_progress,
+                self.normalized_population_size,
+                self.normalized_survival_rate,
+                self.normalized_resource_efficiency,
+                self.normalized_system_performance,
+            ]
+        ).to(device)
 
     def to_dict(self) -> Dict[str, float]:
         """Convert state to dictionary with descriptive keys.
@@ -695,15 +623,17 @@ class SimulationState(BaseState):
             }
         """
         return {
-            'time_progress': self.normalized_time_progress,
-            'population_size': self.normalized_population_size,
-            'survival_rate': self.normalized_survival_rate,
-            'resource_efficiency': self.normalized_resource_efficiency,
-            'system_performance': self.normalized_system_performance
+            "time_progress": self.normalized_time_progress,
+            "population_size": self.normalized_population_size,
+            "survival_rate": self.normalized_survival_rate,
+            "resource_efficiency": self.normalized_resource_efficiency,
+            "system_performance": self.normalized_system_performance,
         }
 
     @classmethod
-    def from_environment(cls, environment: "Environment", num_steps: int) -> "SimulationState":
+    def from_environment(
+        cls, environment: "Environment", num_steps: int
+    ) -> "SimulationState":
         """Create a SimulationState instance from current environment state.
 
         Args:
@@ -724,12 +654,14 @@ class SimulationState(BaseState):
         # Calculate survival rate (capped at 1.0 to handle reproduction)
         survival_rate = min(
             current_population / initial_population if initial_population > 0 else 0.0,
-            1.0
+            1.0,
         )
 
         # Calculate resource efficiency
         total_resources = sum(resource.amount for resource in environment.resources)
-        max_resources = environment.config.max_resource_amount * len(environment.resources)
+        max_resources = environment.config.max_resource_amount * len(
+            environment.resources
+        )
         resource_efficiency = (
             total_resources / max_resources if max_resources > 0 else 0.0
         )
@@ -745,12 +677,12 @@ class SimulationState(BaseState):
             normalized_population_size=min(current_population / max_population, 1.0),
             normalized_survival_rate=survival_rate,
             normalized_resource_efficiency=normalized_resource_efficiency,
-            normalized_system_performance=system_performance
+            normalized_system_performance=system_performance,
         )
 
     def get_agent_genealogy(self) -> Dict[str, Any]:
         """Get genealogical information about the current agent population.
-        
+
         Returns
         -------
         Dict[str, Any]
@@ -761,8 +693,8 @@ class SimulationState(BaseState):
             - survival_rates: Survival rates by generation
         """
         return {
-            'normalized_max_generation': self.normalized_time_progress,
-            'generation_distribution': self.normalized_population_size,
-            'lineage_survival': self.normalized_survival_rate,
-            'evolutionary_progress': self.normalized_system_performance
+            "normalized_max_generation": self.normalized_time_progress,
+            "generation_distribution": self.normalized_population_size,
+            "lineage_survival": self.normalized_survival_rate,
+            "evolutionary_progress": self.normalized_system_performance,
         }

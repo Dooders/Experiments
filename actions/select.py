@@ -120,7 +120,7 @@ class SelectModule(BaseDQNModule):
         # Get state information
         resource_level = agent.resource_level
         starvation_risk = agent.starvation_threshold / agent.max_starvation
-        health_ratio = agent.current_health / agent.max_health
+        health_ratio = agent.current_health / agent.starting_health
 
         # Helper function to safely get action index
         def get_action_index(action_name: str) -> int:
@@ -204,8 +204,8 @@ def create_selection_state(agent: "BaseAgent") -> torch.Tensor:
     # Calculate normalized values
     max_resources = agent.config.min_reproduction_resources * 3
     resource_ratio = agent.resource_level / max_resources
-    health_ratio = agent.current_health / agent.max_health
-    starvation_ratio = agent.starvation_threshold / agent.max_starvation
+    health_ratio = agent.current_health / agent.starting_health
+    starvation_ratio = agent.starvation_threshold / agent.starting_starvation
 
     # Get nearby entities
     nearby_resources = len(
